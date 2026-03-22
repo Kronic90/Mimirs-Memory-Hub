@@ -5,6 +5,7 @@
 </p>
 
 [![PyPI](https://img.shields.io/pypi/v/vividmimir)](https://pypi.org/project/vividmimir/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Kronic90/Mimir/blob/main/demo_colab.ipynb)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm--NC-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 
