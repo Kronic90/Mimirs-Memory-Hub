@@ -6,7 +6,7 @@ Run in Google Colab (T4 GPU) or any machine with ≥16 GB VRAM.
     python mimir_gradio_demo.py
 
 Features:
-    • Chat tab  — talk with a Gemma-3-4B agent backed by full Mimir memory
+    • Chat tab  — talk with a Qwen3.5-4B agent backed by full Mimir memory
     • Memory Viewer tab — browse all episodic memories, social impressions,
       lessons, tasks, reminders, and volatile facts
     • Import Memories tab — upload .txt or .json files; the LLM reads each
@@ -42,7 +42,7 @@ from vividmimir import Mimir
 #  Config
 # ═══════════════════════════════════════════════════════════════════════════
 
-MODEL_ID = "google/gemma-3-4b-it"
+MODEL_ID = "Qwen/Qwen3.5-4B"
 DATA_DIR = "mimir_demo_data"
 MAX_NEW_TOKENS = 512
 TEMPERATURE = 0.7
@@ -133,15 +133,15 @@ def _build_prompt(user_message: str) -> str:
     if ctx:
         system += "\n\n--- YOUR LIVING MEMORY ---\n" + ctx
 
-    # Build Gemma chat format
-    parts = [f"<start_of_turn>system\n{system}<end_of_turn>"]
+    # Build ChatML format (Qwen3.5)
+    parts = [f"<|im_start|>system\n{system}<|im_end|>"]
 
     for msg in _chat_history[-20:]:  # Keep last 20 turns
-        role = "user" if msg["role"] == "user" else "model"
-        parts.append(f"<start_of_turn>{role}\n{msg['content']}<end_of_turn>")
+        role = msg["role"]  # "user" or "assistant"
+        parts.append(f"<|im_start|>{role}\n{msg['content']}<|im_end|>")
 
-    parts.append(f"<start_of_turn>user\n{user_message}<end_of_turn>")
-    parts.append("<start_of_turn>model\n")
+    parts.append(f"<|im_start|>user\n{user_message}<|im_end|>")
+    parts.append("<|im_start|>assistant\n")
 
     return "\n".join(parts)
 
@@ -414,7 +414,7 @@ def refresh_all_viewers():
 def _parse_import_entry(raw_text: str) -> dict:
     """Use the LLM to parse a raw memory entry into structured fields."""
     prompt = textwrap.dedent(f"""\
-        <start_of_turn>system
+        <|im_start|>system
         You are a memory analyst. Given a raw text entry, extract structured
         memory fields. Respond ONLY with valid JSON, no extra text.
         
@@ -429,13 +429,13 @@ def _parse_import_entry(raw_text: str) -> dict:
         - "why_saved": a brief reason why this memory matters
         - "is_about_person": true/false — is this primarily about a specific person?
         - "person_name": if is_about_person is true, the person's name, else ""
-        <end_of_turn>
-        <start_of_turn>user
+        <|im_end|>
+        <|im_start|>user
         Parse this memory entry:
 
         {raw_text}
-        <end_of_turn>
-        <start_of_turn>model
+        <|im_end|>
+        <|im_start|>assistant
         """)
 
     result = llm_generate(prompt, max_tokens=256)
