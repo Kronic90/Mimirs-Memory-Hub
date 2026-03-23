@@ -6,7 +6,7 @@ Run in Google Colab (T4 GPU) or any machine with ≥16 GB VRAM.
     python mimir_gradio_demo.py
 
 Features:
-    • Chat tab  — talk with a Qwen3.5-4B agent backed by full Mimir memory
+    • Chat tab  — talk with a Qwen2.5-3B agent backed by full Mimir memory
     • Memory Viewer tab — browse all episodic memories, social impressions,
       lessons, tasks, reminders, and volatile facts
     • Import Memories tab — upload .txt or .json files; the LLM reads each
@@ -26,14 +26,9 @@ IN_COLAB = "COLAB_GPU" in os.environ or "COLAB_RELEASE_TAG" in os.environ
 # ── Install deps if running in Colab ──────────────────────────────────────
 if IN_COLAB:
     import subprocess, sys
-    # Qwen3.5 needs latest transformers — force upgrade from source
-    subprocess.check_call([
-        sys.executable, "-m", "pip", "install", "-q", "--upgrade",
-        "git+https://github.com/huggingface/transformers.git",
-    ])
     subprocess.check_call([
         sys.executable, "-m", "pip", "install", "-q",
-        "vividmimir[all]", "gradio",
+        "vividmimir[all]", "gradio", "transformers",
         "accelerate", "bitsandbytes", "torch",
     ])
 
@@ -47,7 +42,7 @@ from vividmimir import Mimir
 #  Config
 # ═══════════════════════════════════════════════════════════════════════════
 
-MODEL_ID = "Qwen/Qwen3.5-4B"
+MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
 DATA_DIR = "mimir_demo_data"
 MAX_NEW_TOKENS = 512
 TEMPERATURE = 0.7
@@ -71,12 +66,11 @@ DEFAULT_PERSONA = textwrap.dedent("""\
 # ═══════════════════════════════════════════════════════════════════════════
 
 print(f"Loading {MODEL_ID} …")
-_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
+_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 _model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID,
     torch_dtype=torch.bfloat16,
     device_map="auto",
-    trust_remote_code=True,
 )
 print("Model loaded ✓")
 
