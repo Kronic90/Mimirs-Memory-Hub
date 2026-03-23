@@ -26,9 +26,14 @@ IN_COLAB = "COLAB_GPU" in os.environ or "COLAB_RELEASE_TAG" in os.environ
 # ── Install deps if running in Colab ──────────────────────────────────────
 if IN_COLAB:
     import subprocess, sys
+    # Qwen3.5 needs latest transformers — force upgrade from source
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install", "-q", "--upgrade",
+        "git+https://github.com/huggingface/transformers.git",
+    ])
     subprocess.check_call([
         sys.executable, "-m", "pip", "install", "-q",
-        "vividmimir[all]", "gradio", "transformers",
+        "vividmimir[all]", "gradio",
         "accelerate", "bitsandbytes", "torch",
     ])
 
