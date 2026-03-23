@@ -28,8 +28,7 @@ if IN_COLAB:
     import subprocess, sys
     subprocess.check_call([
         sys.executable, "-m", "pip", "install", "-q",
-        "vividmimir[all]", "gradio",
-        "git+https://github.com/huggingface/transformers.git",
+        "vividmimir[all]", "gradio", "transformers",
         "accelerate", "bitsandbytes", "torch",
     ])
 
@@ -67,11 +66,12 @@ DEFAULT_PERSONA = textwrap.dedent("""\
 # ═══════════════════════════════════════════════════════════════════════════
 
 print(f"Loading {MODEL_ID} …")
-_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+_tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
 _model = AutoModelForCausalLM.from_pretrained(
     MODEL_ID,
     torch_dtype=torch.bfloat16,
     device_map="auto",
+    trust_remote_code=True,
 )
 print("Model loaded ✓")
 
