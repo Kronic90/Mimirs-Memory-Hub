@@ -1,0 +1,20 @@
+{
+  "id": "44fbb811-57e",
+  "title": "Game Session",
+  "created": 1774727909,
+  "last_modified": 1774727909,
+  "participants": [
+    {
+      "type": "user",
+      "name": "You"
+    },
+    {
+      "type": "agent",
+      "name": "Gandalf",
+      "character_id": "735dda63"
+    }
+  ],
+  "tags": [],
+  "turn_limit": null,
+  "turn_order": "user_addresses"
+}

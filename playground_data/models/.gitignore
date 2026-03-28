@@ -1,0 +1,6 @@
+# Ignore large model files
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.ckpt

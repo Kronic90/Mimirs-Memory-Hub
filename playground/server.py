@@ -1,0 +1,1047 @@
+"""FastAPI server for Mimir's Memory Hub."""
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
+# Ensure Mimir importable
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+
+from playground.config import Config
+from playground.presets import PRESETS, get_preset
+from playground.llm_backends import create_backend, OllamaBackend
+from playground.memory_manager import MemoryManager
+from playground import model_manager
+from playground.character_manager import CharacterManager
+from playground.conversation_manager import ConversationManager
+
+# ── App ───────────────────────────────────────────────────────────────
+
+app = FastAPI(title="Mimir's Memory Hub", version="0.2.0")
+
+_static = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_static)), name="static")
+
+# ── State ─────────────────────────────────────────────────────────────
+
+_cfg = Config()
+_memory: MemoryManager | None = None
+_conversation: list[dict[str, str]] = []
+_characters = CharacterManager()
+_conversations = ConversationManager()
+
+# History for visualizations
+_mood_history: list[dict] = []
+_chemistry_history: list[dict] = []
+
+
+def _ensure_memory() -> MemoryManager:
+    global _memory
+    if _memory is None:
+        preset = get_preset(_cfg.get("active_preset", "companion"))
+        _memory = MemoryManager(
+            profile_dir=str(_cfg.profile_dir),
+            chemistry=preset.get("chemistry", True),
+        )
+    return _memory
+
+
+# ── Pages ─────────────────────────────────────────────────────────────
+
+@app.get("/")
+async def index():
+    return FileResponse(str(_static / "index.html"))
+
+
+# ── Settings API ──────────────────────────────────────────────────────
+
+@app.get("/api/settings")
+async def get_settings():
+    data = _cfg.to_dict()
+    # Mask API keys for frontend display
+    for name in ("openai", "anthropic", "google", "custom"):
+        key = data.get("backends", {}).get(name, {}).get("api_key", "")
+        if key and len(key) > 8:
+            data["backends"][name]["api_key"] = key[:4] + "•" * (len(key) - 8) + key[-4:]
+    return JSONResponse(data)
+
+
+@app.put("/api/settings")
+async def update_settings(request: Request):
+    global _memory
+    patch = await request.json()
+    # Never overwrite real API keys with masked values from the frontend
+    for name in ("openai", "anthropic", "google", "custom"):
+        incoming_key = patch.get("backends", {}).get(name, {}).get("api_key")
+        if incoming_key is not None and "\u2022" in incoming_key:
+            # This is a masked display value — drop it so the real key is preserved
+            del patch["backends"][name]["api_key"]
+    _cfg.update(patch)
+    # Reset memory if profile or chemistry changed
+    _memory = None
+    return JSONResponse({"ok": True})
+
+
+# ── Presets API ───────────────────────────────────────────────────────
+
+@app.get("/api/presets")
+async def list_presets():
+    return JSONResponse(PRESETS)
+
+
+# ── Models API ────────────────────────────────────────────────────────
+
+@app.get("/api/models")
+async def get_models():
+    """List models for the active backend."""
+    backend_name = _cfg.get("active_backend", "ollama")
+
+    # For local backend, return the active model + any previously scanned models
+    if backend_name == "local":
+        models = []
+        active = _cfg.get("active_model", "")
+        if active:
+            from pathlib import Path
+            p = Path(active)
+            if p.is_file():
+                models.append({"id": active, "name": p.name,
+                                "size": p.stat().st_size})
+        return JSONResponse({"backend": "local", "models": models})
+
+    backend = create_backend(backend_name, _cfg.to_dict())
+    try:
+        models = await backend.list_models()
+        return JSONResponse({"backend": backend_name, "models": models})
+    except Exception as e:
+        return JSONResponse({"backend": backend_name, "models": [],
+                             "error": str(e)}, status_code=200)
+
+
+@app.get("/api/models/ollama/available")
+async def check_ollama():
+    """Check if Ollama is running."""
+    backend = OllamaBackend(_cfg.to_dict().get("backends", {}).get("ollama", {}).get("base_url", "http://localhost:11434"))
+    ok = await backend.is_available()
+    return JSONResponse({"available": ok})
+
+
+@app.get("/api/models/hf/search")
+async def search_hf(q: str = "", limit: int = 20):
+    try:
+        results = await model_manager.search_huggingface(q, limit)
+        return JSONResponse(results)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/models/hf/files")
+async def hf_files(repo_id: str):
+    try:
+        files = await model_manager.get_repo_files(repo_id)
+        return JSONResponse(files)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/models/local")
+async def local_models():
+    models_dir = str(_cfg.profile_dir.parent.parent / "models")
+    return JSONResponse(model_manager.list_local_models(models_dir))
+
+
+@app.get("/api/models/scan")
+async def scan_models():
+    """Scan local drives for GGUF files."""
+    custom_dirs = _cfg.get("scan_directories", [])
+    try:
+        # Custom dirs are scanned in addition to defaults
+        all_dirs = model_manager._default_scan_dirs()
+        for d in custom_dirs:
+            if d not in all_dirs:
+                all_dirs.append(d)
+        results = await asyncio.to_thread(
+            model_manager.scan_for_gguf, all_dirs
+        )
+        return JSONResponse(results)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/models/scan/dirs")
+async def update_scan_dirs(request: Request):
+    """Add or set custom scan directories."""
+    body = await request.json()
+    dirs = body.get("directories", [])
+    # Validate paths exist
+    valid = [d for d in dirs if Path(d).is_dir()]
+    _cfg.update({"scan_directories": valid})
+    return JSONResponse({"ok": True, "directories": valid})
+
+
+@app.post("/api/models/hf/download")
+async def download_hf(request: Request):
+    """Download a GGUF from HuggingFace."""
+    body = await request.json()
+    repo_id = body.get("repo_id", "")
+    filename = body.get("filename", "")
+    if not repo_id or not filename:
+        return JSONResponse({"error": "repo_id and filename required"}, status_code=400)
+
+    dest_dir = str(_cfg.profile_dir.parent.parent / "models")
+    dest_path = Path(dest_dir) / filename
+    if dest_path.exists():
+        return JSONResponse({"status": "exists", "path": str(dest_path)})
+
+    # Start download in background, return immediately
+    async def _do_download():
+        async for _ in model_manager.download_model(repo_id, filename, dest_dir):
+            pass  # Progress tracked via /api/models/hf/download/status
+
+    asyncio.create_task(_do_download())
+    return JSONResponse({"status": "started", "filename": filename, "dest": dest_dir})
+
+
+# ── Memory API ────────────────────────────────────────────────────────
+
+@app.get("/api/memory/stats")
+async def memory_stats():
+    mem = _ensure_memory()
+    return JSONResponse(mem.stats())
+
+
+@app.post("/api/memory/recall")
+async def memory_recall(request: Request):
+    body = await request.json()
+    mem = _ensure_memory()
+    results = mem.recall(body.get("context", ""), body.get("limit", 10))
+    return JSONResponse(results)
+
+
+@app.post("/api/memory/sleep")
+async def memory_sleep():
+    mem = _ensure_memory()
+    mem.sleep()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/memory/remember")
+async def memory_remember(request: Request):
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.remember(
+        content=body.get("content", ""),
+        emotion=body.get("emotion", "neutral"),
+        importance=body.get("importance", 5),
+        source=body.get("source", "manual"),
+        why_saved=body.get("why_saved", ""),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
+@app.get("/api/memory/graph")
+async def memory_graph():
+    """Return all memories with vividness, types, and graph edges for visualization."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_graph())
+
+
+@app.post("/api/memory/import")
+async def memory_import(request: Request):
+    """Import memories from uploaded text/JSON/markdown content."""
+    body = await request.json()
+    mem = _ensure_memory()
+    entries = body.get("entries", [])
+    imported = []
+    for entry in entries:
+        result = mem.import_memory(
+            content=entry.get("content", ""),
+            emotion=entry.get("emotion", "neutral"),
+            importance=entry.get("importance", 5),
+            source="import",
+            why_saved=entry.get("why_saved", "imported from external system"),
+            timestamp=entry.get("timestamp", ""),
+        )
+        imported.append(result)
+    mem.save()
+    return JSONResponse({"imported": len(imported), "memories": imported})
+
+
+# ── Agent Tools API ──────────────────────────────────────────────────
+
+_tool_permissions: dict = {}
+
+
+@app.get("/api/tools/permissions")
+async def get_tool_permissions():
+    """Get current tool permissions."""
+    perms = _cfg.get("tool_permissions", {
+        "file_access": False,
+        "web_search": False,
+        "code_execution": False,
+        "allowed_sites": [],
+        "allowed_paths": [],
+        "allowed_commands": [],
+    })
+    return JSONResponse(perms)
+
+
+@app.put("/api/tools/permissions")
+async def update_tool_permissions(request: Request):
+    """Update tool permissions."""
+    body = await request.json()
+    perms = _cfg.get("tool_permissions", {})
+    perms.update(body)
+    _cfg.update({"tool_permissions": perms})
+    return JSONResponse({"ok": True, "permissions": perms})
+
+
+@app.post("/api/tools/execute")
+async def execute_tool(request: Request):
+    """Execute a tool with sandboxing."""
+    body = await request.json()
+    tool_name = body.get("tool", "")
+    params = body.get("params", {})
+    perms = _cfg.get("tool_permissions", {})
+
+    from playground.tool_runner import run_tool
+    result = await asyncio.to_thread(run_tool, tool_name, params, perms)
+    return JSONResponse(result)
+
+
+# ── Mood & Chemistry API ─────────────────────────────────────────────
+
+@app.get("/api/memory/mood")
+async def memory_mood():
+    """Return current mood, PAD vector, and neurochemistry state."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_mood())
+
+
+@app.post("/api/memory/consolidate")
+async def memory_consolidate():
+    """Run Muninn consolidation (merge duplicates, prune dead memories)."""
+    mem = _ensure_memory()
+    result = await asyncio.to_thread(mem.run_consolidation)
+    return JSONResponse(result)
+
+
+@app.post("/api/memory/huginn")
+async def memory_huginn():
+    """Run Huginn pattern detection (sentiment arcs, theme clusters, open threads)."""
+    mem = _ensure_memory()
+    result = await asyncio.to_thread(mem.run_huginn)
+    return JSONResponse(result)
+
+
+@app.post("/api/memory/dream")
+async def memory_dream():
+    """Run Volva dream synthesis (cross-pollinate distant memories)."""
+    mem = _ensure_memory()
+    result = await asyncio.to_thread(mem.run_dream)
+    return JSONResponse(result)
+
+
+@app.get("/api/memory/emotions")
+async def memory_emotions():
+    """Return emotion distribution across all memories."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.emotion_distribution())
+
+
+@app.get("/api/memory/chemistry")
+async def memory_chemistry():
+    """Return neurochemistry snapshot."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.neurochemistry_snapshot())
+
+
+# ── Memory browse / edit / delete ─────────────────────────────────
+
+@app.get("/api/memory/browse")
+async def memory_browse(offset: int = 0, limit: int = 50,
+                         sort: str = "recent", emotion: str = "",
+                         source: str = "", min_importance: int = 0):
+    """Paginated memory browser with filters."""
+    mem = _ensure_memory()
+    result = mem.browse_memories(
+        offset=offset, limit=limit, sort=sort,
+        emotion_filter=emotion, source_filter=source,
+        min_importance=min_importance,
+    )
+    return JSONResponse(result)
+
+
+@app.delete("/api/memory/{index}")
+async def memory_delete(index: int):
+    """Delete a memory by index."""
+    mem = _ensure_memory()
+    ok = mem.delete_memory(index)
+    if ok:
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Invalid index"}, status_code=404)
+
+
+@app.put("/api/memory/{index}")
+async def memory_update(index: int, request: Request):
+    """Update a memory's editable fields."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.update_memory(index, body)
+    if result is not None:
+        return JSONResponse(result)
+    return JSONResponse({"error": "Invalid index"}, status_code=404)
+
+
+@app.post("/api/memory/{index}/cherish")
+async def memory_cherish(index: int):
+    """Toggle cherished status."""
+    mem = _ensure_memory()
+    result = mem.toggle_cherish(index)
+    if result is not None:
+        return JSONResponse({"cherished": result})
+    return JSONResponse({"error": "Invalid index"}, status_code=404)
+
+
+@app.post("/api/memory/{index}/anchor")
+async def memory_anchor(index: int):
+    """Toggle anchor status."""
+    mem = _ensure_memory()
+    result = mem.toggle_anchor(index)
+    if result is not None:
+        return JSONResponse({"anchored": result})
+    return JSONResponse({"error": "Invalid index"}, status_code=404)
+
+
+@app.get("/api/memory/export")
+async def memory_export():
+    """Export all memories as JSON."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.export_all())
+
+
+@app.get("/api/memory/filters")
+async def memory_filters():
+    """Return available filter options (unique emotions, sources)."""
+    mem = _ensure_memory()
+    return JSONResponse({
+        "emotions": mem.get_unique_emotions(),
+        "sources": mem.get_unique_sources(),
+    })
+
+
+# ── Conversation history ──────────────────────────────────────────
+
+_conversations_dir: Path = _cfg.profile_dir / "conversations"
+_conversations_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/api/conversations")
+async def list_conversations():
+    """List saved conversations."""
+    convos = []
+    for f in sorted(_conversations_dir.glob("*.json"), reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            convos.append({
+                "id": f.stem,
+                "title": data.get("title", f.stem),
+                "created": data.get("created", ""),
+                "message_count": len(data.get("messages", [])),
+                "preset": data.get("preset", ""),
+            })
+        except Exception:
+            pass
+    return JSONResponse(convos)
+
+
+@app.post("/api/conversations/save")
+async def save_conversation(request: Request):
+    """Save current conversation."""
+    global _conversation
+    body = await request.json()
+    if not _conversation:
+        return JSONResponse({"error": "No conversation to save"}, status_code=400)
+
+    import time as _time
+    conv_id = str(int(_time.time() * 1000))
+    # Auto-generate title from first user message
+    first_user = next((m["content"][:60] for m in _conversation
+                       if m["role"] == "user"), "Untitled")
+    data = {
+        "id": conv_id,
+        "title": body.get("title", first_user),
+        "created": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "preset": _cfg.get("active_preset", "companion"),
+        "model": _cfg.get("active_model", ""),
+        "messages": list(_conversation),
+    }
+    path = _conversations_dir / f"{conv_id}.json"
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return JSONResponse({"id": conv_id, "title": data["title"]})
+
+
+@app.get("/api/conversations/{conv_id}")
+async def load_conversation(conv_id: str):
+    """Load a saved conversation."""
+    global _conversation
+    # Sanitize: only allow alphanumeric + underscore
+    import re
+    if not re.match(r'^[\w]+$', conv_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
+    path = _conversations_dir / f"{conv_id}.json"
+    if not path.is_file():
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _conversation = data.get("messages", [])
+    return JSONResponse(data)
+
+
+@app.delete("/api/conversations/{conv_id}")
+async def delete_conversation(conv_id: str):
+    """Delete a saved conversation."""
+    import re
+    if not re.match(r'^[\w]+$', conv_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
+    path = _conversations_dir / f"{conv_id}.json"
+    if path.is_file():
+        path.unlink()
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Not found"}, status_code=404)
+
+
+# ── Character Management (new multi-agent system) ─────────────────────
+
+@app.get("/api/characters")
+async def list_characters():
+    """List all characters."""
+    chars = _characters.list_characters()
+    return JSONResponse({"characters": chars})
+
+
+@app.get("/api/characters/{char_id}")
+async def get_character(char_id: str):
+    """Load a character."""
+    char = _characters.get_character(char_id)
+    if not char:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(char)
+
+
+@app.post("/api/characters")
+async def create_character(request: Request):
+    """Create a new character."""
+    body = await request.json()
+    name = body.pop("name", "New Character")
+    desc = body.pop("description", "")
+    char = _characters.create_character(name, desc, **body)
+    return JSONResponse(char)
+
+
+@app.put("/api/characters/{char_id}")
+async def update_character(char_id: str, request: Request):
+    """Update a character."""
+    body = await request.json()
+    char = _characters.update_character(char_id, body)
+    if not char:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(char)
+
+
+@app.delete("/api/characters/{char_id}")
+async def delete_character(char_id: str):
+    """Delete a character."""
+    ok = _characters.delete_character(char_id)
+    if ok:
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Not found"}, status_code=404)
+
+
+@app.post("/api/characters/import-sillytavern")
+async def import_sillytavern(request: Request):
+    """Import a SillyTavern character from file."""
+    try:
+        body = await request.json()
+        file_path = body.get("file_path")
+        if not file_path:
+            return JSONResponse({"error": "No file path provided"}, status_code=400)
+        
+        char = _characters.import_sillytavern(file_path)
+        return JSONResponse({
+            "success": True,
+            "character": char,
+            "message": f"Imported '{char['name']}'",
+        })
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Import failed: {e}"}, status_code=500)
+
+
+@app.post("/api/characters/bulk-import")
+async def bulk_import_folder(request: Request):
+    """Bulk import all SillyTavern characters from a folder."""
+    try:
+        body = await request.json()
+        folder_path = body.get("folder_path")
+        if not folder_path:
+            return JSONResponse({"error": "No folder path provided"}, status_code=400)
+        
+        result = _characters.bulk_import_folder(folder_path)
+        return JSONResponse({
+            "success": True,
+            **result,
+        })
+    except NotADirectoryError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"error": f"Bulk import failed: {e}"}, status_code=500)
+
+
+# ── Multi-Agent Conversations (new) ────────────────────────────────────
+
+@app.get("/api/multi-conversations")
+async def list_multi_conversations():
+    """List multi-agent conversations."""
+    convs = _conversations.list_conversations()
+    return JSONResponse({"conversations": convs})
+
+
+@app.post("/api/multi-conversations")
+async def create_multi_conversation(request: Request):
+    """Create a new multi-agent conversation."""
+    body = await request.json()
+    title = body.get("title", "New Conversation")
+    participants = body.get("participants", [])  # [{"type": "user|agent", "name": str, "character_id": str}]
+    
+    conv_meta = _conversations.create_conversation(title, participants)
+    return JSONResponse(conv_meta)
+
+
+@app.get("/api/multi-conversations/{conv_id}")
+async def get_multi_conversation(conv_id: str):
+    """Load a multi-agent conversation."""
+    conv = _conversations.get_conversation(conv_id)
+    if not conv:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(conv)
+
+
+@app.put("/api/multi-conversations/{conv_id}")
+async def update_multi_conversation(conv_id: str, request: Request):
+    """Update conversation metadata."""
+    body = await request.json()
+    result = _conversations.update_conversation(conv_id, body)
+    if not result:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(result)
+
+
+@app.delete("/api/multi-conversations/{conv_id}")
+async def delete_multi_conversation(conv_id: str):
+    """Delete a multi-agent conversation."""
+    ok = _conversations.delete_conversation(conv_id)
+    if ok:
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Not found"}, status_code=404)
+
+
+@app.post("/api/multi-conversations/{conv_id}/message")
+async def add_message_to_conversation(conv_id: str, request: Request):
+    """Add a message to conversation history."""
+    body = await request.json()
+    speaker = body.get("speaker", "user")
+    content = body.get("content", "")
+    
+    ok = _conversations.add_message(conv_id, {
+        "speaker": speaker,
+        "content": content,
+    })
+    
+    if ok:
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Failed to add message"}, status_code=500)
+
+
+# ── Chat WebSocket ────────────────────────────────────────────────────
+
+@app.websocket("/ws/chat")
+async def chat_ws(ws: WebSocket):
+    global _conversation
+    await ws.accept()
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            msg = json.loads(raw)
+
+            if msg.get("type") == "clear":
+                _conversation.clear()
+                await ws.send_json({"type": "cleared"})
+                continue
+
+            if msg.get("type") != "chat":
+                continue
+
+            user_text = msg.get("message", "").strip()
+            if not user_text:
+                continue
+
+            backend_name = msg.get("backend") or _cfg.get("active_backend", "ollama")
+            model_id = msg.get("model") or _cfg.get("active_model", "")
+            preset_name = msg.get("preset") or _cfg.get("active_preset", "companion")
+
+            # Build system prompt — preset-aware
+            preset = get_preset(preset_name)
+            parts: list[str] = []
+
+            persona_name = _cfg.get("persona_name", "")
+            persona_desc = _cfg.get("persona_description", "")
+            if persona_name:
+                parts.append(f"Your name is {persona_name}.")
+            if persona_desc:
+                parts.append(persona_desc)
+
+            custom_sp = _cfg.get("system_prompt", "")
+            if custom_sp:
+                parts.append(custom_sp)
+
+            if preset.get("system_prompt_suffix"):
+                parts.append(preset["system_prompt_suffix"])
+
+            # Memory context — preset-aware (uses get_context_for_preset)
+            mem = _ensure_memory()
+            memory_enabled = _cfg.get("memory", {}).get("enabled", True)
+            if memory_enabled:
+                try:
+                    entity = _cfg.get("persona_name", "")
+                    context_block = mem.get_context_for_preset(
+                        preset=preset,
+                        conversation_context=user_text,
+                        entity=entity,
+                    )
+                    if context_block:
+                        parts.append("## Your Memories\n" + context_block)
+                        await ws.send_json({
+                            "type": "memory_context",
+                            "block": context_block[:2000],
+                        })
+                except Exception:
+                    pass
+
+            # Dynamic mood instruction for character/companion presets
+            if preset.get("emotion_weight", 0) >= 0.5 and memory_enabled:
+                try:
+                    mood_info = mem.get_mood()
+                    mood_label = mood_info.get("mood_label", "neutral")
+                    if mood_label != "neutral":
+                        parts.append(
+                            f"## Current Emotional State\n"
+                            f"You are currently feeling **{mood_label}**. "
+                            f"Let this subtly influence your tone and responses."
+                        )
+                    chem = mood_info.get("chemistry")
+                    if chem and chem.get("description"):
+                        parts.append(
+                            f"## Internal State\n{chem['description']}"
+                        )
+                except Exception:
+                    pass
+
+            system_prompt = "\n\n".join(parts) if parts else ""
+
+            # Add user message
+            _conversation.append({"role": "user", "content": user_text})
+
+            # Stream response
+            backend = create_backend(backend_name, _cfg.to_dict())
+            llm_params = _cfg.get("llm_params", {})
+            full_response = []
+
+            try:
+                async for token in backend.generate(
+                    messages=list(_conversation),
+                    system_prompt=system_prompt,
+                    temperature=llm_params.get("temperature", 0.7),
+                    max_tokens=llm_params.get("max_tokens", 2048),
+                    model=model_id,
+                ):
+                    full_response.append(token)
+                    await ws.send_json({"type": "token", "content": token})
+
+                response_text = "".join(full_response)
+                _conversation.append({"role": "assistant", "content": response_text})
+
+                # Post-turn processing: emotion detection, mood update,
+                # chemistry tick, auto-remember, periodic consolidation
+                turn_info = {}
+                if _cfg.get("memory", {}).get("auto_remember", True) and memory_enabled:
+                    try:
+                        turn_info = mem.process_turn(
+                            user_text, response_text, preset
+                        )
+                        # Track mood changes
+                        global _mood_history, _chemistry_history
+                        try:
+                            import time
+                            mood_info = mem.get_mood()
+                            _mood_history.append({
+                                "timestamp": time.time(),
+                                "mood_label": mood_info.get("mood_label", ""),
+                                "pad": mood_info.get("mood_pad", [0,0,0]),
+                                "emotion": turn_info.get("emotion", ""),
+                            })
+                            chem = mood_info.get("chemistry")
+                            if chem:
+                                _chemistry_history.append({
+                                    "timestamp": time.time(),
+                                    "levels": chem.get("levels", {}),
+                                    "description": chem.get("description", ""),
+                                })
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                await ws.send_json({
+                    "type": "done",
+                    "memory_saved": bool(turn_info),
+                    "mood": turn_info.get("mood_label", ""),
+                    "emotion": turn_info.get("emotion", ""),
+                })
+
+            except Exception as e:
+                await ws.send_json({"type": "error", "message": str(e)})
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
+# ── Multi-Agent WebSocket ─────────────────────────────────────────
+
+@app.websocket("/ws/multi-chat/{conv_id}")
+async def multi_chat_ws(ws: WebSocket, conv_id: str):
+    """WebSocket for multi-agent conversations with streaming responses."""
+    await ws.accept()
+
+    # Load conversation
+    conv_data = _conversations.get_conversation(conv_id)
+    if not conv_data:
+        await ws.send_json({"type": "error", "message": "Conversation not found"})
+        await ws.close()
+        return
+
+    conv_meta = conv_data["meta"]
+    agents = [p for p in conv_meta.get("participants", []) if p.get("type") == "agent"]
+    messages = conv_data.get("messages", [])
+
+    # Convert saved messages to chat format
+    chat_history = [
+        {"role": msg.get("speaker", "user").lower() if msg.get("speaker") != "You" else "user",
+         "content": msg.get("content", "")}
+        for msg in messages
+    ]
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            msg = json.loads(raw)
+
+            if msg.get("type") == "settings":
+                # Live update conversation settings
+                new_settings = msg.get("data", {})
+                if "settings" not in conv_meta:
+                    conv_meta["settings"] = {}
+                conv_meta["settings"].update(new_settings)
+                # Reset sequential index if turn order changed
+                if "turn_order" in new_settings:
+                    conv_meta["_seq_index"] = 0
+                # Persist to disk
+                _conversations.update_conversation(conv_id, {"settings": conv_meta["settings"]})
+                await ws.send_json({"type": "settings_saved", "settings": conv_meta["settings"]})
+                continue
+
+            if msg.get("type") == "message":
+                user_text = msg.get("content", "").strip()
+                chat_history.append({"role": "user", "content": user_text})
+                await ws.send_json({
+                    "type": "user_message",
+                    "speaker": "You",
+                    "content": user_text,
+                })
+
+                # Save to conversation
+                _conversations.add_message(conv_id, {
+                    "speaker": "You",
+                    "content": user_text,
+                })
+
+                # Get agents to respond (based on turn order setting)
+                turn_order = conv_meta.get("settings", {}).get("turn_order", conv_meta.get("turn_order", "user_addresses"))
+                max_per_round = int(conv_meta.get("settings", {}).get("max_per_round", 3))
+                responding_agents = agents  # default
+
+                if turn_order == "user_addresses":
+                    mentioned = [a for a in agents if a["name"].lower() in user_text.lower()]
+                    responding_agents = mentioned if mentioned else agents[:1]
+                elif turn_order == "sequential":
+                    # Round-robin: use seq_index tracked in conv_meta
+                    if "_seq_index" not in conv_meta:
+                        conv_meta["_seq_index"] = 0
+                    idx = conv_meta["_seq_index"] % len(agents)
+                    responding_agents = [agents[idx]]
+                    conv_meta["_seq_index"] = idx + 1
+                elif turn_order == "all_respond":
+                    responding_agents = agents[:max_per_round]
+
+                # Stream responses from each agent
+                for agent in responding_agents:
+                    char_id = agent.get("character_id")
+                    char = _characters.get_character(char_id) if char_id else None
+                    agent_name = agent.get("name", "Agent")
+
+                    # Build system prompt from character
+                    parts = [f"You are {agent_name}."]
+                    if char:
+                        if char.get("description"):
+                            parts.append(char["description"])
+                        if char.get("personality"):
+                            parts.append(f"Personality: {char['personality']}")
+                        if char.get("system_prompt"):
+                            parts.append(char["system_prompt"])
+
+                    system_prompt = "\n\n".join(parts)
+
+                    # Get backend for this agent (or default)
+                    backend_name = agent.get("backend", _cfg.get("active_backend", "ollama"))
+                    model_id = agent.get("model", _cfg.get("active_model", ""))
+
+                    backend = create_backend(backend_name, _cfg.to_dict())
+                    llm_params = _cfg.get("llm_params", {})
+                    full_response = []
+
+                    try:
+                        async for token in backend.generate(
+                            messages=list(chat_history),
+                            system_prompt=system_prompt,
+                            temperature=llm_params.get("temperature", 0.7),
+                            max_tokens=llm_params.get("max_tokens", 2048),
+                            model=model_id,
+                        ):
+                            full_response.append(token)
+                            await ws.send_json({
+                                "type": "token",
+                                "speaker": agent_name,
+                                "content": token,
+                            })
+
+                        response_text = "".join(full_response)
+                        chat_history.append({"role": "assistant", "content": response_text})
+
+                        # Save to conversation
+                        _conversations.add_message(conv_id, {
+                            "speaker": agent_name,
+                            "content": response_text,
+                        })
+
+                        await ws.send_json({
+                            "type": "agent_done",
+                            "speaker": agent_name,
+                            "content": response_text,
+                        })
+
+                    except Exception as e:
+                        await ws.send_json({
+                            "type": "error",
+                            "speaker": agent_name,
+                            "message": str(e),
+                        })
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await ws.send_json({"type": "error", "message": str(e)})
+        except:
+            pass
+
+
+# -- Visualization APIs ---------------------------------------------
+
+@app.get("/api/visualization/mood-history")
+async def get_mood_history():
+    """Return mood history for timeline visualization."""
+    return JSONResponse({"history": _mood_history})
+
+
+@app.get("/api/visualization/chemistry-history")
+async def get_chemistry_history():
+    """Return chemistry history for timeline visualization."""
+    return JSONResponse({"history": _chemistry_history})
+
+
+@app.get("/api/visualization/yggdrasil")
+async def get_yggdrasil():
+    """Return knowledge graph data (Yggdrasil) for 3D visualization."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_graph())
+
+
+@app.get("/api/visualization/landscape")
+async def get_landscape():
+    """Return memory landscape data for 3D scatterplot."""
+    mem = _ensure_memory()
+    graph = mem.get_graph()
+    
+    # Process nodes for 3D coordinates
+    nodes_3d = []
+    for i, node in enumerate(graph.get("nodes", [])):
+        nodes_3d.append({
+            "id": node["id"],
+            "content": node["content"],
+            "x": node["vividness"],  # Vividness on X
+            "y": node["importance"],  # Importance on Y
+            "z": node["stability"],   # Stability on Z
+            "color": node.get("source", "episodic"),
+            "size": node["vividness"],
+            "emotion": node["emotion"],
+            "timestamp": node["timestamp"],
+        })
+    
+    return JSONResponse({"nodes": nodes_3d, "total": len(nodes_3d)})
+
+
+@app.get("/api/visualization/cherished")
+async def get_cherished_memories():
+    """Return cherished memories for wall visualization."""
+    mem = _ensure_memory()
+    graph = mem.get_graph()
+    
+    # Filter only cherished memories
+    cherished = [
+        {
+            "id": node["id"],
+            "content": node["content"],
+            "emotion": node["emotion"],
+            "vividness": node["vividness"],
+            "importance": node["importance"],
+            "timestamp": node["timestamp"],
+            "source": node["source"],
+        }
+        for node in graph.get("nodes", [])
+        if node.get("is_cherished")
+    ]
+    
+    return JSONResponse({"memories": cherished, "total": len(cherished)})

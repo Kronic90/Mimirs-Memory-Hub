@@ -1,0 +1,641 @@
+"""Wraps Mimir for the Playground chat loop.
+
+Provides persona-aware memory context, mood tracking, neurochemistry
+ticking, and periodic consolidation — all driven by the active preset.
+"""
+from __future__ import annotations
+
+import re
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+# Ensure Mimir is importable
+_root = str(Path(__file__).resolve().parent.parent)
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+
+from Mimir import Mimir  # type: ignore
+
+# ── lightweight keyword-based emotion detector ────────────────────────
+
+_EMOTION_KEYWORDS: dict[str, list[str]] = {
+    "happy":        ["happy", "glad", "great", "awesome", "wonderful", "amazing", "love it", "fantastic", "yay"],
+    "excited":      ["excited", "thrilled", "pumped", "can't wait", "omg", "wow"],
+    "grateful":     ["thank", "thanks", "grateful", "appreciate", "thankful"],
+    "amused":       ["lol", "haha", "funny", "hilarious", "lmao", "laughing", "rofl"],
+    "curious":      ["curious", "wonder", "how does", "what if", "why does", "interesting", "tell me"],
+    "sad":          ["sad", "depressed", "unhappy", "heartbroken", "miss you", "crying", "cried"],
+    "anxious":      ["anxious", "worried", "nervous", "scared", "afraid", "panic", "stress"],
+    "frustrated":   ["frustrated", "annoying", "annoyed", "ugh", "damn", "stupid", "broken"],
+    "angry":        ["angry", "furious", "pissed", "hate", "rage", "mad at"],
+    "confused":     ["confused", "don't understand", "lost", "what do you mean", "huh", "unclear"],
+    "nostalgic":    ["remember when", "used to", "nostalgia", "back in", "good old", "miss the"],
+    "hopeful":      ["hope", "hopefully", "looking forward", "optimistic", "fingers crossed"],
+    "proud":        ["proud", "accomplished", "nailed it", "did it", "achievement"],
+    "lonely":       ["lonely", "alone", "nobody", "no one", "isolated"],
+    "inspired":     ["inspired", "motivation", "inspired by", "creative", "idea"],
+    "peaceful":     ["calm", "peaceful", "relaxed", "chill", "serene", "at ease"],
+    "hurt":         ["hurt", "betrayed", "let down", "disappointed in"],
+    "warm":         ["sweet", "kind", "caring", "love you", "heart", "wholesome"],
+    "reflective":   ["thinking about", "reflecting", "looking back", "pondering"],
+}
+
+
+def detect_emotions(text: str, top_k: int = 3) -> list[str]:
+    """Detect emotions from text via keyword matching. Returns top-k labels."""
+    lower = text.lower()
+    scores: dict[str, int] = {}
+    for emotion, keywords in _EMOTION_KEYWORDS.items():
+        for kw in keywords:
+            if kw in lower:
+                scores[emotion] = scores.get(emotion, 0) + 1
+    if not scores:
+        return ["neutral"]
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    return ranked[:top_k]
+
+
+def estimate_importance(user_text: str, response_text: str) -> int:
+    """Heuristic importance scoring (1-10)."""
+    score = 5
+    lower = user_text.lower()
+    # Personal revelations
+    if any(w in lower for w in ["i feel", "i love", "i hate", "my family",
+                                 "my life", "i'm scared", "i'm worried"]):
+        score += 2
+    # Questions about the AI itself
+    if any(w in lower for w in ["do you remember", "what do you think",
+                                 "how do you feel"]):
+        score += 1
+    # Very short / trivial
+    if len(user_text) < 20:
+        score -= 1
+    # Very long / detailed
+    if len(user_text) > 300:
+        score += 1
+    return max(1, min(10, score))
+
+
+class MemoryManager:
+    """Full-featured wrapper around Mimir for the playground."""
+
+    # Number of turns between automatic consolidation
+    _CONSOLIDATION_INTERVAL = 25
+
+    def __init__(self, profile_dir: str | Path, chemistry: bool = True,
+                 llm_fn=None):
+        self._dir = Path(profile_dir) / "mimir_data"
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._mimir = Mimir(
+            data_dir=str(self._dir),
+            chemistry=chemistry,
+            llm_fn=llm_fn,
+        )
+        self._turn_count = 0
+        self._last_chemistry_tick = time.time()
+
+    # ── store ─────────────────────────────────────────────────────────
+
+    def remember(self, content: str, emotion: str = "neutral",
+                 importance: int = 5, source: str = "playground",
+                 why_saved: str = "") -> dict:
+        mem = self._mimir.remember(
+            content=content, emotion=emotion,
+            importance=importance, source=source,
+            why_saved=why_saved,
+        )
+        return mem.to_dict()
+
+    def remember_exchange(self, user_msg: str, assistant_msg: str,
+                          emotion: str = "neutral",
+                          importance: int = 5) -> dict:
+        """Store a user<>assistant exchange as a single memory."""
+        summary = f"User said: {user_msg[:200]}"
+        if len(assistant_msg) > 300:
+            assistant_brief = assistant_msg[:300] + "..."
+        else:
+            assistant_brief = assistant_msg
+        summary += f"\nI responded: {assistant_brief}"
+        return self.remember(
+            content=summary, emotion=emotion,
+            importance=importance, source="conversation",
+            why_saved="conversation exchange",
+        )
+
+    # ── mood & neurochemistry ─────────────────────────────────────────
+
+    def update_mood(self, emotions: list[str]) -> None:
+        """Shift mood toward the given emotion labels (EMA blending).
+        Also ticks neurochemistry based on elapsed time."""
+        self._mimir.update_mood(emotions)
+        self._tick_chemistry()
+
+    def _tick_chemistry(self) -> None:
+        """Tick neurochemistry based on real elapsed time."""
+        now = time.time()
+        dt_minutes = (now - self._last_chemistry_tick) / 60.0
+        self._last_chemistry_tick = now
+        if dt_minutes > 0.1:  # at least 6 seconds
+            try:
+                self._mimir.chemistry.tick(dt_minutes)
+            except Exception:
+                pass
+
+    def on_event(self, event_type: str, intensity: float = 0.7) -> None:
+        """Register a neurochemistry event (surprise, conflict, warmth, etc.)."""
+        try:
+            self._mimir.chemistry.on_event(event_type, intensity)
+        except Exception:
+            pass
+
+    def get_mood(self) -> dict:
+        """Return current mood state with label, PAD vector, and chemistry."""
+        result = {
+            "mood_label": self._mimir.mood_label,
+            "mood_pad": list(self._mimir.mood),
+            "session_count": self._mimir.session_count,
+        }
+        try:
+            result["chemistry"] = {
+                "levels": self._mimir.chemistry.levels,
+                "baselines": self._mimir.chemistry.baselines,
+                "description": self._mimir.chemistry.describe(),
+                "is_dampened": self._mimir.is_dampened,
+                "modifiers": self._mimir.chemistry.get_modifiers(),
+            }
+        except Exception:
+            result["chemistry"] = None
+        return result
+
+    # ── per-turn processing (called after each chat exchange) ─────────
+
+    def process_turn(self, user_msg: str, assistant_msg: str,
+                     preset: dict) -> dict:
+        """Full post-turn processing: detect emotion, remember, update mood,
+        tick chemistry, and periodically consolidate.
+
+        Returns dict with emotion, importance, mood info."""
+        combined_text = user_msg + " " + assistant_msg
+
+        # Detect emotions from the conversation
+        emotions = detect_emotions(combined_text)
+        primary_emotion = emotions[0]
+
+        # Estimate importance
+        importance = estimate_importance(user_msg, assistant_msg)
+
+        # Scale importance by preset's emotion_weight for emotional memories
+        emotion_weight = preset.get("emotion_weight", 0.5)
+        if primary_emotion not in ("neutral", "reflective", "thoughtful"):
+            importance = min(10, int(importance + emotion_weight * 2))
+
+        # Store the exchange with detected emotion
+        self.remember_exchange(
+            user_msg, assistant_msg,
+            emotion=primary_emotion,
+            importance=importance,
+        )
+
+        # Update mood (also ticks chemistry internally)
+        self.update_mood(emotions)
+
+        # Detect neurochemistry events from content
+        lower = combined_text.lower()
+        if any(w in lower for w in ["surprise", "unexpected", "wow", "omg"]):
+            self.on_event("surprise", 0.6)
+        if any(w in lower for w in ["conflict", "argue", "disagree", "fight"]):
+            self.on_event("conflict", 0.5)
+        if any(w in lower for w in ["love", "care", "hug", "friend", "together"]):
+            self.on_event("warmth", 0.5)
+        if any(w in lower for w in ["new", "novel", "first time", "discover"]):
+            self.on_event("novelty", 0.4)
+        if any(w in lower for w in ["solved", "fixed", "done", "completed", "success"]):
+            self.on_event("achievement", 0.5)
+        if any(w in lower for w in ["lost", "died", "gone", "miss", "grief"]):
+            self.on_event("loss", 0.5)
+        if any(w in lower for w in ["haha", "lol", "funny", "joke", "lmao"]):
+            self.on_event("humor", 0.4)
+
+        # Increment turn counter
+        self._turn_count += 1
+
+        # Periodic consolidation (muninn)
+        consolidated = None
+        if self._turn_count % self._CONSOLIDATION_INTERVAL == 0:
+            try:
+                consolidated = self._mimir.muninn()
+            except Exception:
+                pass
+
+        # Run huginn every 10 turns for pattern detection
+        insights = None
+        if self._turn_count % 10 == 0:
+            try:
+                self._mimir.huginn()
+            except Exception:
+                pass
+
+        self.save()
+
+        return {
+            "emotion": primary_emotion,
+            "emotions": emotions,
+            "importance": importance,
+            "mood_label": self._mimir.mood_label,
+            "mood_pad": list(self._mimir.mood),
+            "consolidated": consolidated,
+        }
+
+    # ── preset-aware context building ─────────────────────────────────
+
+    def get_context_for_preset(self, preset: dict,
+                               conversation_context: str = "",
+                               entity: str = "") -> str:
+        """Build memory context tailored to the active preset type."""
+        preset_label = preset.get("label", "").lower()
+
+        # All presets get the core context block from Mimir
+        # (includes mood, active memories, lessons, reminders, temporal,
+        #  neurochemistry, drift alerts, resonant memories, insights)
+        context = self._mimir.get_context_block(
+            current_entity=entity,
+            conversation_context=conversation_context,
+        )
+
+        extra_parts: list[str] = []
+
+        # Agent / Assistant: add task & project context
+        if preset.get("task_priority"):
+            overview = self._mimir.get_project_overview()
+            if overview.get("tasks_active", 0) > 0:
+                extra_parts.append("=== ACTIVE TASKS ===")
+                for desc in overview["active_task_descriptions"]:
+                    extra_parts.append(f"- {desc}")
+                extra_parts.append(
+                    f"({overview['tasks_completed']} completed, "
+                    f"{overview['tasks_failed']} failed, "
+                    f"{overview['solutions_stored']} solutions stored)")
+                extra_parts.append("")
+
+            # Include solution patterns for agent
+            if conversation_context:
+                solutions = self._mimir.find_solutions(
+                    conversation_context, top_k=2)
+                if solutions:
+                    extra_parts.append("=== RELEVANT SOLUTIONS ===")
+                    for s in solutions:
+                        extra_parts.append(
+                            f"- Problem: {s.problem[:80]}")
+                        extra_parts.append(
+                            f"  Solution: {s.solution[:120]}")
+                    extra_parts.append("")
+
+        # Character: add extra emotional depth
+        if preset_label == "character":
+            # Surface cherished memories via reflect_on_cherished
+            try:
+                cherished = self._mimir.reflect_on_cherished()
+                if cherished:
+                    extra_parts.append("=== CHERISHED MEMORIES ===")
+                    for m in cherished[:3]:
+                        extra_parts.append(f"- {m.gist} ({m.emotion})")
+                    extra_parts.append("")
+            except Exception:
+                pass
+
+            # Extra drift awareness for deep immersion
+            try:
+                drifted = self._mimir.detect_drift()
+                if drifted:
+                    extra_parts.append("=== EMOTIONAL GROWTH ===")
+                    for m in drifted[:2]:
+                        extra_parts.append(
+                            f"- '{m.gist[:50]}': was {m.original_emotion} "
+                            f"-> now {m.emotion}")
+                    extra_parts.append("")
+            except Exception:
+                pass
+
+        # Assistant: add short-term facts
+        if preset_label == "assistant":
+            try:
+                facts = self._mimir.get_facts()
+                if facts:
+                    extra_parts.append("=== SHORT-TERM FACTS ===")
+                    for f in facts[:10]:
+                        extra_parts.append(
+                            f"- {f.entity}: {f.attribute} = {f.value}")
+                    extra_parts.append("")
+            except Exception:
+                pass
+
+        if extra_parts:
+            context += "\n" + "\n".join(extra_parts)
+
+        return context
+
+    # ── retrieve ──────────────────────────────────────────────────────
+
+    def recall(self, context: str, limit: int = 10) -> list[dict]:
+        memories = self._mimir.recall(context, limit=limit)
+        return [m.to_dict() for m in memories]
+
+    def get_context_block(self, entity: str = "",
+                          conversation_context: str = "") -> str:
+        return self._mimir.get_context_block(
+            current_entity=entity,
+            conversation_context=conversation_context,
+        )
+
+    # ── lifecycle ─────────────────────────────────────────────────────
+
+    def save(self) -> None:
+        self._mimir.save()
+
+    def sleep(self, hours: float = 8.0) -> None:
+        self._mimir.sleep_reset(hours)
+        self._mimir.save()
+
+    def bump_session(self) -> int:
+        return self._mimir.bump_session()
+
+    # ── consolidation & insights ──────────────────────────────────────
+
+    def run_consolidation(self) -> dict:
+        """Run Muninn consolidation daemon."""
+        try:
+            return self._mimir.muninn()
+        except Exception as e:
+            return {"error": str(e)}
+
+    def run_huginn(self) -> list[dict]:
+        """Run Huginn pattern detection."""
+        try:
+            insights = self._mimir.huginn()
+            return [m.to_dict() for m in insights]
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    def run_dream(self) -> list[dict]:
+        """Run Volva dream synthesis."""
+        try:
+            dreams = self._mimir.volva_dream()
+            return [m.to_dict() for m in dreams]
+        except Exception as e:
+            return [{"error": str(e)}]
+
+    # ── diagnostics ───────────────────────────────────────────────────
+
+    def stats(self) -> dict:
+        s = self._mimir.stats()
+        s["turn_count"] = self._turn_count
+        return s
+
+    def emotion_distribution(self) -> dict:
+        return self._mimir.emotion_distribution()
+
+    def neurochemistry_snapshot(self) -> dict:
+        return self._mimir.neurochemistry_snapshot()
+
+    # ── social ────────────────────────────────────────────────────────
+
+    def add_social(self, entity: str, content: str,
+                   emotion: str = "neutral", importance: int = 5,
+                   why_saved: str = "") -> dict:
+        mem = self._mimir.add_social_impression(
+            entity=entity, content=content, emotion=emotion,
+            importance=importance, why_saved=why_saved,
+        )
+        return mem.to_dict()
+
+    # ── facts ─────────────────────────────────────────────────────────
+
+    def add_fact(self, entity: str, attribute: str, value: str) -> dict:
+        f = self._mimir.add_fact(entity, attribute, value)
+        return f.to_dict()
+
+    def get_facts(self, entity: str = "") -> list[dict]:
+        facts = self._mimir.get_facts(entity)
+        return [f.to_dict() for f in facts]
+
+    # ── tasks ─────────────────────────────────────────────────────────
+
+    def start_task(self, description: str, priority: int = 5,
+                   project: str = "") -> dict:
+        t = self._mimir.start_task(description, priority=priority, project=project)
+        return {"task_id": t.task_id, "description": t.description,
+                "priority": t.priority, "status": t.status}
+
+    def complete_task(self, task_id: str, outcome: str = "") -> bool:
+        return self._mimir.complete_task(task_id, outcome)
+
+    def get_active_tasks(self) -> list[dict]:
+        tasks = self._mimir.get_active_tasks()
+        return [{"task_id": t.task_id, "description": t.description,
+                 "priority": t.priority, "status": t.status} for t in tasks]
+
+    # ── lessons ───────────────────────────────────────────────────────
+
+    def get_active_lessons(self) -> list[dict]:
+        lessons = self._mimir.get_active_lessons()
+        return [{"id": l.id, "topic": l.topic, "strategy": l.strategy,
+                 "importance": l.importance,
+                 "failures": l.consecutive_failures} for l in lessons]
+
+    # ── browse / edit / delete ────────────────────────────────────
+
+    def browse_memories(self, offset: int = 0, limit: int = 50,
+                        sort: str = "recent",
+                        emotion_filter: str = "",
+                        source_filter: str = "",
+                        min_importance: int = 0) -> dict:
+        """Return a paginated slice of all memories for the browser UI."""
+        mems = list(self._mimir._reflections)
+
+        # filters
+        if emotion_filter:
+            ef = emotion_filter.lower()
+            mems = [m for m in mems if m.emotion.lower() == ef]
+        if source_filter:
+            sf = source_filter.lower()
+            mems = [m for m in mems if m.source.lower() == sf]
+        if min_importance > 0:
+            mems = [m for m in mems if m.importance >= min_importance]
+
+        # sort
+        if sort == "recent":
+            mems.sort(key=lambda m: m.timestamp, reverse=True)
+        elif sort == "oldest":
+            mems.sort(key=lambda m: m.timestamp)
+        elif sort == "importance":
+            mems.sort(key=lambda m: m.importance, reverse=True)
+        elif sort == "vividness":
+            mems.sort(key=lambda m: getattr(m, '_stability', 0), reverse=True)
+
+        total = len(mems)
+        page = mems[offset:offset + limit]
+
+        # Build index map so we can address them for edit/delete
+        all_refs = self._mimir._reflections
+        results = []
+        for m in page:
+            d = m.to_dict()
+            try:
+                d["_index"] = all_refs.index(m)
+            except ValueError:
+                d["_index"] = -1
+            d["cherished"] = getattr(m, '_cherished', False)
+            d["anchor"] = getattr(m, '_anchor', False)
+            d["vividness"] = round(getattr(m, '_stability', 0), 2)
+            results.append(d)
+
+        return {"total": total, "offset": offset, "limit": limit,
+                "memories": results}
+
+    def delete_memory(self, index: int) -> bool:
+        """Remove a memory by its index in _reflections."""
+        refs = self._mimir._reflections
+        if 0 <= index < len(refs):
+            refs.pop(index)
+            self.save()
+            return True
+        return False
+
+    def update_memory(self, index: int, changes: dict) -> dict | None:
+        """Edit a memory's mutable fields (importance, emotion)."""
+        refs = self._mimir._reflections
+        if index < 0 or index >= len(refs):
+            return None
+        mem = refs[index]
+        if "importance" in changes:
+            mem._importance = max(1, min(10, int(changes["importance"])))
+        if "emotion" in changes:
+            mem.emotion = str(changes["emotion"])
+        self.save()
+        return mem.to_dict()
+
+    def toggle_cherish(self, index: int) -> bool | None:
+        """Toggle cherished status on a memory."""
+        refs = self._mimir._reflections
+        if index < 0 or index >= len(refs):
+            return None
+        mem = refs[index]
+        if mem._cherished:
+            self._mimir.uncherish(mem)
+        else:
+            self._mimir.cherish(mem)
+        self.save()
+        return mem._cherished
+
+    def toggle_anchor(self, index: int) -> bool | None:
+        """Toggle anchor status on a memory."""
+        refs = self._mimir._reflections
+        if index < 0 or index >= len(refs):
+            return None
+        mem = refs[index]
+        mem._anchor = not mem._anchor
+        if mem._anchor:
+            mem._stability = max(mem._stability, 0.95)
+        self.save()
+        return mem._anchor
+
+    def export_all(self) -> list[dict]:
+        """Export every memory as a list of dicts."""
+        return [m.to_dict() for m in self._mimir._reflections]
+
+    def get_unique_emotions(self) -> list[str]:
+        """Return sorted list of unique emotion labels in the store."""
+        return sorted({m.emotion for m in self._mimir._reflections})
+
+    def get_unique_sources(self) -> list[str]:
+        """Return sorted list of unique source labels in the store."""
+        return sorted({m.source for m in self._mimir._reflections})
+
+    # ── visualization ─────────────────────────────────────────────────
+
+    def get_graph(self) -> dict:
+        """Return all memories with vividness, types, and edges for visualization."""
+        mimir = self._mimir
+        reflections = mimir.self_reflections
+        nodes = []
+        for i, m in enumerate(reflections):
+            node = {
+                "id": i,
+                "content": m.content[:120],
+                "emotion": m.emotion,
+                "importance": m.importance,
+                "vividness": round(m.vividness, 3),
+                "timestamp": m.timestamp,
+                "source": m.source,
+                "is_flashbulb": m._is_flashbulb,
+                "is_anchor": m._anchor,
+                "is_cherished": getattr(m, "_cherished", False),
+                "entity": m.entity or "",
+                "stability": round(m._stability, 1),
+                "access_count": m._access_count,
+            }
+            nodes.append(node)
+
+        edges = []
+        for src_idx, targets in mimir._yggdrasil.items():
+            if src_idx >= len(reflections):
+                continue
+            for target_idx, edge_type, strength in targets:
+                if target_idx >= len(reflections):
+                    continue
+                if src_idx < target_idx:  # avoid duplicates
+                    edges.append({
+                        "source": src_idx,
+                        "target": target_idx,
+                        "type": edge_type,
+                        "strength": round(strength, 3),
+                    })
+
+        # Lessons as separate node type
+        lessons = []
+        for ls in mimir._lessons:
+            lessons.append({
+                "id": f"L-{ls.id[:8]}",
+                "topic": ls.topic,
+                "strategy": ls.strategy[:80],
+                "importance": ls.importance,
+                "vividness": round(ls.vividness, 3),
+                "failures": ls.consecutive_failures,
+                "source_idx": ls._source_memory_idx,
+            })
+
+        # Tasks
+        tasks = []
+        for t in mimir._project_tasks:
+            tasks.append({
+                "task_id": t.task_id,
+                "description": t.description[:80],
+                "priority": t.priority,
+                "status": t.status,
+            })
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "lessons": lessons,
+            "tasks": tasks,
+            "total": len(reflections),
+        }
+
+    # ── import ────────────────────────────────────────────────────────
+
+    def import_memory(self, content: str, emotion: str = "neutral",
+                      importance: int = 5, source: str = "import",
+                      why_saved: str = "imported from external system",
+                      timestamp: str = "") -> dict:
+        """Import a memory and let Mimir fully index it."""
+        mem = self._mimir.remember(
+            content=content, emotion=emotion,
+            importance=importance, source=source,
+            why_saved=why_saved,
+        )
+        if timestamp:
+            mem.timestamp = timestamp
+        return mem.to_dict()
