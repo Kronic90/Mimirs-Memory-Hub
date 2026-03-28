@@ -8,6 +8,21 @@ No subscriptions. No data leaving your machine (unless you choose a cloud API). 
 
 ---
 
+## ⬇️ Download & Run (no Python or coding knowledge required)
+
+> **Just want to use it?**
+> Download the ready-to-run Windows package — Python is included, nothing to install.
+>
+> **[⬇ Download Mimirs-Memory-Hub-windows-portable.zip](https://github.com/Kronic90/Mimirs-Memory-Hub/releases/latest)**
+>
+> 1. Unzip it anywhere
+> 2. Double-click **`run.bat`**
+> 3. Your browser opens automatically — done
+
+macOS / Linux users: see the [Installation](#installation) section below.
+
+---
+
 ## What Makes It Different
 
 Most AI chat apps give the AI a simple chat history window. Mimir gives it something closer to actual memory:
