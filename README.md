@@ -53,80 +53,72 @@ You can switch backends at any time from the Settings page.
 
 ## Installation
 
-### Requirements
-- Python 3.10 or newer
-- Git
+### Option A — Portable (no Python required, Windows)
 
-### Step 1 — Clone the repo
+The easiest way. Python is bundled — you don't need to install anything.
 
+1. Download **`Mimirs-Memory-Hub-windows-portable.zip`** from the [Releases page](https://github.com/Kronic90/Mimirs-Memory-Hub/releases)
+2. Unzip it anywhere
+3. Double-click **`run.bat`**
+4. Your browser opens automatically at `http://127.0.0.1:19009`
+
+That's it. No Python, no terminal, no setup.
+
+> **First run only:** `run.bat` downloads Python packages (~100 MB) into the app folder. This takes about a minute and only happens once.
+
+---
+
+### Option B — Clone and run (Windows / macOS / Linux)
+
+If you already have Python 3.10+ installed, this works anywhere.
+
+**1. Clone the repo**
 ```bash
 git clone https://github.com/Kronic90/Mimirs-Memory-Hub.git
 cd Mimirs-Memory-Hub
 ```
 
-### Step 2 — Create a virtual environment
+**2. Run it**
 
+Windows:
+```
+run.bat
+```
+
+macOS / Linux:
 ```bash
-python -m venv venv
+chmod +x run.sh
+./run.sh
 ```
 
-Activate it:
-
-**Windows:**
-```
-venv\Scripts\activate
-```
-
-**macOS / Linux:**
-```
-source venv/bin/activate
-```
-
-### Step 3 — Install dependencies
-
-```bash
-pip install fastapi uvicorn httpx python-multipart
-```
-
-For local GGUF model support (optional):
-```bash
-pip install llama-cpp-python
-```
-
-For agent web search tools (optional):
-```bash
-pip install duckduckgo-search beautifulsoup4 lxml
-```
-
-### Step 4 — Set up a model
-
-**Option A — Ollama (easiest, fully local):**
-
-Download from [ollama.com](https://ollama.com), then pull a model:
-
-```bash
-ollama pull mistral
-```
-
-Any model from the [Ollama library](https://ollama.com/library) works — `llama3`, `qwen2.5`, `phi4`, `gemma3`, etc.
-
-**Option B — Local GGUF file:**
-
-Drop any `.gguf` model file anywhere on your drive. Mimir will find it automatically when you scan from the Models page.
-
-**Option C — Cloud API:**
-
-Have your API key ready. You'll enter it in the Settings page after launching.
+The first run creates a virtual environment and installs packages automatically. After that, launching is instant.
 
 ---
 
-## Running Mimir's Memory Hub
+### Setting up a model (required for both options)
 
+Mimir needs an LLM to generate responses. Choose one:
+
+**Ollama — free, fully local, recommended:**
 ```bash
-python -m playground
+# Install from https://ollama.com, then:
+ollama pull mistral
 ```
+Any model from [ollama.com/library](https://ollama.com/library) works — `llama3`, `qwen2.5`, `phi4`, `gemma3`, etc.
 
-This starts the server on **http://127.0.0.1:19009** and opens your browser automatically.
+**Cloud API — OpenAI / Anthropic / Google:**
+Have your API key ready. Enter it on the Settings page after launching.
+
+**Local GGUF file:**
+Drop any `.gguf` file anywhere on your drive. Mimir will scan and find it from the Models page.
+
+---
+
+## Starting Mimir's Memory Hub
+
+After setup, just double-click `run.bat` (Windows) or run `./run.sh` (macOS/Linux).
+
+Your browser opens automatically at **http://127.0.0.1:19009**. Press `Ctrl+C` in the terminal to stop.
 
 ---
 
