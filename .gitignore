@@ -11,6 +11,14 @@ _test_godtier.py
 mimir_data/
 mimir_demo_data/
 
+# Playground user data — never commit personal memories, characters, conversations, or settings
+playground_data/settings.json
+playground_data/characters/
+playground_data/conversations/
+playground_data/profiles/
+# Keep the models gitignore but not the model files themselves
+!playground_data/models/.gitignore
+
 # Pytest / IDE caches
 .pytest_cache/
 .mypy_cache/
