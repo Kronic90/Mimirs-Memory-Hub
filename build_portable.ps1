@@ -46,7 +46,7 @@ if ($pthFile) {
     Add-Content -Path $pthFile.FullName -Value "`nimport site"
     Write-Host "   Patched $($pthFile.Name) to enable site-packages."
 } else {
-    Write-Warning "Could not find python*._pth — site-packages may not load."
+    Write-Warning "Could not find python*._pth - site-packages may not load."
 }
 
 # ── Step 2: Install pip ───────────────────────────────────────────────
