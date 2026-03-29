@@ -783,12 +783,23 @@ async def chat_ws(ws: WebSocket):
                 _conversation.append({"role": "assistant", "content": response_text})
 
                 # Post-turn processing: emotion detection, mood update,
-                # chemistry tick, auto-remember, periodic consolidation
+                # chemistry tick, auto-remember, periodic consolidation.
+                # If memory curation is enabled, ask the LLM first.
                 turn_info = {}
                 if _cfg.get("memory", {}).get("auto_remember", True) and memory_enabled:
                     try:
+                        # LLM-driven curation (async); falls back to None on error
+                        curation = None
+                        if _cfg.get("memory", {}).get("llm_curation", True):
+                            try:
+                                curation = await mem.llm_curate_memory(
+                                    user_text, response_text, backend
+                                )
+                            except Exception:
+                                curation = None
+
                         turn_info = mem.process_turn(
-                            user_text, response_text, preset
+                            user_text, response_text, preset, curation=curation
                         )
                         # Track mood changes
                         global _mood_history, _chemistry_history

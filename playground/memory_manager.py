@@ -169,34 +169,131 @@ class MemoryManager:
             result["chemistry"] = None
         return result
 
+    # ── LLM-driven memory curation ────────────────────────────────────
+
+    async def llm_curate_memory(
+        self,
+        user_msg: str,
+        assistant_msg: str,
+        backend,
+    ) -> dict | None:
+        """Ask the active LLM to decide whether an exchange is worth
+        remembering and how to tag it.
+
+        Returns a dict::
+
+            {
+                "should_remember": bool,
+                "emotion":         str,   # one of the known emotion labels
+                "importance":      int,   # 1–10
+                "reason":          str,   # brief rationale
+            }
+
+        Returns ``None`` on any error (caller should fall back to
+        heuristics in that case).
+        """
+        prompt = (
+            "You are a memory curator for an AI with persistent memory.\n"
+            "Decide whether this conversation exchange is worth remembering"
+            " long-term.\n\n"
+            f"User: {user_msg[:400]}\n"
+            f"Assistant: {assistant_msg[:400]}\n\n"
+            "Reply ONLY with valid JSON (no other text):\n"
+            '{"should_remember": true, "emotion": "curious",'
+            ' "importance": 7, "reason": "User revealed a personal goal"}\n\n'
+            "Available emotions: neutral, happy, sad, curious, anxious,"
+            " excited, grateful, frustrated, angry, amused, confused,"
+            " nostalgic, hopeful, proud, lonely, inspired, peaceful,"
+            " hurt, warm, reflective\n"
+            "Importance scale: 1 (trivial) to 10 (deeply significant).\n"
+            "Set should_remember to false for purely factual Q&A exchanges"
+            " or identical repetitions."
+        )
+        try:
+            import json as _json
+            import re as _re
+
+            messages = [{"role": "user", "content": prompt}]
+            result = ""
+            async for token in backend.generate(
+                messages=messages,
+                system_prompt="",
+                temperature=0.1,
+                max_tokens=80,
+                model="",
+            ):
+                result += token
+
+            # Extract the first JSON object from the response
+            m = _re.search(r"\{.*?\}", result, _re.DOTALL)
+            if not m:
+                return None
+            data = _json.loads(m.group())
+
+            # Normalise / validate
+            valid_emotions = set(_EMOTION_KEYWORDS.keys()) | {"neutral"}
+            emotion = data.get("emotion", "neutral")
+            if emotion not in valid_emotions:
+                emotion = "neutral"
+            importance = int(data.get("importance", 5))
+            importance = max(1, min(10, importance))
+
+            return {
+                "should_remember": bool(data.get("should_remember", True)),
+                "emotion": emotion,
+                "importance": importance,
+                "reason": str(data.get("reason", ""))[:200],
+            }
+        except Exception:
+            return None
+
     # ── per-turn processing (called after each chat exchange) ─────────
 
     def process_turn(self, user_msg: str, assistant_msg: str,
-                     preset: dict) -> dict:
+                     preset: dict,
+                     curation: dict | None = None) -> dict:
         """Full post-turn processing: detect emotion, remember, update mood,
         tick chemistry, and periodically consolidate.
+
+        If *curation* is provided (from :meth:`llm_curate_memory`), its
+        values take priority over the keyword/heuristic fallbacks and
+        its ``should_remember`` flag controls whether the exchange is stored.
 
         Returns dict with emotion, importance, mood info."""
         combined_text = user_msg + " " + assistant_msg
 
-        # Detect emotions from the conversation
-        emotions = detect_emotions(combined_text)
-        primary_emotion = emotions[0]
+        if curation is not None:
+            # LLM-driven path
+            primary_emotion = curation.get("emotion", "neutral")
+            importance = curation.get("importance", 5)
+            emotions = [primary_emotion]
+            should_remember = curation.get("should_remember", True)
+        else:
+            # Heuristic fallback path
+            emotions = detect_emotions(combined_text)
+            primary_emotion = emotions[0]
+            importance = estimate_importance(user_msg, assistant_msg)
+            # Scale importance by preset's emotion_weight for emotional memories
+            emotion_weight = preset.get("emotion_weight", 0.5)
+            if primary_emotion not in ("neutral", "reflective", "thoughtful"):
+                importance = min(10, int(importance + emotion_weight * 2))
+            should_remember = True
 
-        # Estimate importance
-        importance = estimate_importance(user_msg, assistant_msg)
-
-        # Scale importance by preset's emotion_weight for emotional memories
-        emotion_weight = preset.get("emotion_weight", 0.5)
-        if primary_emotion not in ("neutral", "reflective", "thoughtful"):
-            importance = min(10, int(importance + emotion_weight * 2))
-
-        # Store the exchange with detected emotion
-        self.remember_exchange(
-            user_msg, assistant_msg,
-            emotion=primary_emotion,
-            importance=importance,
-        )
+        if should_remember:
+            why = curation.get("reason", "conversation exchange") if curation else "conversation exchange"
+            mem_content = f"User said: {user_msg[:200]}"
+            if len(assistant_msg) > 300:
+                assistant_brief = assistant_msg[:300] + "..."
+            else:
+                assistant_brief = assistant_msg
+            mem_content += f"\nI responded: {assistant_brief}"
+            self.remember(
+                content=mem_content,
+                emotion=primary_emotion,
+                importance=importance,
+                source="conversation",
+                why_saved=why,
+            )
 
         # Update mood (also ticks chemistry internally)
         self.update_mood(emotions)

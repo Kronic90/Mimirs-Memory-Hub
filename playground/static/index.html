@@ -264,6 +264,10 @@
                     </div>
                     <!-- API Keys Tab -->
                     <div class="tab-panel" id="tab-api">
+                        <div id="api-cost-warning" class="api-cost-warning" style="display:none;">
+                            <strong>⚠️ API Cost Notice</strong>
+                            Mimir makes one extra LLM call per message for memory curation — deciding what to remember and how to tag it. This will increase your costs with cloud providers. For unlimited free usage, switch to <strong>Ollama</strong> or a <strong>Local GGUF</strong> model.
+                        </div>
                         <div class="api-keys-form">
                             <div class="form-group">
                                 <label>OpenAI API Key</label>

@@ -160,6 +160,14 @@ const App = (() => {
         }
     }
 
+    // ── API cost warning helper ───────────────────────────────────
+    function updateApiCostWarning(backend) {
+        const el = document.getElementById('api-cost-warning');
+        if (!el) return;
+        const cloudBackends = ['openai', 'anthropic', 'google', 'custom'];
+        el.style.display = cloudBackends.includes(backend) ? 'block' : 'none';
+    }
+
     // ── Load settings ────────────────────────────────────────────
     async function loadSettings() {
         try {
@@ -170,6 +178,7 @@ const App = (() => {
 
             document.getElementById('backend-select').value = state.backend;
             document.getElementById('preset-select').value = state.preset;
+            updateApiCostWarning(state.backend);
         } catch {
             console.warn('Could not load settings');
         }
@@ -188,6 +197,7 @@ const App = (() => {
             state.model = '';  // Clear model when switching backends
             await apiPut('/settings', { active_backend: state.backend, active_model: '' });
             loadModels();
+            updateApiCostWarning(state.backend);
         });
         document.getElementById('model-select').addEventListener('change', (e) => {
             state.model = e.target.value;

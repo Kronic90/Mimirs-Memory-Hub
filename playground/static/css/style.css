@@ -699,6 +699,19 @@ a:hover { text-decoration: underline; }
 
 .api-keys-form { max-width: 500px; }
 
+.api-cost-warning {
+    max-width: 500px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: rgba(255, 180, 0, 0.12);
+    border: 1px solid rgba(255, 180, 0, 0.4);
+    border-radius: 8px;
+    color: var(--text-secondary, #ccc);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.api-cost-warning strong { color: #ffb400; margin-right: 6px; }
+
 /* ── Local scanner ──────────────────────────────────────────────── */
 
 .scan-dirs {

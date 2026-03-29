@@ -100,11 +100,17 @@ Windows:
 run.bat
 ```
 
-macOS / Linux:
-```bash
-chmod +x run.sh
-./run.sh
+macOS (double-click):
 ```
+start.command   ← double-click this in Finder
+```
+
+macOS / Linux (Terminal):
+```bash
+chmod +x run.sh && ./run.sh
+```
+
+> **Note:** `start.command` handles the `chmod` automatically so you don't have to open a terminal.
 
 The first run creates a virtual environment and installs packages automatically. After that, launching is instant.
 
