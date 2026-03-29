@@ -64,6 +64,14 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Install llama-cpp-python from pre-built CPU wheel (avoids needing a C++ compiler)
+Write-Host "   Installing llama-cpp-python (pre-built CPU wheel)..." -ForegroundColor Yellow
+$LlamaCppWheelUrl = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.19/llama_cpp_python-0.3.19-cp311-cp311-win_amd64.whl"
+& "$PYTHON_DIR\python.exe" -m pip install "$LlamaCppWheelUrl" --quiet --disable-pip-version-check
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "llama-cpp-python install failed - Local GGUF backend will be unavailable."
+}
+
 # ── Step 4: Copy app files ────────────────────────────────────────────
 Write-Host " [4/5] Copying application files..." -ForegroundColor Yellow
 Copy-Item -Path "$ROOT\playground"       -Destination "$BUILD_DIR\playground"       -Recurse
