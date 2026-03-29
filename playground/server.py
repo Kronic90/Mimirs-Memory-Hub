@@ -1155,9 +1155,18 @@ async def chat_ws(ws: WebSocket):
             model_id = msg.get("model") or _cfg.get("active_model", "")
             preset_name = msg.get("preset") or _cfg.get("active_preset", "companion")
 
-            # ── Active character overrides global persona ──────────────────
+            # ── Active agent/character overrides global settings ───────────
             active_char_id = _cfg.get("active_character_id", "")
             active_char = _characters.get_character(active_char_id) if active_char_id else None
+
+            # Agent can override preset type and model
+            if active_char:
+                agent_preset = active_char.get("preset_type", "")
+                if agent_preset:
+                    preset_name = agent_preset
+                agent_model = active_char.get("model", "")
+                if agent_model:
+                    model_id = agent_model
 
             # Build system prompt — preset-aware
             preset = get_preset(preset_name)

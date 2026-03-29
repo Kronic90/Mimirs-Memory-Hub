@@ -62,6 +62,8 @@ class CharacterManager:
             "personality": kwargs.get("personality", ""),
             "system_prompt": kwargs.get("system_prompt", ""),
             "voice_prompt": kwargs.get("voice_prompt", ""),
+            "preset_type": kwargs.get("preset_type", "companion"),
+            "model": kwargs.get("model", ""),
             "alternate_greetings": kwargs.get("alternate_greetings", []),
             "_created": int(__import__("time").time()),
             "_source": "manual",

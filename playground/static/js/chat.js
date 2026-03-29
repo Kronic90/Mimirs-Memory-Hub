@@ -446,21 +446,10 @@ const Chat = (() => {
         }
     }
 
-    // ── Load active character badge ──────────────────────────────
-    async function loadActiveCharBadge() {
+    // ── Update mic button visibility from settings ─────────────
+    async function updateMicVisibility() {
         try {
             const s = await App.api('/settings');
-            const charId = s.active_character_id;
-            const badge = document.getElementById('active-char-badge');
-            if (!badge) return;
-            if (charId) {
-                const chars = await App.api('/characters');
-                const c = chars.find(ch => ch.id === charId);
-                badge.textContent = c ? c.name : '';
-            } else {
-                badge.textContent = '';
-            }
-            // Show/hide mic button
             const micBtn = document.getElementById('btn-mic');
             if (micBtn && s.stt) micBtn.style.display = s.stt.enabled ? '' : 'none';
         } catch { /* ignore */ }
@@ -716,7 +705,7 @@ const Chat = (() => {
 
         updateMemoryPanel();
         setupMic();
-        loadActiveCharBadge();
+        updateMicVisibility();
     }
 
     return { init, handleMessage };

@@ -30,7 +30,7 @@ const App = (() => {
         if (page === 'tools') ToolsPage.init();
         if (page === 'import') ImportPage.init();
         if (page === 'settings') SettingsPage.init();
-        if (page === 'characters') CharactersPage.init();
+        if (page === 'agents') AgentsPage.init();
         if (page === 'conversations') ConversationsPage.init();
         if (page === 'multi-chat') MultiChatPage.init();
     }
@@ -178,10 +178,33 @@ const App = (() => {
             state.preset = state.settings.active_preset || 'companion';
 
             document.getElementById('backend-select').value = state.backend;
-            document.getElementById('preset-select').value = state.preset;
             updateApiCostWarning(state.backend);
+
+            // Populate agent dropdown
+            await loadAgentDropdown();
         } catch {
             console.warn('Could not load settings');
+        }
+    }
+
+    // ── Load agent dropdown in chat header ───────────────────────
+    async function loadAgentDropdown() {
+        const select = document.getElementById('agent-select');
+        if (!select) return;
+        const activeId = state.settings.active_character_id || '';
+        try {
+            const data = await api('/characters');
+            const agents = data.characters || [];
+            select.innerHTML = '<option value="">Default</option>';
+            agents.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = a.name || 'Unnamed';
+                select.appendChild(opt);
+            });
+            select.value = activeId;
+        } catch {
+            select.innerHTML = '<option value="">Default</option>';
         }
     }
 
@@ -204,9 +227,16 @@ const App = (() => {
             state.model = e.target.value;
             apiPut('/settings', { active_model: state.model });
         });
-        document.getElementById('preset-select').addEventListener('change', (e) => {
-            state.preset = e.target.value;
-            apiPut('/settings', { active_preset: state.preset });
+        document.getElementById('agent-select').addEventListener('change', async (e) => {
+            const agentId = e.target.value;
+            if (agentId) {
+                await apiPost('/characters/' + agentId + '/activate', {});
+            } else {
+                await fetch('/api/characters/activate', { method: 'DELETE' });
+            }
+            // Reload settings to pick up any per-agent model/backend overrides
+            await loadSettings();
+            await loadModels();
         });
 
         // Connect WebSocket
@@ -226,5 +256,5 @@ const App = (() => {
 
     document.addEventListener('DOMContentLoaded', init);
 
-    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels };
+    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown };
 })();

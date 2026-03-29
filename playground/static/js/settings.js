@@ -13,6 +13,7 @@ const SettingsPage = (() => {
             document.getElementById('set-persona-name').value = s.persona_name || '';
             document.getElementById('set-persona-desc').value = s.persona_description || '';
             document.getElementById('set-system-prompt').value = s.system_prompt || '';
+            document.getElementById('set-default-preset').value = s.active_preset || 'companion';
 
             const params = s.llm_params || {};
             document.getElementById('set-temperature').value = params.temperature ?? 0.7;
@@ -52,6 +53,7 @@ const SettingsPage = (() => {
             persona_name: document.getElementById('set-persona-name').value,
             persona_description: document.getElementById('set-persona-desc').value,
             system_prompt: document.getElementById('set-system-prompt').value,
+            active_preset: document.getElementById('set-default-preset').value,
             active_profile: document.getElementById('set-profile').value,
             llm_params: {
                 temperature: parseFloat(document.getElementById('set-temperature').value),

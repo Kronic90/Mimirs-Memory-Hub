@@ -83,12 +83,12 @@
                     </svg>
                     <span>Import</span>
                 </li>
-                <li class="nav-item" data-page="characters">
+                <li class="nav-item" data-page="agents">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                         <circle cx="12" cy="7" r="4"/>
                     </svg>
-                    <span>Characters</span>
+                    <span>Agents</span>
                 </li>
                 <li class="nav-item" data-page="settings">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -111,7 +111,9 @@
             <div id="page-chat" class="page active">
                 <div class="chat-header">
                     <div class="chat-header-left">
-                        <span id="active-char-badge" class="active-char-badge" style="display:none;"></span>
+                        <select id="agent-select" class="header-select" title="Active agent / persona">
+                            <option value="">Default</option>
+                        </select>
                         <select id="backend-select" class="header-select">
                             <option value="local">Local GGUF</option>
                             <option value="ollama">Ollama</option>
@@ -122,13 +124,6 @@
                         </select>
                         <select id="model-select" class="header-select">
                             <option value="">Select model…</option>
-                        </select>
-                        <select id="preset-select" class="header-select">
-                            <option value="companion">🤝 Companion</option>
-                            <option value="agent">⚡ Agent</option>
-                            <option value="character">🎭 Character</option>
-                            <option value="assistant">💼 Assistant</option>
-                            <option value="custom">⚙️ Custom</option>
                         </select>
                     </div>
                     <div class="chat-header-right">
@@ -739,7 +734,7 @@
                 </div>
                 <div class="settings-form">
                     <div class="settings-section">
-                        <h3>Persona</h3>
+                        <h3>Default Persona <span class="label-hint">— used when no agent is active</span></h3>
                         <div class="form-group">
                             <label>Name</label>
                             <input type="text" id="set-persona-name" class="input" placeholder="e.g. Aria, Max, Sage…">
@@ -748,11 +743,19 @@
                             <label>Description</label>
                             <textarea id="set-persona-desc" class="input textarea" rows="3" placeholder="Describe the personality, background, quirks…"></textarea>
                         </div>
-                    </div>
-                    <div class="settings-section">
-                        <h3>System Prompt</h3>
                         <div class="form-group">
-                            <textarea id="set-system-prompt" class="input textarea" rows="6" placeholder="Custom system prompt (added before the preset prompt)…"></textarea>
+                            <label>System Prompt</label>
+                            <textarea id="set-system-prompt" class="input textarea" rows="4" placeholder="Custom system prompt…"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Default Preset</label>
+                            <select id="set-default-preset" class="input input-sm">
+                                <option value="companion">Companion</option>
+                                <option value="agent">Agent</option>
+                                <option value="assistant">Assistant</option>
+                                <option value="character">Character</option>
+                                <option value="custom">Custom</option>
+                            </select>
                         </div>
                     </div>
                     <div class="settings-section">
@@ -851,25 +854,28 @@
                 </div>
             </div>
 
-            <!-- ──────── CHARACTERS PAGE ──────── -->
-            <div id="page-characters" class="page">
+            <!-- ──────── AGENTS PAGE ──────── -->
+            <div id="page-agents" class="page">
                 <div class="page-header">
                     <div>
-                        <h1>Characters</h1>
-                        <p class="text-muted">Create agents / personas — each with their own name, personality, voice, and isolated memory</p>
+                        <h1>Agents</h1>
+                        <p class="text-muted">Create agent presets — each with their own name, persona, system prompt, model, voice, and isolated memory</p>
                     </div>
-                    <button id="btn-new-character" class="btn btn-primary">+ New</button>
+                    <div style="display:flex;gap:8px;">
+                        <button id="btn-import-st" class="btn btn-secondary" title="Import SillyTavern JSON">Import ST</button>
+                        <button id="btn-new-agent" class="btn btn-primary">+ New Agent</button>
+                    </div>
                 </div>
-                <div class="char-layout">
-                    <div class="char-sidebar">
-                        <div id="char-list" class="char-list">
-                            <div class="loading">Loading characters…</div>
+                <div class="agent-layout">
+                    <div class="agent-sidebar">
+                        <div id="agent-list" class="agent-list">
+                            <div class="loading">Loading agents…</div>
                         </div>
                     </div>
-                    <div class="char-editor-pane">
-                        <div id="char-editor">
-                            <div class="char-editor-empty">
-                                <p>Select a character or create a new one.</p>
+                    <div class="agent-editor-pane">
+                        <div id="agent-editor">
+                            <div class="agent-editor-empty">
+                                <p>Select an agent or create a new one to get started.</p>
                             </div>
                         </div>
                     </div>
@@ -1025,7 +1031,7 @@
     <script src="/static/js/tools.js"></script>
     <script src="/static/js/import.js"></script>
     <script src="/static/js/settings.js"></script>
-    <script src="/static/js/characters.js"></script>
+    <script src="/static/js/agents.js"></script>
     <script src="/static/js/conversations.js"></script>
     <script src="/static/js/multi-chat.js"></script>
 </body>
