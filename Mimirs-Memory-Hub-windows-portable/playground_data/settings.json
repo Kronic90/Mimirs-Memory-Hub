@@ -1,0 +1,53 @@
+{
+  "active_backend": "ollama",
+  "active_model": "",
+  "active_preset": "companion",
+  "active_profile": "default",
+  "active_character_id": "",
+  "backends": {
+    "ollama": {
+      "base_url": "http://localhost:11434"
+    },
+    "openai": {
+      "api_key": "",
+      "base_url": "https://api.openai.com/v1"
+    },
+    "anthropic": {
+      "api_key": ""
+    },
+    "google": {
+      "api_key": ""
+    },
+    "custom": {
+      "base_url": "",
+      "api_key": "",
+      "label": "Custom (OpenAI-compatible)"
+    }
+  },
+  "system_prompt": "",
+  "persona_name": "",
+  "persona_description": "",
+  "llm_params": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_tokens": 2048,
+    "context_length": 8192
+  },
+  "memory": {
+    "enabled": true,
+    "auto_remember": true,
+    "chemistry": true
+  },
+  "tts": {
+    "enabled": false,
+    "mode": "hf",
+    "model_path": "maya-research/maya1",
+    "server_url": "http://localhost:8081"
+  },
+  "stt": {
+    "enabled": false,
+    "model_size": "base",
+    "device": "auto"
+  },
+  "scan_directories": []
+}

@@ -1,0 +1,293 @@
+"""Sandboxed tool execution for Agent mode.
+
+Each tool runs with explicit user-granted permissions.
+No filesystem, network, or OS access unless whitelisted.
+"""
+from __future__ import annotations
+
+import datetime
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from urllib.parse import urlparse
+
+import httpx
+
+
+def run_tool(tool_name: str, params: dict, permissions: dict) -> dict:
+    """Dispatch a tool call with permission checks."""
+    runners = {
+        "read_file": _tool_read_file,
+        "write_file": _tool_write_file,
+        "list_directory": _tool_list_directory,
+        "web_search": _tool_web_search,
+        "fetch_page": _tool_fetch_page,
+        "run_code": _tool_run_code,
+        "datetime": _tool_datetime,
+        "weather": _tool_weather,
+    }
+    runner = runners.get(tool_name)
+    if not runner:
+        return {"error": f"Unknown tool: {tool_name}", "available": list(runners.keys())}
+    try:
+        return runner(params, permissions)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── File tools ────────────────────────────────────────────────────────
+
+def _check_path_allowed(filepath: str, permissions: dict) -> str | None:
+    """Return None if allowed, or an error message."""
+    if not permissions.get("file_access"):
+        return "File access not enabled. Enable it in Tools settings."
+    allowed = permissions.get("allowed_paths", [])
+    if not allowed:
+        return "No directories whitelisted. Add allowed paths in Tools settings."
+    resolved = str(Path(filepath).resolve())
+    for ap in allowed:
+        ap_resolved = str(Path(ap).resolve())
+        if resolved.startswith(ap_resolved):
+            return None
+    return f"Path not in allowed directories. Allowed: {allowed}"
+
+
+def _tool_read_file(params: dict, permissions: dict) -> dict:
+    filepath = params.get("path", "")
+    if not filepath:
+        return {"error": "path parameter required"}
+    err = _check_path_allowed(filepath, permissions)
+    if err:
+        return {"error": err}
+    p = Path(filepath)
+    if not p.exists():
+        return {"error": f"File not found: {filepath}"}
+    if not p.is_file():
+        return {"error": f"Not a file: {filepath}"}
+    if p.stat().st_size > 1_000_000:  # 1MB limit
+        return {"error": "File too large (>1MB). Read specific sections instead."}
+    try:
+        content = p.read_text(encoding="utf-8", errors="replace")
+        return {"content": content, "path": str(p), "size": len(content)}
+    except Exception as e:
+        return {"error": f"Read failed: {e}"}
+
+
+def _tool_write_file(params: dict, permissions: dict) -> dict:
+    filepath = params.get("path", "")
+    content = params.get("content", "")
+    if not filepath:
+        return {"error": "path parameter required"}
+    err = _check_path_allowed(filepath, permissions)
+    if err:
+        return {"error": err}
+    p = Path(filepath)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding="utf-8")
+    return {"ok": True, "path": str(p), "bytes_written": len(content)}
+
+
+def _tool_list_directory(params: dict, permissions: dict) -> dict:
+    dirpath = params.get("path", "")
+    if not dirpath:
+        return {"error": "path parameter required"}
+    err = _check_path_allowed(dirpath, permissions)
+    if err:
+        return {"error": err}
+    p = Path(dirpath)
+    if not p.is_dir():
+        return {"error": f"Not a directory: {dirpath}"}
+    entries = []
+    for e in sorted(p.iterdir()):
+        entries.append({
+            "name": e.name,
+            "type": "directory" if e.is_dir() else "file",
+            "size": e.stat().st_size if e.is_file() else None,
+        })
+    return {"path": str(p), "entries": entries[:200]}
+
+
+# ── Web tools ─────────────────────────────────────────────────────────
+
+def _check_site_allowed(url: str, permissions: dict) -> str | None:
+    if not permissions.get("web_search"):
+        return "Web access not enabled. Enable it in Tools settings."
+    allowed = permissions.get("allowed_sites", [])
+    if not allowed:
+        return None  # no whitelist means all sites allowed
+    parsed = urlparse(url)
+    domain = parsed.hostname or ""
+    for site in allowed:
+        site = site.lower().lstrip("*.")
+        if domain == site or domain.endswith("." + site):
+            return None
+    return f"Site {domain} not in allowed list: {allowed}"
+
+
+def _tool_web_search(params: dict, permissions: dict) -> dict:
+    if not permissions.get("web_search"):
+        return {"error": "Web search not enabled. Enable it in Tools settings."}
+    query = params.get("query", "")
+    if not query:
+        return {"error": "query parameter required"}
+    # Use DuckDuckGo HTML search (no API key needed)
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            resp = client.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": query},
+                headers={"User-Agent": "MimirsWell/1.0"},
+            )
+            resp.raise_for_status()
+            # Extract result snippets from HTML
+            text = resp.text
+            results = []
+            # Simple extraction of result blocks
+            parts = text.split('class="result__snippet"')
+            for part in parts[1:6]:  # top 5 results
+                snippet_end = part.find("</a>")
+                if snippet_end > 0:
+                    snippet = part[:snippet_end]
+                    # Strip HTML tags
+                    clean = ""
+                    in_tag = False
+                    for ch in snippet:
+                        if ch == "<":
+                            in_tag = True
+                        elif ch == ">":
+                            in_tag = False
+                        elif not in_tag:
+                            clean += ch
+                    if clean.strip():
+                        results.append(clean.strip()[:300])
+            return {"query": query, "results": results}
+    except Exception as e:
+        return {"error": f"Search failed: {e}"}
+
+
+def _tool_fetch_page(params: dict, permissions: dict) -> dict:
+    url = params.get("url", "")
+    if not url:
+        return {"error": "url parameter required"}
+    err = _check_site_allowed(url, permissions)
+    if err:
+        return {"error": err}
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            resp = client.get(url, headers={"User-Agent": "MimirsWell/1.0"})
+            resp.raise_for_status()
+            text = resp.text
+            # Strip HTML, return text content (max 5000 chars)
+            clean = ""
+            in_tag = False
+            for ch in text:
+                if ch == "<":
+                    in_tag = True
+                elif ch == ">":
+                    in_tag = False
+                elif not in_tag:
+                    clean += ch
+            # Collapse whitespace
+            import re
+            clean = re.sub(r"\s+", " ", clean).strip()
+            return {"url": url, "content": clean[:5000], "truncated": len(clean) > 5000}
+    except Exception as e:
+        return {"error": f"Fetch failed: {e}"}
+
+
+# ── Code execution ───────────────────────────────────────────────────
+
+def _tool_run_code(params: dict, permissions: dict) -> dict:
+    if not permissions.get("code_execution"):
+        return {"error": "Code execution not enabled. Enable it in Tools settings."}
+    code = params.get("code", "")
+    language = params.get("language", "python")
+    if not code:
+        return {"error": "code parameter required"}
+    if language != "python":
+        return {"error": f"Only Python is supported, got: {language}"}
+    if len(code) > 10000:
+        return {"error": "Code too long (>10000 chars)"}
+
+    # Sandbox: block dangerous imports/calls
+    blocked = [
+        "import os", "import sys", "import subprocess", "import shutil",
+        "__import__", "exec(", "eval(", "open(", "compile(",
+        "import socket", "import http", "import urllib",
+        "import ctypes", "import signal", "import _thread",
+        "import multiprocessing", "import pathlib",
+    ]
+    code_lower = code.lower().replace(" ", "")
+    for b in blocked:
+        if b.lower().replace(" ", "") in code_lower:
+            return {"error": f"Blocked: {b} is not allowed in sandboxed execution. "
+                    "Enable file access or web access in Tools settings for those capabilities."}
+
+    # Run in a subprocess with timeout
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False,
+                                     encoding="utf-8") as f:
+        f.write(code)
+        f.flush()
+        tmp_path = f.name
+
+    try:
+        result = subprocess.run(
+            [sys.executable, tmp_path],
+            capture_output=True, text=True,
+            timeout=10,
+            cwd=tempfile.gettempdir(),
+        )
+        return {
+            "stdout": result.stdout[:5000],
+            "stderr": result.stderr[:2000],
+            "exit_code": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {"error": "Code execution timed out (10s limit)"}
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+# ── Utility tools ─────────────────────────────────────────────────────
+
+def _tool_datetime(params: dict, permissions: dict) -> dict:
+    """Always available — no permissions needed."""
+    now = datetime.datetime.now()
+    return {
+        "datetime": now.isoformat(),
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "day": now.strftime("%A"),
+        "timezone": str(datetime.datetime.now().astimezone().tzinfo),
+    }
+
+
+def _tool_weather(params: dict, permissions: dict) -> dict:
+    """Get weather using wttr.in (no API key needed)."""
+    if not permissions.get("web_search"):
+        return {"error": "Web access not enabled. Enable it in Tools settings."}
+    location = params.get("location", "")
+    try:
+        url = f"https://wttr.in/{location}?format=j1" if location else "https://wttr.in/?format=j1"
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(url, headers={"User-Agent": "MimirsWell/1.0"})
+            resp.raise_for_status()
+            data = resp.json()
+            current = data.get("current_condition", [{}])[0]
+            return {
+                "location": location or "auto-detected",
+                "temperature_c": current.get("temp_C", ""),
+                "temperature_f": current.get("temp_F", ""),
+                "condition": current.get("weatherDesc", [{}])[0].get("value", ""),
+                "humidity": current.get("humidity", ""),
+                "wind_mph": current.get("windspeedMiles", ""),
+                "feels_like_c": current.get("FeelsLikeC", ""),
+            }
+    except Exception as e:
+        return {"error": f"Weather lookup failed: {e}"}

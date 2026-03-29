@@ -32,6 +32,17 @@ app = FastAPI(title="Mimir's Memory Hub", version="0.2.0")
 _static = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
+
+# Prevent browser from caching stale JS/CSS/HTML
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # ── State ─────────────────────────────────────────────────────────────
 
 _cfg = Config()

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Characters - Mimir's Memory Hub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .characters-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+
+        .characters-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .characters-header h1 {
+            font-size: 32px;
+            color: #333;
+            margin: 0;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #45a049;
+        }
+
+        /* Grid */
+        .characters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .character-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .character-card:hover {
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            transform: translateY(-4px);
+        }
+
+        .character-avatar {
+            width: 100%;
+            height: 180px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 80px;
+            color: white;
+        }
+
+        .character-content {
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .character-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .character-description {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            flex: 1;
+        }
+
+        .character-id {
+            font-size: 11px;
+            color: #999;
+            font-family: 'Monaco', monospace;
+            margin-top: auto;
+            margin-bottom: 12px;
+        }
+
+        .character-actions {
+            display: flex;
+            gap: 8px;
+            padding-top: 12px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .char-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .char-btn-use {
+            background: #667eea;
+            color: white;
+        }
+
+        .char-btn-use:hover {
+            background: #5569d1;
+        }
+
+        .char-btn-delete {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .char-btn-delete:hover {
+            background: #ffcdd2;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .empty-state-hint {
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #333;
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.error {
+            background: #d32f2f;
+        }
+
+        .toast.success {
+            background: #388e3c;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .characters-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .header-actions {
+                width: 100%;
+            }
+
+            .characters-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="navbar-brand">
+                <a href="/">🧠 Mimir's Memory Hub</a>
+            </div>
+            <div class="navbar-menu">
+                <a href="/">Chat</a>
+                <a href="/conversations.html">Conversations</a>
+                <a href="/characters.html" class="active">Characters</a>
+                <a href="/multi-chat.html">Multi-Chat</a>
+                <a href="/settings.html">Settings</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="characters-container">
+        <div class="characters-header">
+            <h1>🎭 Characters</h1>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="createNewCharacter()">+ New Character</button>
+                <a href="/bulk-importer.html" class="btn btn-success">📦 Bulk Import</a>
+                <button class="btn btn-secondary" onclick="refreshCharacters()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <div id="charactersGrid" class="characters-grid">
+            <div class="empty-state">
+                <div class="empty-state-icon">🎭</div>
+                <div class="empty-state-text">No characters yet</div>
+                <div class="empty-state-hint">Create a new character or bulk import from SillyTavern</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadCharacters() {
+            try {
+                const response = await fetch('/api/characters');
+                const data = await response.json();
+                renderCharacters(data.characters || []);
+            } catch (error) {
+                console.error('Failed to load characters:', error);
+                showToast('Failed to load characters', 'error');
+            }
+        }
+
+        function renderCharacters(characters) {
+            const grid = document.getElementById('charactersGrid');
+
+            if (characters.length === 0) {
+                grid.innerHTML = `
+                    <div style="grid-column: 1 / -1;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🎭</div>
+                            <div class="empty-state-text">No characters yet</div>
+                            <div class="empty-state-hint">Create a new character or bulk import from SillyTavern</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = characters.map(char => `
+                <div class="character-card">
+                    <div class="character-avatar">${getCharacterEmoji(char.name)}</div>
+                    <div class="character-content">
+                        <div class="character-name">${escapeHtml(char.name)}</div>
+                        <div class="character-description">${escapeHtml(char.description || 'No description')}</div>
+                        <div class="character-id">ID: ${char.id}</div>
+                    </div>
+                    <div class="character-actions">
+                        <button class="char-btn char-btn-use" onclick="useCharacter('${char.id}')">Use</button>
+                        <button class="char-btn char-btn-delete" onclick="deleteCharacter('${char.id}')">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getCharacterEmoji(name) {
+            const emojiMap = {
+                'wizard': '🧙', 'gandalf': '🧙', 'magic': '✨',
+                'knight': '⚔️', 'warrior': '🗡️', 'aragorn': '🗡️',
+                'elf': '🧝', 'fairy': '🧚', 'mage': '🔮',
+                'rogue': '🗡️', 'thief': '🎩', 'archer': '🏹',
+                'paladin': '✨', 'cleric': '⛪', 'druid': '🌿',
+                'ranger': '🏹', 'bard': '🎸', 'summoner': '👾',
+            };
+
+            const lower = name.toLowerCase();
+            for (const [key, emoji] of Object.entries(emojiMap)) {
+                if (lower.includes(key)) return emoji;
+            }
+
+            return ['🧙', '🗡️', '🧝', '🔮', '✨', '🎭', '🎪', '👾'][Math.floor(Math.random() * 8)];
+        }
+
+        async function useCharacter(charId) {
+            // Redirect to create new conversation with this character
+            window.location.href = `/multi-chat.html?create=true&character=${charId}`;
+        }
+
+        async function deleteCharacter(charId) {
+            if (!confirm('Are you sure you want to delete this character?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/characters/${charId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    showToast('Character deleted', 'success');
+                    loadCharacters();
+                } else {
+                    showToast('Failed to delete character', 'error');
+                }
+            } catch (error) {
+                console.error('Delete failed:', error);
+                showToast('Failed to delete character', 'error');
+            }
+        }
+
+        function createNewCharacter() {
+            const name = prompt('Character name:');
+            if (!name) return;
+
+            const description = prompt('Character description:');
+
+            fetch('/api/characters', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    description: description || '',
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.id) {
+                    showToast(`Created ${name}`, 'success');
+                    loadCharacters();
+                } else {
+                    showToast('Failed to create character', 'error');
+                }
+            })
+            .catch(e => {
+                console.error('Create failed:', e);
+                showToast('Failed to create character', 'error');
+            });
+        }
+
+        function refreshCharacters() {
+            loadCharacters();
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load on page load
+        loadCharacters();
+    </script>
+</body>
+</html>
