@@ -5,6 +5,7 @@
 const Chat = (() => {
     let currentAssistantEl = null;
     let currentTokens = [];
+    let pendingImageB64 = '';  // base64 of image attached to next message
 
     // ── Configure marked ─────────────────────────────────────────
     function setupMarked() {
@@ -21,17 +22,26 @@ const Chat = (() => {
         }
     }
 
-    // ── Strip <remember>…</remember> tags from display text ─────
-    // The server already strips them from stored history, but tokens
-    // arrive raw during streaming — hide them client-side too.
-    const _REMEMBER_RE = /<remember(?:[^>]*)>[\s\S]*?<\/remember>/gi;
-    // Also hide a partially-streaming <remember> that hasn't closed yet
-    const _REMEMBER_OPEN_RE = /<remember(?:[^>]*)>[\s\S]*/i;
+    // ── Strip special model tags from display text ───────────────
+    // The server strips them from history, but tokens arrive raw during streaming.
+    const _REMEMBER_RE   = /<remember(?:[^>]*)>[\s\S]*?<\/remember>/gi;
+    const _REMIND_RE     = /<remind(?:[^>]*)>[\s\S]*?<\/remind>/gi;
+    const _SHOWIMAGE_RE  = /<showimage\s+hash=["'][^"']+["'](?:\s*\/)?>/gi;
+    // Partially-streaming open tags not yet closed
+    const _REMEMBER_OPEN_RE   = /<remember(?:[^>]*)>[\s\S]*/i;
+    const _REMIND_OPEN_RE     = /<remind(?:[^>]*)>[\s\S]*/i;
 
-    function stripRememberTags(text) {
-        // Remove complete tags first, then any still-open trailing tag
-        return text.replace(_REMEMBER_RE, '').replace(_REMEMBER_OPEN_RE, '').trim();
+    function stripSpecialTags(text) {
+        return text
+            .replace(_REMEMBER_RE, '')
+            .replace(_REMIND_RE, '')
+            .replace(_SHOWIMAGE_RE, '')
+            .replace(_REMEMBER_OPEN_RE, '')
+            .replace(_REMIND_OPEN_RE, '')
+            .trim();
     }
+    // Keep old name as alias so nothing breaks
+    const stripRememberTags = stripSpecialTags;
 
     // ── Split <think>…</think> from response text ───────────────
     // Returns { thinking: string|null, response: string, streaming: bool }
@@ -145,6 +155,48 @@ const Chat = (() => {
         return contentEl;
     }
 
+    // ── Image attachment ─────────────────────────────────────────
+    function attachImage(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            App.toast('Please select an image file', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;  // "data:image/...",base64...
+            // Strip the data URL prefix to get pure base64
+            pendingImageB64 = dataUrl.split(',')[1] || '';
+            // Show preview
+            const preview = document.getElementById('image-attach-preview');
+            if (preview) {
+                preview.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.className = 'attach-thumb';
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'attach-remove';
+                removeBtn.title = 'Remove image';
+                removeBtn.textContent = '✕';
+                removeBtn.addEventListener('click', clearAttachedImage);
+                preview.appendChild(img);
+                preview.appendChild(removeBtn);
+                preview.style.display = 'flex';
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function clearAttachedImage() {
+        pendingImageB64 = '';
+        const preview = document.getElementById('image-attach-preview');
+        if (preview) {
+            preview.innerHTML = '';
+            preview.style.display = 'none';
+        }
+        const fileInput = document.getElementById('image-file-input');
+        if (fileInput) fileInput.value = '';
+    }
+
     // ── Send message ─────────────────────────────────────────────
     function send() {
         const input = document.getElementById('chat-input');
@@ -156,7 +208,15 @@ const Chat = (() => {
             return;
         }
 
-        createMessageEl('user', text);
+        // Show user message (with image thumbnail if attached)
+        const userMsgEl = createMessageEl('user', text);
+        if (pendingImageB64) {
+            const thumb = document.createElement('img');
+            thumb.src = 'data:image/jpeg;base64,' + pendingImageB64;
+            thumb.className = 'user-attached-image';
+            userMsgEl.insertAdjacentElement('afterbegin', thumb);
+        }
+
         input.value = '';
         input.style.height = 'auto';
 
@@ -166,13 +226,31 @@ const Chat = (() => {
         App.state.streaming = true;
         document.getElementById('btn-send').disabled = true;
 
-        App.sendWS({
+        const wsPayload = {
             type: 'chat',
             message: text,
             backend: App.state.backend,
             model: App.state.model,
             preset: App.state.preset,
-        });
+        };
+        if (pendingImageB64) wsPayload.image = pendingImageB64;
+        App.sendWS(wsPayload);
+        clearAttachedImage();
+    }
+
+    // ── Append a recalled image card into chat ───────────────────
+    function showRecalledImage(hash) {
+        const container = document.getElementById('chat-messages');
+        const card = document.createElement('div');
+        card.className = 'recalled-image-card';
+        const img = document.createElement('img');
+        img.src = '/api/memory/visual/' + hash;
+        img.className = 'recalled-image';
+        img.alt = 'Recalled memory image';
+        img.onerror = () => card.remove();
+        card.appendChild(img);
+        container.appendChild(card);
+        container.scrollTop = container.scrollHeight;
     }
 
     // ── Handle incoming WebSocket messages ───────────────────────
@@ -181,7 +259,7 @@ const Chat = (() => {
             case 'token':
                 if (currentAssistantEl) {
                     currentTokens.push(msg.content);
-                    const raw = stripRememberTags(currentTokens.join(''));
+                    const raw = stripSpecialTags(currentTokens.join(''));
                     const split = splitThinking(raw);
 
                     if (split.thinking !== null) {
@@ -249,7 +327,32 @@ const Chat = (() => {
             case 'cleared':
                 App.toast('Conversation cleared', 'info');
                 break;
+
+            case 'show_image':
+                showRecalledImage(msg.hash);
+                break;
+
+            case 'reminder_set':
+                showReminderPip(msg.text, msg.hours);
+                break;
         }
+    }
+
+    // ── Reminder-set pip ──────────────────────────────────────────
+    function showReminderPip(text, hours) {
+        const container = document.getElementById('chat-messages');
+        const pip = document.createElement('div');
+        pip.className = 'memory-pip reminder-pip';
+        const when = hours <= 1 ? 'in ~1h'
+            : hours <= 24 ? `in ~${Math.round(hours)}h`
+            : `in ~${Math.round(hours / 24)}d`;
+        pip.textContent = `⏰ Reminder set (${when}): ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`;
+        container.appendChild(pip);
+        container.scrollTop = container.scrollHeight;
+        setTimeout(() => {
+            pip.style.opacity = '0';
+            setTimeout(() => pip.remove(), 500);
+        }, 5000);
     }
 
     // ── Update memory panel (mood + chemistry bars) ──────────────
@@ -449,6 +552,27 @@ const Chat = (() => {
         });
         if (historyBackdrop) historyBackdrop.addEventListener('click', () => {
             document.getElementById('history-modal').style.display = 'none';
+        });
+
+        // Image attachment button
+        const attachBtn = document.getElementById('btn-attach-image');
+        const fileInput = document.getElementById('image-file-input');
+        if (attachBtn && fileInput) {
+            attachBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) attachImage(e.target.files[0]);
+            });
+        }
+        // Image paste from clipboard
+        document.addEventListener('paste', (e) => {
+            if (App.state.currentPage !== 'chat') return;
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    attachImage(item.getAsFile());
+                    break;
+                }
+            }
         });
 
         input.addEventListener('keydown', (e) => {

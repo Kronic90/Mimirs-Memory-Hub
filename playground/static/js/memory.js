@@ -455,6 +455,45 @@ const MemoryPage = (() => {
         }
     }
 
+    // ── Visual Memories ────────────────────────────────────────────────────
+    async function loadVisualMemories() {
+        const el = document.getElementById('visual-memories-grid');
+        if (!el) return;
+        try {
+            const memories = await App.api('/memory/visual');
+            if (!memories.length) {
+                el.innerHTML = '<p class="text-muted">No visual memories saved yet.</p>';
+                return;
+            }
+            el.innerHTML = '';
+            memories.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'visual-memory-card';
+
+                const img = document.createElement('img');
+                img.src = '/api/memory/visual/' + m.visual_hash;
+                img.className = 'vm-thumb';
+                img.alt = m.visual_description || 'visual memory';
+                img.loading = 'lazy';
+
+                const overlay = document.createElement('div');
+                overlay.className = 'vm-overlay';
+                overlay.innerHTML = `
+                    <div class="vm-desc">${esc(m.visual_description || '')}</div>
+                    <div class="vm-meta">${esc(m.emotion || 'neutral')} ·
+                        imp ${m.importance || 5} ·
+                        ${m.timestamp ? new Date(m.timestamp).toLocaleDateString() : ''}
+                    </div>`;
+
+                card.appendChild(img);
+                card.appendChild(overlay);
+                el.appendChild(card);
+            });
+        } catch {
+            el.innerHTML = '<p class="text-muted">Could not load visual memories.</p>';
+        }
+    }
+
     async function addReminder() {
         const text = document.getElementById('reminder-text').value.trim();
         const hours = parseFloat(document.getElementById('reminder-hours').value) || 24;
@@ -502,6 +541,7 @@ const MemoryPage = (() => {
             document.getElementById('btn-add-social')?.addEventListener('click', addSocialImpression);
             document.getElementById('btn-add-lesson')?.addEventListener('click', addLesson);
             document.getElementById('btn-add-reminder')?.addEventListener('click', addReminder);
+            document.getElementById('btn-refresh-visual')?.addEventListener('click', loadVisualMemories);
             initialized = true;
         }
         loadStats();
@@ -511,10 +551,12 @@ const MemoryPage = (() => {
         loadSocialImpressions();
         loadLessons();
         loadReminders();
+        loadVisualMemories();
     }
 
     return {
         init, editMemory, deleteMemory, toggleCherish, toggleAnchor,
-        runReflect, runAICurate, loadSocialImpressions, loadLessons, loadReminders
+        runReflect, runAICurate, loadSocialImpressions, loadLessons, loadReminders,
+        loadVisualMemories
     };
 })();

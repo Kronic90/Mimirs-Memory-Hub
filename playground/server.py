@@ -55,7 +55,7 @@ _ATTR_RE = _re.compile(r'(\w+)=["\']([^"\']*)["\']')
 def _parse_remember_tags(text: str) -> list[dict]:
     """Extract all <remember> entries from model output.
 
-    Each entry: { content, emotion, importance, why }
+    Each entry: { content, emotion, importance, why, source }
     """
     entries = []
     for m in _REMEMBER_RE.finditer(text):
@@ -67,12 +67,131 @@ def _parse_remember_tags(text: str) -> list[dict]:
             "emotion":    attrs.get("emotion", "neutral"),
             "importance": importance,
             "why":        attrs.get("why", "model-authored memory"),
+            "source":     attrs.get("source", "conversation"),
         })
     return entries
 
 def _strip_remember_tags(text: str) -> str:
     """Remove all <remember>…</remember> blocks from text."""
     return _REMEMBER_RE.sub("", text).strip()
+
+
+# ── Remind-tag parsing ────────────────────────────────────────────────────────
+
+_REMIND_RE = _re.compile(
+    r'<remind(?P<attrs>[^>]*)>(?P<content>.*?)</remind>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+# Mapping of weekday names to isoweekday() values (Mon=1)
+_WEEKDAY_MAP = {
+    "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4,
+    "friday": 5, "saturday": 6, "sunday": 7,
+}
+
+
+def _parse_remind_tags(text: str) -> list[dict]:
+    """Extract all <remind> entries → [{text, hours}]"""
+    import datetime as _dt
+    entries = []
+    for m in _REMIND_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        content = m.group("content").strip()
+        hours: float = 24.0  # default
+
+        in_val = attrs.get("in", "")
+        if in_val:
+            in_val = in_val.lower().strip()
+            try:
+                if in_val.endswith("d"):
+                    hours = float(in_val[:-1]) * 24
+                elif in_val.endswith("h"):
+                    hours = float(in_val[:-1])
+                elif in_val.endswith("m"):
+                    hours = float(in_val[:-1]) / 60
+            except ValueError:
+                hours = 24.0
+
+        date_val = attrs.get("date", "")
+        if date_val and not in_val:
+            try:
+                target = _dt.datetime.strptime(date_val, "%Y-%m-%d")
+                now = _dt.datetime.now()
+                delta = target - now
+                hours = max(0, delta.total_seconds() / 3600)
+            except ValueError:
+                hours = 24.0
+
+        entries.append({"text": content, "hours": hours})
+    return entries
+
+
+def _strip_remind_tags(text: str) -> str:
+    return _REMIND_RE.sub("", text).strip()
+
+
+# ── Showimage-tag parsing ─────────────────────────────────────────────────────
+
+_SHOWIMAGE_RE = _re.compile(
+    r'<showimage\s+hash=["\']([^"\']+)["\'](?:\s*/)?>', _re.IGNORECASE
+)
+
+
+def _parse_showimage_tags(text: str) -> list[str]:
+    """Return list of hashes from <showimage hash="..."/> tags."""
+    return _SHOWIMAGE_RE.findall(text)
+
+
+def _strip_showimage_tags(text: str) -> str:
+    return _SHOWIMAGE_RE.sub("", text).strip()
+
+
+# ── Heuristic reminder detection ─────────────────────────────────────────────
+
+_HEURISTIC_REMIND_PHRASES = [
+    "i need to", "i have to", "i must", "i should", "remind me to",
+    "don't forget", "dont forget", "remember to", "i've got to", "i got to",
+    "i gotta", "i need", "we need to", "i have an appointment", "i have a meeting",
+]
+
+
+def _heuristic_reminder_from_user(user_text: str) -> list[dict]:
+    """
+    Scan user message for reminder intent without explicit <remind> tags.
+    Returns [{text, hours}] list, or [] if nothing detected.
+    """
+    import datetime as _dt
+    lower = user_text.lower()
+
+    if not any(p in lower for p in _HEURISTIC_REMIND_PHRASES):
+        return []
+
+    # Date/time detection
+    hours: float = 24.0
+    if "tonight" in lower or "this evening" in lower:
+        hours = 6.0
+    elif "in an hour" in lower or "in 1 hour" in lower:
+        hours = 1.0
+    elif "in two hours" in lower or "in 2 hours" in lower:
+        hours = 2.0
+    elif "tomorrow" in lower:
+        hours = 24.0
+    elif "this week" in lower:
+        hours = 5 * 24.0
+    elif "next week" in lower:
+        hours = 7 * 24.0
+    else:
+        # Named weekday
+        now_iso = _dt.datetime.now().isoweekday()  # Mon=1
+        for dayname, iso_day in _WEEKDAY_MAP.items():
+            if dayname in lower:
+                diff = (iso_day - now_iso) % 7 or 7
+                hours = diff * 24.0
+                break
+
+    # Cap text length for readability
+    reminder_text = user_text[:200].strip()
+    return [{"text": reminder_text, "hours": hours}]
 
 
 def _ensure_memory() -> MemoryManager:
@@ -555,6 +674,57 @@ async def memory_get_reminders(include_fired: bool = False):
     return JSONResponse(mem.get_reminders(include_fired=include_fired))
 
 
+# ── Visual Memory API ─────────────────────────────────────────────
+
+@app.get("/api/memory/visual")
+async def memory_get_visual():
+    """List all visual memories (metadata only, no image bytes)."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_visual_memories())
+
+
+@app.get("/api/memory/visual/{hash_val}")
+async def memory_get_visual_image(hash_val: str):
+    """Serve a compressed visual memory image as WebP."""
+    import re as _re2
+    if not _re2.match(r'^[a-fA-F0-9]+$', hash_val):
+        from fastapi.responses import Response
+        return Response(status_code=400)
+    mem = _ensure_memory()
+    data = mem.get_visual_image(hash_val)
+    if data is None:
+        from fastapi.responses import Response
+        return Response(status_code=404)
+    from fastapi.responses import Response
+    return Response(content=data, media_type="image/webp")
+
+
+@app.post("/api/memory/visual")
+async def memory_save_visual(request: Request):
+    """Manually save an image as a visual memory.
+    Body: { image_b64: str, description: str, emotion?: str, importance?: int, why_saved?: str }
+    """
+    import base64
+    body = await request.json()
+    b64 = body.get("image_b64", "")
+    if not b64:
+        return JSONResponse({"error": "image_b64 required"}, status_code=400)
+    try:
+        image_bytes = base64.b64decode(b64)
+    except Exception:
+        return JSONResponse({"error": "Invalid base64 data"}, status_code=400)
+    mem = _ensure_memory()
+    result = mem.remember_visual(
+        image_bytes=image_bytes,
+        description=body.get("description", ""),
+        emotion=body.get("emotion", "neutral"),
+        importance=int(body.get("importance", 5)),
+        why_saved=body.get("why_saved", "manual upload"),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
 # ── LLM Reflect & Edit ───────────────────────────────────────────
 
 @app.post("/api/memory/reflect")
@@ -883,6 +1053,17 @@ async def chat_ws(ws: WebSocket):
             if not user_text:
                 continue
 
+            # Image attached by user (base64 string from browser FileReader)
+            image_b64: str = msg.get("image", "")
+            pending_image_bytes: bytes | None = None
+            if image_b64:
+                import base64 as _b64
+                try:
+                    pending_image_bytes = _b64.b64decode(image_b64)
+                except Exception:
+                    image_b64 = ""
+                    pending_image_bytes = None
+
             backend_name = msg.get("backend") or _cfg.get("active_backend", "ollama")
             model_id = msg.get("model") or _cfg.get("active_model", "")
             preset_name = msg.get("preset") or _cfg.get("active_preset", "companion")
@@ -961,6 +1142,7 @@ async def chat_ws(ws: WebSocket):
                     temperature=llm_params.get("temperature", 0.7),
                     max_tokens=llm_params.get("max_tokens", 2048),
                     model=model_id,
+                    images=[image_b64] if image_b64 else None,
                 ):
                     full_response.append(token)
                     await ws.send_json({"type": "token", "content": token})
@@ -971,7 +1153,12 @@ async def chat_ws(ws: WebSocket):
                 # Parse any <remember> tags the model wrote itself.
                 # Strip them from the stored/displayed response.
                 clean_response = _strip_remember_tags(response_text)
+                clean_response = _strip_remind_tags(clean_response)
+                # Collect showimage hashes before stripping
+                showimage_hashes = _parse_showimage_tags(clean_response)
+                clean_response = _strip_showimage_tags(clean_response)
                 remember_tags  = _parse_remember_tags(response_text) if memory_enabled else []
+                remind_tags    = _parse_remind_tags(response_text) if memory_enabled else []
 
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
@@ -982,13 +1169,41 @@ async def chat_ws(ws: WebSocket):
                     try:
                         # Save each model-authored memory
                         for entry in remember_tags:
-                            mem.remember(
-                                content=entry["content"],
-                                emotion=entry["emotion"],
-                                importance=entry["importance"],
-                                source="conversation",
-                                why_saved=entry["why"],
-                            )
+                            if (entry.get("source") == "visual"
+                                    and pending_image_bytes is not None):
+                                # Save as visual memory with the uploaded image
+                                mem.remember_visual(
+                                    image_bytes=pending_image_bytes,
+                                    description=entry["content"],
+                                    emotion=entry["emotion"],
+                                    importance=entry["importance"],
+                                    why_saved=entry["why"],
+                                )
+                            else:
+                                mem.remember(
+                                    content=entry["content"],
+                                    emotion=entry["emotion"],
+                                    importance=entry["importance"],
+                                    source=entry.get("source", "conversation"),
+                                    why_saved=entry["why"],
+                                )
+
+                        # Save model-authored reminders
+                        for r in remind_tags:
+                            mem.set_reminder(text=r["text"], hours=r["hours"])
+
+                        # Heuristic reminder fallback — only if model wrote no <remind> tags
+                        if not remind_tags:
+                            heuristic_reminders = _heuristic_reminder_from_user(user_text)
+                            for r in heuristic_reminders:
+                                mem.set_reminder(text=r["text"], hours=r["hours"])
+                            if heuristic_reminders:
+                                # Notify frontend that a reminder was auto-set
+                                await ws.send_json({
+                                    "type": "reminder_set",
+                                    "text": heuristic_reminders[0]["text"],
+                                    "hours": heuristic_reminders[0]["hours"],
+                                })
 
                         # Heuristic fallback — ONLY for task-priority presets
                         # (agent/assistant) when the model wrote no <remember> tags.
@@ -1072,6 +1287,10 @@ async def chat_ws(ws: WebSocket):
                     "mood": turn_info.get("mood_label", ""),
                     "emotion": turn_info.get("emotion", ""),
                 })
+
+                # Send show_image messages for any <showimage> the model wrote
+                for h in showimage_hashes:
+                    await ws.send_json({"type": "show_image", "hash": h})
 
             except Exception as e:
                 await ws.send_json({"type": "error", "message": str(e)})

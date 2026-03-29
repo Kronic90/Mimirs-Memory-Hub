@@ -17,7 +17,26 @@ _REMEMBER_FMT = (
     "Available emotions: neutral, happy, sad, curious, anxious, excited, grateful, "
     "frustrated, angry, amused, confused, nostalgic, hopeful, proud, lonely, "
     "inspired, peaceful, hurt, warm, reflective\n"
-    "Only save things that genuinely matter. You decide — do not save every turn."
+    "Only save things that genuinely matter. You decide — do not save every turn.\n\n"
+    "## Reminders\n"
+    "When the user mentions something they need to do, a deadline, or asks you to "
+    "remind them — set a reminder using a <remind> tag (invisible to the user).\n"
+    "Format: <remind in=\"Xh\">what to remind them of</remind>\n"
+    "Or with a specific date: <remind date=\"YYYY-MM-DD\">what to remind them of</remind>\n"
+    "Examples: <remind in=\"24h\">dentist appointment tomorrow</remind>  "
+    "<remind in=\"2h\">meeting in two hours</remind>  "
+    "<remind date=\"2025-12-25\">Christmas present for Mum</remind>\n"
+    "Reminders fire once when due and appear in your next context block — then decide "
+    "naturally whether to mention it in conversation.\n\n"
+    "## Visual Memory\n"
+    "If you are shown an image and it feels meaningful or worth remembering, save it "
+    "with: <remember source=\"visual\" emotion=\"EMOTION\" importance=\"1-10\" "
+    "why=\"brief reason\">Vivid, detailed description of what you see in the image."
+    "</remember>\n"
+    "Only save the image if it genuinely matters — not every shared image needs saving.\n"
+    "To show the user a recalled image from your visual memories, write: "
+    "<showimage hash=\"HASH\"/> where HASH is from your visual memories list above. "
+    "Use this sparingly — only when showing the image adds real value to the moment."
 )
 
 _REMEMBER_FMT_AGENT = (
@@ -28,7 +47,11 @@ _REMEMBER_FMT_AGENT = (
     "Format: <remember emotion=\"neutral\" importance=\"1-10\" "
     "why=\"brief reason\">What to remember, concisely stated.</remember>\n"
     "Prioritise: goals, task outcomes, user preferences, lessons from failures. "
-    "Skip routine factual exchanges."
+    "Skip routine factual exchanges.\n\n"
+    "## Reminders\n"
+    "When the user mentions a deadline, a task, or asks to be reminded — set a "
+    "reminder: <remind in=\"Xh\">text</remind> or <remind date=\"YYYY-MM-DD\">text</remind>\n"
+    "Reminders fire once when due and appear in your next context block."
 )
 
 PRESETS: dict[str, dict] = {

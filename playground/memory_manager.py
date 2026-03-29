@@ -438,6 +438,14 @@ class MemoryManager:
             except Exception:
                 pass
 
+        # Visual memories — always include so model can recall images
+        try:
+            vis_block = self.get_visual_context_block()
+            if vis_block:
+                extra_parts.append(vis_block)
+        except Exception:
+            pass
+
         if extra_parts:
             context += "\n" + "\n".join(extra_parts)
 
@@ -618,6 +626,66 @@ class MemoryManager:
                            "fired": r.fired,
                            "is_due": r.is_due})
         return result
+
+    # ── visual memory ─────────────────────────────────────────────────
+
+    def remember_visual(self, image_bytes: bytes, description: str,
+                        emotion: str = "neutral", importance: int = 5,
+                        why_saved: str = "visual memory") -> dict:
+        """Store an image + description as a visual memory."""
+        mem = self._mimir.remember_visual(
+            image_data=image_bytes,
+            description=description,
+            emotion=emotion,
+            importance=importance,
+            source="visual",
+            why_saved=why_saved,
+        )
+        d = mem.to_dict()
+        if mem.has_visual:
+            d["visual_hash"] = mem._visual_hash
+            d["visual_description"] = mem._visual_description
+        return d
+
+    def get_visual_memories(self) -> list[dict]:
+        """Return all memories that have an attached image."""
+        result = []
+        for m in self._mimir._reflections:
+            if m.has_visual:
+                d = m.to_dict()
+                d["visual_hash"] = m._visual_hash
+                d["visual_description"] = m._visual_description
+                d["visual_clarity"] = m.visual_clarity
+                result.append(d)
+        result.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return result
+
+    def get_visual_image(self, hash_val: str) -> bytes | None:
+        """Return raw WebP bytes for a stored visual memory."""
+        try:
+            img_path = self._dir / "visual" / f"{hash_val}.webp"
+            if img_path.is_file():
+                return img_path.read_bytes()
+        except Exception:
+            pass
+        return None
+
+    def get_visual_context_block(self) -> str:
+        """Return a context block listing visual memories with their hashes
+        so the model can reference them via <showimage hash="..."/>."""
+        mems = [m for m in self._mimir._reflections if m.has_visual and m.can_show]
+        if not mems:
+            return ""
+        from vividmimir import Mimir as _Mimir
+        vivid = sorted(mems,
+                       key=lambda m: m.mood_adjusted_vividness(self._mimir._mood),
+                       reverse=True)[:8]
+        lines = ["=== VISUAL MEMORIES (write <showimage hash=\"HASH\"/> to show the user) ==="]
+        for m in vivid:
+            tag = "[vivid]" if m.visual_clarity == "vivid" else "[fading]"
+            lines.append(f"— hash:{m._visual_hash} | {m._visual_description[:80]} {tag}")
+        lines.append("")
+        return "\n".join(lines)
 
     # ── advanced memory ops ───────────────────────────────────────────
 

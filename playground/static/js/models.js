@@ -484,6 +484,24 @@ const ModelsPage = (() => {
                 if (e.key === 'Enter') addScanDir();
             });
 
+            // mmproj / VL model path
+            const mmProjInput = document.getElementById('local-mmproj-path');
+            const mmProjSave  = document.getElementById('btn-save-mmproj');
+            if (mmProjInput && mmProjSave) {
+                // Pre-fill saved value
+                App.api('/settings').then(s => {
+                    mmProjInput.value = s?.backends?.local?.mmproj_path || '';
+                }).catch(() => {});
+                mmProjSave.addEventListener('click', async () => {
+                    try {
+                        await App.apiPut('/settings', {
+                            backends: { local: { mmproj_path: mmProjInput.value.trim() } }
+                        });
+                        App.toast('mmproj path saved', 'success');
+                    } catch { App.toast('Failed to save mmproj path', 'error'); }
+                });
+            }
+
             initialized = true;
         }
         loadOllamaModels();

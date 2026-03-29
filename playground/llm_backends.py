@@ -61,10 +61,19 @@ class OllamaBackend(LLMBackend):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         model: str = "",
+        images: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
+        formatted = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages
+        # Attach base64 images to the last user message (Ollama multimodal)
+        if images:
+            for i in range(len(formatted) - 1, -1, -1):
+                if formatted[i]["role"] == "user":
+                    formatted[i] = dict(formatted[i])
+                    formatted[i]["images"] = images
+                    break
         payload = {
             "model": model,
-            "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
+            "messages": formatted,
             "stream": True,
             "options": {
                 "temperature": temperature,
@@ -136,9 +145,24 @@ class OpenAIBackend(LLMBackend):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         model: str = "",
+        images: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         model = model or self.default_model
-        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages
+        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [
+            dict(m) for m in messages
+        ]
+        # Attach images to the last user message as multimodal content
+        if images:
+            for i in range(len(all_messages) - 1, -1, -1):
+                if all_messages[i]["role"] == "user":
+                    text = all_messages[i]["content"]
+                    all_messages[i]["content"] = (
+                        [{"type": "text", "text": text}]
+                        + [{"type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
+                           for img in images]
+                    )
+                    break
         payload = {
             "model": model,
             "messages": all_messages,
@@ -299,21 +323,42 @@ class GoogleBackend(LLMBackend):
 
 # ── Local GGUF (llama-cpp-python) ─────────────────────────────────────
 
+# VL model filename keywords
+_VL_KEYWORDS = {
+    "llava", "bakllava", "moondream", "minicpm-v", "cogvlm", "vision",
+    "qwen-vl", "yi-vl", "llava-next", "idefics", "internvl", "xgen-mm",
+    "llavaphi", "nanollava", "bunny", "vl", "multimodal", "obsidian",
+}
+
+
+def is_vl_model(model_path: str) -> bool:
+    """Return True if the model filename suggests it is a vision-language model."""
+    import pathlib
+    name = pathlib.Path(model_path).stem.lower()
+    return any(kw in name for kw in _VL_KEYWORDS)
+
+
 class LocalGGUFBackend(LLMBackend):
     """Run GGUF models locally via llama-cpp-python."""
     name = "local"
 
     # Class-level cache: keep ONE model loaded at a time
     _loaded_path: str = ""
+    _loaded_mmproj: str = ""
     _llm = None
 
-    def __init__(self, n_gpu_layers: int = -1, n_ctx: int = 8192):
+    def __init__(self, n_gpu_layers: int = -1, n_ctx: int = 8192,
+                 mmproj_path: str = ""):
         self.n_gpu_layers = n_gpu_layers
         self.n_ctx = n_ctx
+        self.mmproj_path = mmproj_path
 
     def _ensure_model(self, model_path: str):
-        """Load model if not already loaded, or swap if path changed."""
-        if LocalGGUFBackend._loaded_path == model_path and LocalGGUFBackend._llm is not None:
+        """Load model if not already loaded, or swap if path/mmproj changed."""
+        mmproj = self.mmproj_path or ""
+        if (LocalGGUFBackend._loaded_path == model_path
+                and LocalGGUFBackend._loaded_mmproj == mmproj
+                and LocalGGUFBackend._llm is not None):
             return LocalGGUFBackend._llm
 
         # Release old model
@@ -324,18 +369,37 @@ class LocalGGUFBackend(LLMBackend):
                 pass
             LocalGGUFBackend._llm = None
             LocalGGUFBackend._loaded_path = ""
+            LocalGGUFBackend._loaded_mmproj = ""
 
         import gc
         gc.collect()
 
-        from llama_cpp import Llama
-        LocalGGUFBackend._llm = Llama(
-            model_path=model_path,
-            n_gpu_layers=self.n_gpu_layers,
-            n_ctx=self.n_ctx,
-            verbose=False,
-        )
+        try:
+            from llama_cpp import Llama
+        except ImportError:
+            raise RuntimeError(
+                "llama-cpp-python is not installed.\n"
+                "To use Local GGUF models, run:\n"
+                "  pip install llama-cpp-python\n"
+                "Or switch to Ollama (free, no install needed) in the backend selector."
+            )
+
+        kwargs: dict = {
+            "model_path": model_path,
+            "n_gpu_layers": self.n_gpu_layers,
+            "n_ctx": self.n_ctx,
+            "verbose": False,
+        }
+        if mmproj:
+            import pathlib
+            if pathlib.Path(mmproj).is_file():
+                kwargs["clip_model_path"] = mmproj
+                # Use llava-1-5 chat format for LLaVA-style VL models
+                kwargs["chat_format"] = "llava-1-5"
+
+        LocalGGUFBackend._llm = Llama(**kwargs)
         LocalGGUFBackend._loaded_path = model_path
+        LocalGGUFBackend._loaded_mmproj = mmproj
         return LocalGGUFBackend._llm
 
     async def generate(
@@ -345,6 +409,7 @@ class LocalGGUFBackend(LLMBackend):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         model: str = "",
+        images: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         if not model:
             raise ValueError("No model path specified. Select a local GGUF model first.")
@@ -356,7 +421,21 @@ class LocalGGUFBackend(LLMBackend):
         # Load model in thread to avoid blocking event loop
         llm = await asyncio.to_thread(self._ensure_model, model)
 
-        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages
+        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [
+            dict(m) for m in messages
+        ]
+        # Attach images for LLaVA / VL models (requires mmproj)
+        if images and self.mmproj_path:
+            for i in range(len(all_messages) - 1, -1, -1):
+                if all_messages[i]["role"] == "user":
+                    text = all_messages[i]["content"]
+                    all_messages[i]["content"] = (
+                        [{"type": "text", "text": text}]
+                        + [{"type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
+                           for img in images]
+                    )
+                    break
 
         # Use a queue to bridge sync generator → async generator
         import queue
@@ -415,13 +494,21 @@ def create_backend(name: str, cfg: dict) -> LLMBackend:
     global _local_backend
     backends_cfg = cfg.get("backends", {})
     if name == "local":
+        lc = backends_cfg.get("local", {})
+        llm_params = cfg.get("llm_params", {})
+        new_mmproj = lc.get("mmproj_path", "")
         if _local_backend is None:
-            lc = backends_cfg.get("local", {})
-            llm_params = cfg.get("llm_params", {})
             _local_backend = LocalGGUFBackend(
                 n_gpu_layers=lc.get("n_gpu_layers", -1),
                 n_ctx=llm_params.get("context_length", 8192),
+                mmproj_path=new_mmproj,
             )
+        elif _local_backend.mmproj_path != new_mmproj:
+            # mmproj changed — update and force model reload
+            _local_backend.mmproj_path = new_mmproj
+            LocalGGUFBackend._llm = None
+            LocalGGUFBackend._loaded_path = ""
+            LocalGGUFBackend._loaded_mmproj = ""
         return _local_backend
     elif name == "ollama":
         return OllamaBackend(base_url=backends_cfg.get("ollama", {}).get("base_url", "http://localhost:11434"))
