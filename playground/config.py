@@ -9,6 +9,7 @@ _DEFAULT: dict[str, Any] = {
     "active_model": "",
     "active_preset": "companion",
     "active_profile": "default",
+    "active_character_id": "",
     "backends": {
         "ollama": {"base_url": "http://localhost:11434"},
         "openai": {"api_key": "", "base_url": "https://api.openai.com/v1"},
@@ -29,6 +30,17 @@ _DEFAULT: dict[str, Any] = {
         "enabled": True,
         "auto_remember": True,
         "chemistry": True,
+    },
+    "tts": {
+        "enabled": False,
+        "mode": "hf",
+        "model_path": "maya-research/maya1",
+        "server_url": "http://localhost:8081",
+    },
+    "stt": {
+        "enabled": False,
+        "model_size": "base",
+        "device": "auto",
     },
     "scan_directories": [],
 }

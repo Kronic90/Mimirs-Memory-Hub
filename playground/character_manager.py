@@ -44,6 +44,12 @@ class CharacterManager:
         except Exception:
             return None
 
+    def get_memory_dir(self, char_id: str, profile_dir: Path) -> Path:
+        """Return the isolated memory directory for a character."""
+        d = profile_dir / "characters" / char_id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
     def create_character(self, name: str, description: str = "", **kwargs) -> dict:
         """Create a new character."""
         char_id = str(uuid.uuid4())[:8]
@@ -55,6 +61,7 @@ class CharacterManager:
             "scenario": kwargs.get("scenario", ""),
             "personality": kwargs.get("personality", ""),
             "system_prompt": kwargs.get("system_prompt", ""),
+            "voice_prompt": kwargs.get("voice_prompt", ""),
             "alternate_greetings": kwargs.get("alternate_greetings", []),
             "_created": int(__import__("time").time()),
             "_source": "manual",
@@ -112,6 +119,7 @@ class CharacterManager:
             "scenario": st_data.get("scenario", ""),
             "personality": st_data.get("personality", ""),
             "system_prompt": st_data.get("system_prompt", "") or st_data.get("mes_example", ""),
+            "voice_prompt": "",
             "alternate_greetings": st_data.get("alternate_greetings", []),
             "_created": int(__import__("time").time()),
             "_source": "sillytavern",

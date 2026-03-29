@@ -24,6 +24,22 @@ const SettingsPage = (() => {
             document.getElementById('set-auto-remember').checked = mem.auto_remember !== false;
             document.getElementById('set-chemistry').checked = mem.chemistry !== false;
 
+            // TTS / STT
+            const tts = s.tts || {};
+            document.getElementById('set-tts-enabled').checked = !!tts.enabled;
+            document.getElementById('set-tts-mode').value = tts.mode || 'hf';
+            document.getElementById('set-tts-model-path').value = tts.model_path || 'maya-research/maya1';
+            document.getElementById('set-tts-server-url').value = tts.server_url || 'http://localhost:8081';
+
+            const stt = s.stt || {};
+            document.getElementById('set-stt-enabled').checked = !!stt.enabled;
+            document.getElementById('set-stt-model-size').value = stt.model_size || 'base';
+            document.getElementById('set-stt-device').value = stt.device || 'auto';
+
+            // Show/hide mic button
+            const micBtn = document.getElementById('btn-mic');
+            if (micBtn) micBtn.style.display = stt.enabled ? '' : 'none';
+
             document.getElementById('set-profile').value = s.active_profile || 'default';
         } catch {
             App.toast('Could not load settings', 'error');
@@ -47,9 +63,24 @@ const SettingsPage = (() => {
                 auto_remember: document.getElementById('set-auto-remember').checked,
                 chemistry: document.getElementById('set-chemistry').checked,
             },
+            tts: {
+                enabled: document.getElementById('set-tts-enabled').checked,
+                mode: document.getElementById('set-tts-mode').value,
+                model_path: document.getElementById('set-tts-model-path').value,
+                server_url: document.getElementById('set-tts-server-url').value,
+            },
+            stt: {
+                enabled: document.getElementById('set-stt-enabled').checked,
+                model_size: document.getElementById('set-stt-model-size').value,
+                device: document.getElementById('set-stt-device').value,
+            },
         };
 
         await App.apiPut('/settings', patch);
+
+        // Show/hide mic button based on STT setting
+        const micBtn = document.getElementById('btn-mic');
+        if (micBtn) micBtn.style.display = patch.stt.enabled ? '' : 'none';
         App.toast('Settings saved', 'success');
     }
 

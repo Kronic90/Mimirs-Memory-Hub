@@ -83,6 +83,13 @@
                     </svg>
                     <span>Import</span>
                 </li>
+                <li class="nav-item" data-page="characters">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    <span>Characters</span>
+                </li>
                 <li class="nav-item" data-page="settings">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <circle cx="12" cy="12" r="3"/>
@@ -104,6 +111,7 @@
             <div id="page-chat" class="page active">
                 <div class="chat-header">
                     <div class="chat-header-left">
+                        <span id="active-char-badge" class="active-char-badge" style="display:none;"></span>
                         <select id="backend-select" class="header-select">
                             <option value="local">Local GGUF</option>
                             <option value="ollama">Ollama</option>
@@ -209,6 +217,14 @@
                                 <rect x="3" y="3" width="18" height="18" rx="2"/>
                                 <circle cx="8.5" cy="8.5" r="1.5"/>
                                 <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                        </button>
+                        <button id="btn-mic" class="btn-attach btn-mic" title="Voice input (hold to record)" style="display:none;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
                             </svg>
                         </button>
                         <input type="file" id="image-file-input" accept="image/*" style="display:none;">
@@ -780,7 +796,83 @@
                             <input type="text" id="set-profile" class="input" value="default">
                         </div>
                     </div>
+                    </div>
+                    <div class="settings-section">
+                        <h3>TTS / STT <span class="label-hint">— voice input and speech output</span></h3>
+                        <div class="form-row">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="set-tts-enabled">
+                                <span>Enable TTS (Maya1)</span>
+                            </label>
+                            <label class="toggle-label">
+                                <input type="checkbox" id="set-stt-enabled">
+                                <span>Enable STT (faster-whisper)</span>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>TTS Mode</label>
+                                <select id="set-tts-mode" class="input input-sm">
+                                    <option value="hf">HuggingFace (Transformers)</option>
+                                    <option value="llama_server">llama-server (GGUF)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Maya model path / repo</label>
+                                <input type="text" id="set-tts-model-path" class="input input-sm" placeholder="maya-research/maya1">
+                            </div>
+                            <div class="form-group">
+                                <label>llama-server URL</label>
+                                <input type="text" id="set-tts-server-url" class="input input-sm" placeholder="http://localhost:8081">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Whisper model size</label>
+                                <select id="set-stt-model-size" class="input input-sm">
+                                    <option value="tiny">Tiny (~40 MB)</option>
+                                    <option value="base" selected>Base (~140 MB)</option>
+                                    <option value="small">Small (~460 MB)</option>
+                                    <option value="medium">Medium (~1.5 GB)</option>
+                                    <option value="large-v3">Large V3 (~2.9 GB)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>STT device</label>
+                                <select id="set-stt-device" class="input input-sm">
+                                    <option value="auto">Auto</option>
+                                    <option value="cpu">CPU only</option>
+                                    <option value="cuda">CUDA (GPU)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                     <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
+                </div>
+            </div>
+
+            <!-- ──────── CHARACTERS PAGE ──────── -->
+            <div id="page-characters" class="page">
+                <div class="page-header">
+                    <div>
+                        <h1>Characters</h1>
+                        <p class="text-muted">Create agents / personas — each with their own name, personality, voice, and isolated memory</p>
+                    </div>
+                    <button id="btn-new-character" class="btn btn-primary">+ New</button>
+                </div>
+                <div class="char-layout">
+                    <div class="char-sidebar">
+                        <div id="char-list" class="char-list">
+                            <div class="loading">Loading characters…</div>
+                        </div>
+                    </div>
+                    <div class="char-editor-pane">
+                        <div id="char-editor">
+                            <div class="char-editor-empty">
+                                <p>Select a character or create a new one.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -933,6 +1025,7 @@
     <script src="/static/js/tools.js"></script>
     <script src="/static/js/import.js"></script>
     <script src="/static/js/settings.js"></script>
+    <script src="/static/js/characters.js"></script>
     <script src="/static/js/conversations.js"></script>
     <script src="/static/js/multi-chat.js"></script>
 </body>

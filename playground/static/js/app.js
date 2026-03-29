@@ -30,6 +30,7 @@ const App = (() => {
         if (page === 'tools') ToolsPage.init();
         if (page === 'import') ImportPage.init();
         if (page === 'settings') SettingsPage.init();
+        if (page === 'characters') CharactersPage.init();
         if (page === 'conversations') ConversationsPage.init();
         if (page === 'multi-chat') MultiChatPage.init();
     }

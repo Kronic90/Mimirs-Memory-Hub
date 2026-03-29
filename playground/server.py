@@ -22,6 +22,8 @@ from playground.memory_manager import MemoryManager
 from playground import model_manager
 from playground.character_manager import CharacterManager
 from playground.conversation_manager import ConversationManager
+from playground.tts_backend import MayaTTSBackend
+from playground.stt_backend import WhisperSTTBackend
 
 # ── App ───────────────────────────────────────────────────────────────
 
@@ -34,6 +36,9 @@ app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
 _cfg = Config()
 _memory: MemoryManager | None = None
+_char_memories: dict[str, MemoryManager] = {}   # per-character isolated memories
+_tts: MayaTTSBackend | None = None
+_stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
 _characters = CharacterManager()
 _conversations = ConversationManager()
@@ -200,8 +205,18 @@ def _heuristic_reminder_from_user(user_text: str) -> list[dict]:
     return [{"text": reminder_text, "hours": hours}]
 
 
-def _ensure_memory() -> MemoryManager:
-    global _memory
+def _ensure_memory(char_id: str = "") -> MemoryManager:
+    """Return the MemoryManager for the given character (isolated) or global default."""
+    global _memory, _char_memories
+    if char_id:
+        if char_id not in _char_memories:
+            preset = get_preset(_cfg.get("active_preset", "companion"))
+            char_mem_dir = str(_characters.get_memory_dir(char_id, _cfg.profile_dir))
+            _char_memories[char_id] = MemoryManager(
+                profile_dir=char_mem_dir,
+                chemistry=preset.get("chemistry", True),
+            )
+        return _char_memories[char_id]
     if _memory is None:
         preset = get_preset(_cfg.get("active_preset", "companion"))
         _memory = MemoryManager(
@@ -209,6 +224,20 @@ def _ensure_memory() -> MemoryManager:
             chemistry=preset.get("chemistry", True),
         )
     return _memory
+
+
+def _ensure_tts() -> MayaTTSBackend:
+    global _tts
+    if _tts is None:
+        _tts = MayaTTSBackend(_cfg.to_dict())
+    return _tts
+
+
+def _ensure_stt() -> WhisperSTTBackend:
+    global _stt
+    if _stt is None:
+        _stt = WhisperSTTBackend(_cfg.to_dict())
+    return _stt
 
 
 # ── Pages ─────────────────────────────────────────────────────────────
@@ -233,7 +262,7 @@ async def get_settings():
 
 @app.put("/api/settings")
 async def update_settings(request: Request):
-    global _memory
+    global _memory, _char_memories, _tts, _stt
     patch = await request.json()
     # Never overwrite real API keys with masked values from the frontend
     for name in ("openai", "anthropic", "google", "custom"):
@@ -242,8 +271,11 @@ async def update_settings(request: Request):
             # This is a masked display value — drop it so the real key is preserved
             del patch["backends"][name]["api_key"]
     _cfg.update(patch)
-    # Reset memory if profile or chemistry changed
+    # Reset memory, TTS, and STT so they re-initialise with new config
     _memory = None
+    _char_memories = {}
+    _tts = None
+    _stt = None
     return JSONResponse({"ok": True})
 
 
@@ -921,10 +953,59 @@ async def update_character(char_id: str, request: Request):
 @app.delete("/api/characters/{char_id}")
 async def delete_character(char_id: str):
     """Delete a character."""
+    # If this was the active character, clear active_character_id
+    if _cfg.get("active_character_id", "") == char_id:
+        global _char_memories
+        _cfg.update({"active_character_id": ""})
+        _char_memories.pop(char_id, None)
     ok = _characters.delete_character(char_id)
     if ok:
         return JSONResponse({"ok": True})
     return JSONResponse({"error": "Not found"}, status_code=404)
+
+
+@app.post("/api/characters/{char_id}/activate")
+async def activate_character(char_id: str):
+    """Set a character as the active persona (isolated memory)."""
+    char = _characters.get_character(char_id)
+    if not char:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    global _memory, _char_memories
+    _cfg.update({"active_character_id": char_id})
+    # Clear global memory so next turn uses character-specific memory
+    _memory = None
+    return JSONResponse({"ok": True, "character": char})
+
+
+@app.delete("/api/characters/activate")
+async def deactivate_character():
+    """Clear the active character — revert to global persona."""
+    global _memory
+    _cfg.update({"active_character_id": ""})
+    _memory = None
+    return JSONResponse({"ok": True})
+
+
+# ── STT endpoint ─────────────────────────────────────────────────────────────
+
+@app.post("/api/stt")
+async def speech_to_text(request: Request):
+    """Transcribe uploaded audio (WebM/WAV/MP3) via faster-whisper."""
+    stt = _ensure_stt()
+    if not stt.enabled:
+        return JSONResponse({"error": "STT is disabled"}, status_code=400)
+    try:
+        form = await request.form()
+        audio_file = form.get("audio")
+        if audio_file is None:
+            return JSONResponse({"error": "No audio field"}, status_code=400)
+        audio_bytes: bytes = await audio_file.read()
+        transcript = await asyncio.get_event_loop().run_in_executor(
+            None, stt.transcribe, audio_bytes
+        )
+        return JSONResponse({"transcript": transcript})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.post("/api/characters/import-sillytavern")
@@ -1074,30 +1155,48 @@ async def chat_ws(ws: WebSocket):
             model_id = msg.get("model") or _cfg.get("active_model", "")
             preset_name = msg.get("preset") or _cfg.get("active_preset", "companion")
 
+            # ── Active character overrides global persona ──────────────────
+            active_char_id = _cfg.get("active_character_id", "")
+            active_char = _characters.get_character(active_char_id) if active_char_id else None
+
             # Build system prompt — preset-aware
             preset = get_preset(preset_name)
             parts: list[str] = []
 
-            persona_name = _cfg.get("persona_name", "")
-            persona_desc = _cfg.get("persona_description", "")
-            if persona_name:
-                parts.append(f"Your name is {persona_name}.")
-            if persona_desc:
-                parts.append(persona_desc)
+            if active_char:
+                # Character takes priority over global persona settings
+                char_name = active_char.get("name", "")
+                char_desc = active_char.get("description", "")
+                char_personality = active_char.get("personality", "")
+                char_sp = active_char.get("system_prompt", "")
+                if char_name:
+                    parts.append(f"Your name is {char_name}.")
+                combined_desc = "\n".join(filter(None, [char_desc, char_personality]))
+                if combined_desc.strip():
+                    parts.append(combined_desc.strip())
+                if char_sp:
+                    parts.append(char_sp)
+            else:
+                persona_name = _cfg.get("persona_name", "")
+                persona_desc = _cfg.get("persona_description", "")
+                if persona_name:
+                    parts.append(f"Your name is {persona_name}.")
+                if persona_desc:
+                    parts.append(persona_desc)
 
-            custom_sp = _cfg.get("system_prompt", "")
-            if custom_sp:
-                parts.append(custom_sp)
+                custom_sp = _cfg.get("system_prompt", "")
+                if custom_sp:
+                    parts.append(custom_sp)
 
             if preset.get("system_prompt_suffix"):
                 parts.append(preset["system_prompt_suffix"])
 
-            # Memory context — preset-aware (uses get_context_for_preset)
-            mem = _ensure_memory()
+            # Memory context — uses character-isolated memory if active
+            mem = _ensure_memory(char_id=active_char_id)
             memory_enabled = _cfg.get("memory", {}).get("enabled", True)
             if memory_enabled:
                 try:
-                    entity = _cfg.get("persona_name", "")
+                    entity = active_char.get("name", "") if active_char else _cfg.get("persona_name", "")
                     context_block = mem.get_context_for_preset(
                         preset=preset,
                         conversation_context=user_text,
@@ -1294,11 +1393,33 @@ async def chat_ws(ws: WebSocket):
                     "memory_saved": len([t for t in remember_tags if t != "__fallback__"]),
                     "mood": turn_info.get("mood_label", ""),
                     "emotion": turn_info.get("emotion", ""),
+                    "character": active_char.get("name", "") if active_char else "",
                 })
 
                 # Send show_image messages for any <showimage> the model wrote
                 for h in showimage_hashes:
                     await ws.send_json({"type": "show_image", "hash": h})
+
+                # ── TTS: generate audio for the response (async background) ──
+                tts = _ensure_tts()
+                if tts.enabled and clean_response.strip():
+                    voice_prompt = active_char.get("voice_prompt", "") if active_char else ""
+
+                    async def _send_tts(resp_text: str, vp: str, _ws: WebSocket):
+                        try:
+                            wav = await asyncio.get_event_loop().run_in_executor(
+                                None, tts.generate_audio, resp_text, vp
+                            )
+                            if wav:
+                                import base64 as _b64
+                                await _ws.send_json({
+                                    "type": "tts_audio",
+                                    "audio_b64": _b64.b64encode(wav).decode(),
+                                })
+                        except Exception:
+                            pass
+
+                    asyncio.create_task(_send_tts(clean_response, voice_prompt, ws))
 
             except Exception as e:
                 await ws.send_json({"type": "error", "message": str(e)})

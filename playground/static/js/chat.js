@@ -346,6 +346,10 @@ const Chat = (() => {
             case 'reminder_set':
                 showReminderPip(msg.text, msg.hours);
                 break;
+
+            case 'tts_audio':
+                playTTSAudio(msg.audio_b64);
+                break;
         }
     }
 
@@ -364,6 +368,102 @@ const Chat = (() => {
             pip.style.opacity = '0';
             setTimeout(() => pip.remove(), 500);
         }, 5000);
+    }
+
+    // ── TTS audio playback ────────────────────────────────────────
+    let _audioCtx = null;
+    function playTTSAudio(b64) {
+        if (!b64) return;
+        try {
+            if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const binary = atob(b64);
+            const buf = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+            _audioCtx.decodeAudioData(buf.buffer, (decoded) => {
+                const src = _audioCtx.createBufferSource();
+                src.buffer = decoded;
+                src.connect(_audioCtx.destination);
+                src.start(0);
+            });
+        } catch (e) {
+            console.warn('TTS playback failed:', e);
+        }
+    }
+
+    // ── Mic / STT recording ────────────────────────────────────────
+    let _mediaRecorder = null;
+    let _audioChunks = [];
+    function setupMic() {
+        const micBtn = document.getElementById('btn-mic');
+        if (!micBtn) return;
+        micBtn.addEventListener('mousedown', startRecording);
+        micBtn.addEventListener('mouseup', stopRecording);
+        micBtn.addEventListener('mouseleave', stopRecording);
+        // Touch events for mobile
+        micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+        micBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+    }
+
+    async function startRecording() {
+        if (_mediaRecorder && _mediaRecorder.state === 'recording') return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            _audioChunks = [];
+            _mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            _mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) _audioChunks.push(e.data); };
+            _mediaRecorder.onstop = sendAudioForTranscription;
+            _mediaRecorder.start();
+            document.getElementById('btn-mic').classList.add('recording');
+        } catch (e) {
+            App.toast('Microphone access denied', 'error');
+        }
+    }
+
+    function stopRecording() {
+        if (_mediaRecorder && _mediaRecorder.state === 'recording') {
+            _mediaRecorder.stop();
+            _mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            document.getElementById('btn-mic').classList.remove('recording');
+        }
+    }
+
+    async function sendAudioForTranscription() {
+        if (_audioChunks.length === 0) return;
+        const blob = new Blob(_audioChunks, { type: 'audio/webm' });
+        const form = new FormData();
+        form.append('audio', blob, 'recording.webm');
+        try {
+            const resp = await fetch('/api/stt', { method: 'POST', body: form });
+            const data = await resp.json();
+            if (data.transcript) {
+                const input = document.getElementById('chat-input');
+                input.value += data.transcript;
+                autoResize(input);
+                input.focus();
+            }
+        } catch (e) {
+            App.toast('Transcription failed', 'error');
+        }
+    }
+
+    // ── Load active character badge ──────────────────────────────
+    async function loadActiveCharBadge() {
+        try {
+            const s = await App.api('/settings');
+            const charId = s.active_character_id;
+            const badge = document.getElementById('active-char-badge');
+            if (!badge) return;
+            if (charId) {
+                const chars = await App.api('/characters');
+                const c = chars.find(ch => ch.id === charId);
+                badge.textContent = c ? c.name : '';
+            } else {
+                badge.textContent = '';
+            }
+            // Show/hide mic button
+            const micBtn = document.getElementById('btn-mic');
+            if (micBtn && s.stt) micBtn.style.display = s.stt.enabled ? '' : 'none';
+        } catch { /* ignore */ }
     }
 
     // ── Update memory panel (mood + chemistry bars) ──────────────
@@ -615,6 +715,8 @@ const Chat = (() => {
         });
 
         updateMemoryPanel();
+        setupMic();
+        loadActiveCharBadge();
     }
 
     return { init, handleMessage };

@@ -30,3 +30,9 @@ build/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Build artifacts
+_build_portable/
+*.zip
+_api_scan.json
+_scan*.txt
