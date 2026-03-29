@@ -16,19 +16,15 @@ class CharacterManager:
         self.chars_dir.mkdir(parents=True, exist_ok=True)
 
     def list_characters(self) -> list[dict]:
-        """List all characters with metadata."""
+        """List all characters with full data."""
         chars = []
         for char_file in self.chars_dir.glob("*.json"):
             try:
                 with open(char_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                chars.append({
-                    "id": data.get("id", char_file.stem),
-                    "name": data.get("name", data.get("character_name", "Unknown")),
-                    "description": data.get("description", ""),
-                    "path": str(char_file),
-                    "source": data.get("_source", "manual"),  # 'sillytavern' or 'manual'
-                })
+                data.setdefault("id", char_file.stem)
+                data.setdefault("path", str(char_file))
+                chars.append(data)
             except Exception:
                 pass
         return chars
