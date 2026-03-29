@@ -2322,6 +2322,12 @@ details[open] .think-chevron { transform: rotate(90deg); }
     color: #fbbf24;
     border: 1px solid rgba(251, 191, 36, 0.3);
 }
+
+.task-pip {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
     cursor: pointer;
 }
 

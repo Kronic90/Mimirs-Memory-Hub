@@ -212,23 +212,36 @@ const ModelsPage = (() => {
             }
 
             btn.textContent = 'Downloading…';
-            // Poll for file appearance since download is async
+            // Poll real progress from status endpoint
             let checks = 0;
-            const maxChecks = 600; // 10 minutes at 1s intervals
+            const maxChecks = 1200; // 20 minutes at 1s intervals
             const pollInterval = setInterval(async () => {
                 checks++;
                 try {
-                    const models = await App.api('/models/local');
-                    const found = models.find(m => m.filename === filename);
-                    if (found) {
-                        clearInterval(pollInterval);
-                        fill.style.width = '100%';
-                        text.textContent = 'Downloaded: ' + App.formatBytes(found.size);
-                        btn.textContent = '✓ Downloaded';
-                        App.toast(filename + ' downloaded!', 'success');
-                    } else {
-                        fill.style.width = Math.min(checks / 10 * 5, 90) + '%';
-                        text.textContent = 'Downloading from HuggingFace…';
+                    const status = await App.api('/models/hf/download/status');
+                    const prog_data = status[filename];
+                    if (prog_data) {
+                        if (prog_data.status === 'complete') {
+                            clearInterval(pollInterval);
+                            fill.style.width = '100%';
+                            text.textContent = 'Downloaded: ' + (prog_data.path || filename);
+                            btn.textContent = '✓ Downloaded';
+                            App.toast(filename + ' downloaded!', 'success');
+                            return;
+                        } else if (prog_data.status === 'error') {
+                            clearInterval(pollInterval);
+                            text.textContent = 'Error: ' + (prog_data.error || 'Unknown');
+                            btn.textContent = 'Retry';
+                            btn.disabled = false;
+                            App.toast('Download failed: ' + (prog_data.error || ''), 'error');
+                            return;
+                        } else if (prog_data.status === 'downloading') {
+                            const pct = prog_data.percent || 0;
+                            fill.style.width = pct + '%';
+                            const dl = prog_data.downloaded || 0;
+                            const total = prog_data.total || 0;
+                            text.textContent = `${App.formatBytes(dl)} / ${App.formatBytes(total)} (${pct}%)`;
+                        }
                     }
                 } catch { /* ignore poll errors */ }
                 if (checks >= maxChecks) {

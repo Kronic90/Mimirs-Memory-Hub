@@ -394,7 +394,7 @@ class MemoryManager:
                     extra_parts.append("=== RELEVANT SOLUTIONS ===")
                     for s in solutions:
                         extra_parts.append(
-                            f"- Problem: {s.problem[:80]}")
+                            f"- Problem: {s.problem_signature[:80]}")
                         extra_parts.append(
                             f"  Solution: {s.solution[:120]}")
                     extra_parts.append("")
@@ -565,10 +565,40 @@ class MemoryManager:
     def complete_task(self, task_id: str, outcome: str = "") -> bool:
         return self._mimir.complete_task(task_id, outcome)
 
+    def fail_task(self, task_id: str, reason: str = "") -> bool:
+        return self._mimir.fail_task(task_id, reason)
+
     def get_active_tasks(self) -> list[dict]:
         tasks = self._mimir.get_active_tasks()
         return [{"task_id": t.task_id, "description": t.description,
                  "priority": t.priority, "status": t.status} for t in tasks]
+
+    def get_all_tasks(self) -> list[dict]:
+        return [{"task_id": t.task_id, "description": t.description,
+                 "priority": t.priority, "status": t.status,
+                 "project": t.project,
+                 "created_at": t.created_at,
+                 "completed_at": t.completed_at,
+                 "outcome": t.outcome}
+                for t in self._mimir._project_tasks]
+
+    def set_active_project(self, name: str) -> str:
+        return self._mimir.set_active_project(name)
+
+    def get_project_overview(self) -> dict:
+        return self._mimir.get_project_overview()
+
+    def record_solution(self, problem: str, solution: str,
+                        importance: int = 5) -> dict:
+        s = self._mimir.record_solution(problem, solution, importance)
+        return {"problem": s.problem_signature, "solution": s.solution,
+                "importance": s.importance, "reuse_count": s.times_applied}
+
+    def find_solutions(self, problem: str, top_k: int = 3) -> list[dict]:
+        results = self._mimir.find_solutions(problem, top_k)
+        return [{"problem": s.problem_signature, "solution": s.solution,
+                 "importance": s.importance, "reuse_count": s.times_applied}
+                for s in results]
 
     # ── lessons ───────────────────────────────────────────────────────
 

@@ -400,6 +400,45 @@
                 <!-- Insight results (Huginn/Dream/Reflect) -->
                 <div id="insight-results" style="display:none;" class="insight-results"></div>
 
+                <!-- Tasks & Project panel (Agent/Assistant modes) -->
+                <div class="organic-panel" id="tasks-panel">
+                    <div class="organic-panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <h3>📋 Tasks & Projects</h3>
+                            <p class="text-muted">Task tracking for Agent/Assistant modes — also managed by the model via &lt;task&gt; tags</p>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <span id="project-overview-badge" class="text-muted" style="font-size:0.8em;"></span>
+                            <button id="btn-refresh-tasks" class="btn btn-secondary btn-sm">↻ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="organic-panel-form" style="flex-wrap:wrap;">
+                        <input type="text" id="task-project" class="input input-sm" placeholder="Project (optional)" style="width:150px;">
+                        <button id="btn-set-project" class="btn btn-secondary btn-sm">Set Project</button>
+                        <span style="border-left:1px solid var(--border);height:24px;margin:0 4px;"></span>
+                        <input type="text" id="task-description" class="input input-sm" placeholder="New task description…" style="flex:1;">
+                        <input type="number" id="task-priority" class="input input-sm" value="5" min="1" max="10" style="width:60px;" title="Priority 1-10">
+                        <button id="btn-add-task" class="btn btn-primary btn-sm">+ Add Task</button>
+                    </div>
+                    <div id="tasks-list" class="organic-panel-list"></div>
+
+                    <!-- Solutions sub-section -->
+                    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+                        <h4 style="margin:0 0 8px;font-size:0.9em;color:var(--text-secondary);">💡 Solution Patterns</h4>
+                        <div class="organic-panel-form">
+                            <input type="text" id="solution-problem" class="input input-sm" placeholder="Problem pattern…" style="flex:1;">
+                            <input type="text" id="solution-content" class="input input-sm" placeholder="Solution approach…" style="flex:2;">
+                            <input type="number" id="solution-importance" class="input input-sm" value="5" min="1" max="10" style="width:60px;" title="Importance 1-10">
+                            <button id="btn-add-solution" class="btn btn-primary btn-sm">+ Add</button>
+                        </div>
+                        <div class="organic-panel-form" style="margin-top:6px;">
+                            <input type="text" id="solution-search" class="input input-sm" placeholder="Search solutions for a problem…" style="flex:1;">
+                            <button id="btn-search-solutions" class="btn btn-secondary btn-sm">Search</button>
+                        </div>
+                        <div id="solutions-list" class="organic-panel-list"></div>
+                    </div>
+                </div>
+
                 <!-- Social Impressions panel -->
                 <div class="organic-panel">
                     <div class="organic-panel-header">

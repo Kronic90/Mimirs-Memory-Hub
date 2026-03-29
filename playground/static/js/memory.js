@@ -506,6 +506,131 @@ const MemoryPage = (() => {
         } catch { App.toast('Failed to set reminder', 'error'); }
     }
 
+    // ── Tasks & Projects ─────────────────────────────────────────
+    async function loadTasks() {
+        const el = document.getElementById('tasks-list');
+        const badge = document.getElementById('project-overview-badge');
+        if (!el) return;
+        try {
+            const [tasks, overview] = await Promise.all([
+                App.api('/tasks'),
+                App.api('/project/overview'),
+            ]);
+            if (badge) {
+                const parts = [];
+                if (overview.project) parts.push(overview.project);
+                parts.push(`${overview.tasks_active || 0} active`);
+                parts.push(`${overview.tasks_completed || 0} done`);
+                parts.push(`${overview.solutions_stored || 0} solutions`);
+                badge.textContent = parts.join(' · ');
+            }
+            if (!tasks.length) {
+                el.innerHTML = '<p class="text-muted">No tasks yet. Create tasks manually or let the Agent create them via &lt;task&gt; tags.</p>';
+                return;
+            }
+            el.innerHTML = tasks.map(t => {
+                const statusIcon = t.status === 'active' ? '🔵' : t.status === 'completed' ? '✅' : '❌';
+                const actions = t.status === 'active' ? `
+                    <button class="btn-sm-action" onclick="MemoryPage.completeTask('${esc(t.task_id)}')" title="Complete">✅</button>
+                    <button class="btn-sm-action" onclick="MemoryPage.failTask('${esc(t.task_id)}')" title="Fail">❌</button>
+                ` : '';
+                return `<div class="organic-item">
+                    <div style="flex:1;">
+                        <span>${statusIcon}</span>
+                        <strong>${esc(t.description)}</strong>
+                        ${t.project ? `<span class="text-muted" style="font-size:0.8em;margin-left:8px;">[${esc(t.project)}]</span>` : ''}
+                        <span class="text-muted" style="font-size:0.8em;margin-left:8px;">priority: ${t.priority}</span>
+                        ${t.outcome ? `<span class="text-muted" style="font-size:0.8em;margin-left:8px;">→ ${esc(t.outcome)}</span>` : ''}
+                    </div>
+                    <div style="display:flex;gap:4px;">${actions}</div>
+                </div>`;
+            }).join('');
+        } catch {
+            el.innerHTML = '<p class="text-muted">Could not load tasks.</p>';
+        }
+    }
+
+    async function addTask() {
+        const desc = document.getElementById('task-description').value.trim();
+        const priority = parseInt(document.getElementById('task-priority').value) || 5;
+        const project = document.getElementById('task-project').value.trim();
+        if (!desc) { App.toast('Task description required', 'error'); return; }
+        try {
+            const result = await App.apiPost('/tasks', { description: desc, priority, project });
+            App.toast(`Task created: ${result.task_id.slice(0, 8)}`, 'success');
+            document.getElementById('task-description').value = '';
+            loadTasks();
+        } catch { App.toast('Failed to create task', 'error'); }
+    }
+
+    async function completeTask(taskId) {
+        const outcome = prompt('Outcome (optional):');
+        if (outcome === null) return;
+        try {
+            await App.apiPost(`/tasks/${taskId}/complete`, { outcome });
+            App.toast('Task completed', 'success');
+            loadTasks();
+            loadStats();
+        } catch { App.toast('Failed to complete task', 'error'); }
+    }
+
+    async function failTask(taskId) {
+        const reason = prompt('Failure reason (optional):');
+        if (reason === null) return;
+        try {
+            await App.apiPost(`/tasks/${taskId}/fail`, { reason });
+            App.toast('Task marked as failed', 'info');
+            loadTasks();
+            loadStats();
+        } catch { App.toast('Failed to update task', 'error'); }
+    }
+
+    async function setProject() {
+        const name = document.getElementById('task-project').value.trim();
+        try {
+            const result = await App.apiPost('/project/active', { name });
+            App.toast(result.message || 'Project set', 'success');
+            loadTasks();
+        } catch { App.toast('Failed to set project', 'error'); }
+    }
+
+    // ── Solutions ──────────────────────────────────────────────────
+    async function addSolution() {
+        const problem = document.getElementById('solution-problem').value.trim();
+        const solution = document.getElementById('solution-content').value.trim();
+        const importance = parseInt(document.getElementById('solution-importance').value) || 5;
+        if (!problem || !solution) { App.toast('Both problem and solution required', 'error'); return; }
+        try {
+            await App.apiPost('/solutions', { problem, solution, importance });
+            App.toast('Solution recorded', 'success');
+            document.getElementById('solution-problem').value = '';
+            document.getElementById('solution-content').value = '';
+            loadTasks();
+        } catch { App.toast('Failed to record solution', 'error'); }
+    }
+
+    async function searchSolutions() {
+        const problem = document.getElementById('solution-search').value.trim();
+        if (!problem) { App.toast('Enter a problem to search for', 'error'); return; }
+        const el = document.getElementById('solutions-list');
+        try {
+            const results = await App.apiPost('/solutions/search', { problem, top_k: 5 });
+            if (!results.length) {
+                el.innerHTML = '<p class="text-muted">No matching solutions found.</p>';
+                return;
+            }
+            el.innerHTML = results.map(s => `<div class="organic-item">
+                <div style="flex:1;">
+                    <strong>Problem:</strong> ${esc(s.problem)}<br>
+                    <strong>Solution:</strong> ${esc(s.solution)}
+                    <span class="text-muted" style="font-size:0.8em;margin-left:8px;">
+                        imp: ${s.importance} · used: ${s.reuse_count || 0}x
+                    </span>
+                </div>
+            </div>`).join('');
+        } catch { App.toast('Search failed', 'error'); }
+    }
+
     // ── Escape ───────────────────────────────────────────────────
     function esc(str) {
         const el = document.createElement('span');
@@ -542,6 +667,12 @@ const MemoryPage = (() => {
             document.getElementById('btn-add-lesson')?.addEventListener('click', addLesson);
             document.getElementById('btn-add-reminder')?.addEventListener('click', addReminder);
             document.getElementById('btn-refresh-visual')?.addEventListener('click', loadVisualMemories);
+            // Task/project controls
+            document.getElementById('btn-add-task')?.addEventListener('click', addTask);
+            document.getElementById('btn-set-project')?.addEventListener('click', setProject);
+            document.getElementById('btn-refresh-tasks')?.addEventListener('click', loadTasks);
+            document.getElementById('btn-add-solution')?.addEventListener('click', addSolution);
+            document.getElementById('btn-search-solutions')?.addEventListener('click', searchSolutions);
             initialized = true;
         }
         loadStats();
@@ -552,11 +683,13 @@ const MemoryPage = (() => {
         loadLessons();
         loadReminders();
         loadVisualMemories();
+        loadTasks();
     }
 
     return {
         init, editMemory, deleteMemory, toggleCherish, toggleAnchor,
         runReflect, runAICurate, loadSocialImpressions, loadLessons, loadReminders,
-        loadVisualMemories
+        loadVisualMemories, loadTasks, addTask, completeTask, failTask,
+        setProject, addSolution, searchSolutions
     };
 })();

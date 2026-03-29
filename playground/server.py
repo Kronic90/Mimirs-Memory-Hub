@@ -48,6 +48,7 @@ async def no_cache_static(request: Request, call_next):
 _cfg = Config()
 _memory: MemoryManager | None = None
 _char_memories: dict[str, MemoryManager] = {}   # per-character isolated memories
+_download_progress: dict[str, dict] = {}  # filename -> {status, downloaded, total, percent}
 _tts: MayaTTSBackend | None = None
 _stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
@@ -166,6 +167,58 @@ def _parse_showimage_tags(text: str) -> list[str]:
 
 def _strip_showimage_tags(text: str) -> str:
     return _SHOWIMAGE_RE.sub("", text).strip()
+
+
+# ── Task-tag parsing ─────────────────────────────────────────────────────────
+# <task action="start" priority="7">Build the login page</task>
+# <task action="complete" id="abc123">Login page done with OAuth</task>
+# <task action="fail" id="abc123">Blocked by API limits</task>
+
+_TASK_RE = _re.compile(
+    r'<task(?P<attrs>[^>]*)>(?P<content>.*?)</task>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+_SOLUTION_RE = _re.compile(
+    r'<solution(?P<attrs>[^>]*)>(?P<content>.*?)</solution>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+
+def _parse_task_tags(text: str) -> list[dict]:
+    """Extract <task> tags → [{action, content, priority, id, project}]"""
+    entries = []
+    for m in _TASK_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        entries.append({
+            "action": attrs.get("action", "start").lower(),
+            "content": m.group("content").strip(),
+            "priority": int(attrs.get("priority", "5")),
+            "id": attrs.get("id", ""),
+            "project": attrs.get("project", ""),
+        })
+    return entries
+
+
+def _strip_task_tags(text: str) -> str:
+    return _TASK_RE.sub("", text).strip()
+
+
+def _parse_solution_tags(text: str) -> list[dict]:
+    """Extract <solution> tags → [{problem, content, importance}]"""
+    entries = []
+    for m in _SOLUTION_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        entries.append({
+            "problem": attrs.get("problem", ""),
+            "content": m.group("content").strip(),
+            "importance": int(attrs.get("importance", "5")),
+        })
+    return entries
+
+
+def _strip_solution_tags(text: str) -> str:
+    return _SOLUTION_RE.sub("", text).strip()
 
 
 # ── Heuristic reminder detection ─────────────────────────────────────────────
@@ -400,13 +453,24 @@ async def download_hf(request: Request):
     if dest_path.exists():
         return JSONResponse({"status": "exists", "path": str(dest_path)})
 
-    # Start download in background, return immediately
+    # Start download in background, track progress
+    _download_progress[filename] = {"status": "starting", "downloaded": 0, "total": 0, "percent": 0}
+
     async def _do_download():
-        async for _ in model_manager.download_model(repo_id, filename, dest_dir):
-            pass  # Progress tracked via /api/models/hf/download/status
+        try:
+            async for prog in model_manager.download_model(repo_id, filename, dest_dir):
+                _download_progress[filename] = prog
+        except Exception as e:
+            _download_progress[filename] = {"status": "error", "error": str(e)}
 
     asyncio.create_task(_do_download())
     return JSONResponse({"status": "started", "filename": filename, "dest": dest_dir})
+
+
+@app.get("/api/models/hf/download/status")
+async def download_status():
+    """Return current download progress for all active downloads."""
+    return JSONResponse(_download_progress)
 
 
 # ── Memory API ────────────────────────────────────────────────────────
@@ -841,6 +905,102 @@ async def memory_enrich(request: Request):
         mem.enrich_yggdrasil, body.get("batch_size", 20)
     )
     return JSONResponse(result)
+
+
+# ── Task / Project API ───────────────────────────────────────────
+
+@app.get("/api/tasks")
+async def list_tasks():
+    """List all tasks (active + completed + failed)."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_all_tasks())
+
+
+@app.get("/api/tasks/active")
+async def list_active_tasks():
+    """List only active tasks."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_active_tasks())
+
+
+@app.post("/api/tasks")
+async def create_task(request: Request):
+    """Create a new task."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.start_task(
+        description=body.get("description", ""),
+        priority=body.get("priority", 5),
+        project=body.get("project", ""),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
+@app.post("/api/tasks/{task_id}/complete")
+async def complete_task(task_id: str, request: Request):
+    """Mark a task as completed."""
+    body = await request.json()
+    mem = _ensure_memory()
+    ok = mem.complete_task(task_id, body.get("outcome", ""))
+    if ok:
+        mem.save()
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Task not found or not active"}, status_code=404)
+
+
+@app.post("/api/tasks/{task_id}/fail")
+async def fail_task(task_id: str, request: Request):
+    """Mark a task as failed."""
+    body = await request.json()
+    mem = _ensure_memory()
+    ok = mem.fail_task(task_id, body.get("reason", ""))
+    if ok:
+        mem.save()
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Task not found or not active"}, status_code=404)
+
+
+@app.get("/api/project/overview")
+async def project_overview():
+    """Get project overview (task counts, solutions, artifacts)."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_project_overview())
+
+
+@app.post("/api/project/active")
+async def set_active_project(request: Request):
+    """Set the active project context."""
+    body = await request.json()
+    mem = _ensure_memory()
+    msg = mem.set_active_project(body.get("name", ""))
+    return JSONResponse({"message": msg})
+
+
+@app.post("/api/solutions")
+async def record_solution(request: Request):
+    """Record a reusable problem → solution pattern."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.record_solution(
+        problem=body.get("problem", ""),
+        solution=body.get("solution", ""),
+        importance=body.get("importance", 5),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
+@app.post("/api/solutions/search")
+async def search_solutions(request: Request):
+    """Search for matching solution patterns."""
+    body = await request.json()
+    mem = _ensure_memory()
+    results = mem.find_solutions(
+        problem=body.get("problem", ""),
+        top_k=body.get("top_k", 3),
+    )
+    return JSONResponse(results)
 
 
 # ── Conversation history ──────────────────────────────────────────
@@ -1284,8 +1444,13 @@ async def chat_ws(ws: WebSocket):
                 # Collect showimage hashes before stripping
                 showimage_hashes = _parse_showimage_tags(clean_response)
                 clean_response = _strip_showimage_tags(clean_response)
+                # Strip task/solution tags from displayed response
+                clean_response = _strip_task_tags(clean_response)
+                clean_response = _strip_solution_tags(clean_response)
                 remember_tags  = _parse_remember_tags(response_text) if memory_enabled else []
                 remind_tags    = _parse_remind_tags(response_text) if memory_enabled else []
+                task_tags      = _parse_task_tags(response_text) if memory_enabled else []
+                solution_tags  = _parse_solution_tags(response_text) if memory_enabled else []
 
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
@@ -1318,6 +1483,51 @@ async def chat_ws(ws: WebSocket):
                         # Save model-authored reminders
                         for r in remind_tags:
                             mem.set_reminder(text=r["text"], hours=r["hours"])
+
+                        # Process model-authored task tags (Agent/Assistant)
+                        for t in task_tags:
+                            try:
+                                if t["action"] == "start":
+                                    result = mem.start_task(
+                                        description=t["content"],
+                                        priority=t["priority"],
+                                        project=t.get("project", ""),
+                                    )
+                                    await ws.send_json({
+                                        "type": "task_created",
+                                        "task_id": result["task_id"],
+                                        "description": result["description"],
+                                    })
+                                elif t["action"] == "complete" and t.get("id"):
+                                    mem.complete_task(t["id"], t["content"])
+                                    await ws.send_json({
+                                        "type": "task_completed",
+                                        "task_id": t["id"],
+                                    })
+                                elif t["action"] == "fail" and t.get("id"):
+                                    mem.fail_task(t["id"], t["content"])
+                                    await ws.send_json({
+                                        "type": "task_failed",
+                                        "task_id": t["id"],
+                                    })
+                            except Exception:
+                                pass
+
+                        # Process model-authored solution tags (Agent/Assistant)
+                        for s in solution_tags:
+                            try:
+                                if s["problem"] and s["content"]:
+                                    mem.record_solution(
+                                        problem=s["problem"],
+                                        solution=s["content"],
+                                        importance=s["importance"],
+                                    )
+                                    await ws.send_json({
+                                        "type": "solution_recorded",
+                                        "problem": s["problem"][:100],
+                                    })
+                            except Exception:
+                                pass
 
                         # Heuristic reminder fallback — only if model wrote no <remind> tags
                         if not remind_tags:

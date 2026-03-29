@@ -27,17 +27,25 @@ const Chat = (() => {
     const _REMEMBER_RE   = /<remember(?:[^>]*)>[\s\S]*?<\/remember>/gi;
     const _REMIND_RE     = /<remind(?:[^>]*)>[\s\S]*?<\/remind>/gi;
     const _SHOWIMAGE_RE  = /<showimage\s+hash=["'][^"']+["'](?:\s*\/)?>/gi;
+    const _TASK_RE       = /<task(?:[^>]*)>[\s\S]*?<\/task>/gi;
+    const _SOLUTION_RE   = /<solution(?:[^>]*)>[\s\S]*?<\/solution>/gi;
     // Partially-streaming open tags not yet closed
     const _REMEMBER_OPEN_RE   = /<remember(?:[^>]*)>[\s\S]*/i;
     const _REMIND_OPEN_RE     = /<remind(?:[^>]*)>[\s\S]*/i;
+    const _TASK_OPEN_RE       = /<task(?:[^>]*)>[\s\S]*/i;
+    const _SOLUTION_OPEN_RE   = /<solution(?:[^>]*)>[\s\S]*/i;
 
     function stripSpecialTags(text) {
         return text
             .replace(_REMEMBER_RE, '')
             .replace(_REMIND_RE, '')
             .replace(_SHOWIMAGE_RE, '')
+            .replace(_TASK_RE, '')
+            .replace(_SOLUTION_RE, '')
             .replace(_REMEMBER_OPEN_RE, '')
             .replace(_REMIND_OPEN_RE, '')
+            .replace(_TASK_OPEN_RE, '')
+            .replace(_SOLUTION_OPEN_RE, '')
             .trim();
     }
     // Keep old name as alias so nothing breaks
@@ -347,6 +355,22 @@ const Chat = (() => {
                 showReminderPip(msg.text, msg.hours);
                 break;
 
+            case 'task_created':
+                showTaskPip('📋 Task started: ' + (msg.description || '').slice(0, 60));
+                break;
+
+            case 'task_completed':
+                showTaskPip('✅ Task completed');
+                break;
+
+            case 'task_failed':
+                showTaskPip('❌ Task failed');
+                break;
+
+            case 'solution_recorded':
+                showTaskPip('💡 Solution recorded: ' + (msg.problem || '').slice(0, 50));
+                break;
+
             case 'tts_audio':
                 playTTSAudio(msg.audio_b64);
                 break;
@@ -362,6 +386,20 @@ const Chat = (() => {
             : hours <= 24 ? `in ~${Math.round(hours)}h`
             : `in ~${Math.round(hours / 24)}d`;
         pip.textContent = `⏰ Reminder set (${when}): ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`;
+        container.appendChild(pip);
+        container.scrollTop = container.scrollHeight;
+        setTimeout(() => {
+            pip.style.opacity = '0';
+            setTimeout(() => pip.remove(), 500);
+        }, 5000);
+    }
+
+    // ── Task/Solution pip ─────────────────────────────────────────
+    function showTaskPip(text) {
+        const container = document.getElementById('chat-messages');
+        const pip = document.createElement('div');
+        pip.className = 'memory-pip task-pip';
+        pip.textContent = text;
         container.appendChild(pip);
         container.scrollTop = container.scrollHeight;
         setTimeout(() => {
