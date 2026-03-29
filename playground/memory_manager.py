@@ -253,33 +253,34 @@ class MemoryManager:
 
     def process_turn(self, user_msg: str, assistant_msg: str,
                      preset: dict,
-                     curation: dict | None = None) -> dict:
-        """Full post-turn processing: detect emotion, remember, update mood,
+                     curation: dict | None = None,
+                     skip_save: bool = False) -> dict:
+        """Full post-turn processing: detect emotion, update mood,
         tick chemistry, and periodically consolidate.
 
-        If *curation* is provided (from :meth:`llm_curate_memory`), its
-        values take priority over the keyword/heuristic fallbacks and
-        its ``should_remember`` flag controls whether the exchange is stored.
+        Memory saving is handled by the caller (server.py parses
+        model-authored <remember> tags). Pass skip_save=True to
+        suppress the legacy auto-save path entirely.
+
+        If *curation* is provided it still overrides the emotion/importance
+        used for mood-update purposes (e.g. from reflect/edit_memories).
 
         Returns dict with emotion, importance, mood info."""
         combined_text = user_msg + " " + assistant_msg
 
         if curation is not None:
-            # LLM-driven path
             primary_emotion = curation.get("emotion", "neutral")
             importance = curation.get("importance", 5)
             emotions = [primary_emotion]
-            should_remember = curation.get("should_remember", True)
+            should_remember = curation.get("should_remember", True) and not skip_save
         else:
-            # Heuristic fallback path
             emotions = detect_emotions(combined_text)
             primary_emotion = emotions[0]
             importance = estimate_importance(user_msg, assistant_msg)
-            # Scale importance by preset's emotion_weight for emotional memories
             emotion_weight = preset.get("emotion_weight", 0.5)
             if primary_emotion not in ("neutral", "reflective", "thoughtful"):
                 importance = min(10, int(importance + emotion_weight * 2))
-            should_remember = True
+            should_remember = not skip_save
 
         if should_remember:
             why = curation.get("reason", "conversation exchange") if curation else "conversation exchange"

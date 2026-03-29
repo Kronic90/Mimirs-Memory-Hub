@@ -370,6 +370,21 @@ a:hover { text-decoration: underline; }
     max-width: 300px;
     align-self: center;
 }
+.memory-pip {
+    text-align: center;
+    font-size: 0.72rem;
+    color: #7c3aed;
+    padding: 3px 10px;
+    margin: 2px auto;
+    border-radius: 10px;
+    background: rgba(124, 58, 237, 0.08);
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    display: inline-block;
+    transition: opacity 0.5s ease;
+    width: auto;
+    max-width: 240px;
+    align-self: center;
+}
 
 /* ── Think / CoT block ──────────────────────────────────────────── */
 

@@ -42,6 +42,38 @@ _conversations = ConversationManager()
 _mood_history: list[dict] = []
 _chemistry_history: list[dict] = []
 
+# ── Remember-tag parsing ──────────────────────────────────────────────
+
+import re as _re
+
+_REMEMBER_RE = _re.compile(
+    r'<remember(?P<attrs>[^>]*)>(?P<content>.*?)</remember>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+_ATTR_RE = _re.compile(r'(\w+)=["\']([^"\']*)["\']')
+
+def _parse_remember_tags(text: str) -> list[dict]:
+    """Extract all <remember> entries from model output.
+
+    Each entry: { content, emotion, importance, why }
+    """
+    entries = []
+    for m in _REMEMBER_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        importance = int(attrs.get("importance", 5))
+        importance = max(1, min(10, importance))
+        entries.append({
+            "content":    m.group("content").strip(),
+            "emotion":    attrs.get("emotion", "neutral"),
+            "importance": importance,
+            "why":        attrs.get("why", "model-authored memory"),
+        })
+    return entries
+
+def _strip_remember_tags(text: str) -> str:
+    """Remove all <remember>…</remember> blocks from text."""
+    return _REMEMBER_RE.sub("", text).strip()
+
 
 def _ensure_memory() -> MemoryManager:
     global _memory
@@ -934,30 +966,66 @@ async def chat_ws(ws: WebSocket):
                     await ws.send_json({"type": "token", "content": token})
 
                 response_text = "".join(full_response)
-                _conversation.append({"role": "assistant", "content": response_text})
 
-                # Post-turn processing: emotion detection, mood update,
-                # chemistry tick, auto-remember, periodic consolidation.
-                # If memory curation is enabled, ask the LLM first.
+                # ── Model-authored memory (organic) ───────────────────────
+                # Parse any <remember> tags the model wrote itself.
+                # Strip them from the stored/displayed response.
+                clean_response = _strip_remember_tags(response_text)
+                remember_tags  = _parse_remember_tags(response_text) if memory_enabled else []
+
+                # Store the clean response (no <remember> tags) in history
+                _conversation.append({"role": "assistant", "content": clean_response})
+
+                # ── Post-turn: mood/chemistry/consolidation ───────────────
                 turn_info = {}
-                if _cfg.get("memory", {}).get("auto_remember", True) and memory_enabled:
+                if memory_enabled:
                     try:
-                        # LLM-driven curation (async); falls back to None on error
-                        curation = None
-                        if _cfg.get("memory", {}).get("llm_curation", True):
-                            try:
-                                curation = await mem.llm_curate_memory(
-                                    user_text, response_text, backend
-                                )
-                            except Exception:
-                                curation = None
+                        # Save each model-authored memory
+                        for entry in remember_tags:
+                            mem.remember(
+                                content=entry["content"],
+                                emotion=entry["emotion"],
+                                importance=entry["importance"],
+                                source="conversation",
+                                why_saved=entry["why"],
+                            )
 
+                        # Heuristic fallback — ONLY for task-priority presets
+                        # (agent/assistant) when the model wrote no <remember> tags.
+                        # Keeps goal/task/lesson tracking alive even for non-expressive models.
+                        if not remember_tags and preset.get("task_priority", False):
+                            from playground.memory_manager import (
+                                detect_emotions, estimate_importance
+                            )
+                            combined = user_text + " " + clean_response
+                            emotions_fb = detect_emotions(combined)
+                            importance_fb = estimate_importance(user_text, clean_response)
+                            # Only auto-save if there are clear task signals
+                            task_words = {"task", "goal", "deadline", "reminder",
+                                          "lesson", "error", "failed", "fixed",
+                                          "todo", "action", "need to", "must"}
+                            if any(w in combined.lower() for w in task_words):
+                                mem.remember(
+                                    content=(
+                                        f"User: {user_text[:200]}\n"
+                                        f"Response: {clean_response[:300]}"
+                                    ),
+                                    emotion=emotions_fb[0] if emotions_fb else "neutral",
+                                    importance=importance_fb,
+                                    source="conversation",
+                                    why_saved="auto-captured task/goal signal",
+                                )
+                                remember_tags = ["__fallback__"]  # flag for done msg
+
+                        # process_turn handles mood/chemistry/huginn/volva/consolidation
+                        # — memory saving is already done above, so we pass no curation
                         turn_info = mem.process_turn(
-                            user_text, response_text, preset, curation=curation
+                            user_text, clean_response, preset, curation=None,
+                            skip_save=True,
                         )
 
                         # Background: periodic LLM reflect (every 20 turns)
-                        # and edit_memories (every 40 turns) — organic self-curation
+                        # and edit_memories (every 40 turns) — these remain organic
                         turn_count = mem._turn_count
                         if turn_count > 0 and turn_count % 20 == 0:
                             async def _bg_reflect():
@@ -974,6 +1042,7 @@ async def chat_ws(ws: WebSocket):
                                 except Exception:
                                     pass
                             asyncio.create_task(_bg_edit())
+
                         # Track mood changes
                         global _mood_history, _chemistry_history
                         try:
@@ -999,7 +1068,7 @@ async def chat_ws(ws: WebSocket):
 
                 await ws.send_json({
                     "type": "done",
-                    "memory_saved": bool(turn_info),
+                    "memory_saved": len([t for t in remember_tags if t != "__fallback__"]),
                     "mood": turn_info.get("mood_label", ""),
                     "emotion": turn_info.get("emotion", ""),
                 })

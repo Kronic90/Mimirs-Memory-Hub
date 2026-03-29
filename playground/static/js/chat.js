@@ -21,6 +21,18 @@ const Chat = (() => {
         }
     }
 
+    // ── Strip <remember>…</remember> tags from display text ─────
+    // The server already strips them from stored history, but tokens
+    // arrive raw during streaming — hide them client-side too.
+    const _REMEMBER_RE = /<remember(?:[^>]*)>[\s\S]*?<\/remember>/gi;
+    // Also hide a partially-streaming <remember> that hasn't closed yet
+    const _REMEMBER_OPEN_RE = /<remember(?:[^>]*)>[\s\S]*/i;
+
+    function stripRememberTags(text) {
+        // Remove complete tags first, then any still-open trailing tag
+        return text.replace(_REMEMBER_RE, '').replace(_REMEMBER_OPEN_RE, '').trim();
+    }
+
     // ── Split <think>…</think> from response text ───────────────
     // Returns { thinking: string|null, response: string, streaming: bool }
     // Handles both fully-closed tags and still-streaming (unclosed) tags.
@@ -169,7 +181,7 @@ const Chat = (() => {
             case 'token':
                 if (currentAssistantEl) {
                     currentTokens.push(msg.content);
-                    const raw = currentTokens.join('');
+                    const raw = stripRememberTags(currentTokens.join(''));
                     const split = splitThinking(raw);
 
                     if (split.thinking !== null) {
@@ -207,7 +219,9 @@ const Chat = (() => {
                 App.state.streaming = false;
                 document.getElementById('btn-send').disabled = false;
                 currentAssistantEl = null;
-                if (msg.memory_saved) {
+                if (msg.memory_saved && msg.memory_saved > 0) {
+                    const count = msg.memory_saved;
+                    showMemorySavedPip(count);
                     updateMemoryPanel();
                 }
                 if (msg.mood && msg.mood !== 'neutral') {
@@ -271,6 +285,21 @@ const Chat = (() => {
                 }
             }
         } catch {}
+    }
+
+    // ── Memory-saved pip ──────────────────────────────────────────
+    // Small non-intrusive indicator that the model wrote a memory this turn.
+    function showMemorySavedPip(count) {
+        const container = document.getElementById('chat-messages');
+        const pip = document.createElement('div');
+        pip.className = 'memory-pip';
+        pip.textContent = count === 1 ? '💾 memory saved' : `💾 ${count} memories saved`;
+        container.appendChild(pip);
+        container.scrollTop = container.scrollHeight;
+        setTimeout(() => {
+            pip.style.opacity = '0';
+            setTimeout(() => pip.remove(), 500);
+        }, 3000);
     }
 
     // ── Mood indicator ─────────────────────────────────────────────
