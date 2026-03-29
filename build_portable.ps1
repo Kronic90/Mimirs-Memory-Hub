@@ -66,6 +66,7 @@ if ($LASTEXITCODE -ne 0) {
 # ── Step 4: Copy app files ────────────────────────────────────────────
 Write-Host " [4/5] Copying application files..." -ForegroundColor Yellow
 Copy-Item -Path "$ROOT\playground"       -Destination "$BUILD_DIR\playground"       -Recurse
+Copy-Item -Path "$ROOT\Mimir.py"         -Destination "$BUILD_DIR\Mimir.py"
 Copy-Item -Path "$ROOT\run.bat"          -Destination "$BUILD_DIR\run.bat"
 Copy-Item -Path "$ROOT\run.sh"           -Destination "$BUILD_DIR\run.sh"
 Copy-Item -Path "$ROOT\start.command"    -Destination "$BUILD_DIR\start.command"
