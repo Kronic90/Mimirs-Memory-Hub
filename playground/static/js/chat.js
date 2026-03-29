@@ -43,20 +43,31 @@ const Chat = (() => {
     // Keep old name as alias so nothing breaks
     const stripRememberTags = stripSpecialTags;
 
-    // ── Split <think>…</think> from response text ───────────────
+    // ── Split think/thinking blocks from response text ───────────────
+    // Handles <think>, <thinking>, case variants, and still-streaming open tags.
     // Returns { thinking: string|null, response: string, streaming: bool }
-    // Handles both fully-closed tags and still-streaming (unclosed) tags.
+    const _THINK_OPEN_RE  = /<(think|thinking)>/i;
+    const _THINK_CLOSE_RE = /<\/(think|thinking)>/i;
+
     function splitThinking(raw) {
         if (!raw) return { thinking: null, response: raw };
-        const open  = raw.indexOf('<think>');
-        const close = raw.indexOf('</think>');
-        if (open === -1) return { thinking: null, response: raw };
-        if (close === -1) {
+
+        const openMatch  = _THINK_OPEN_RE.exec(raw);
+        if (!openMatch) return { thinking: null, response: raw };
+
+        const openIdx  = openMatch.index;
+        const openLen  = openMatch[0].length;
+        const closeMatch = _THINK_CLOSE_RE.exec(raw);
+
+        if (!closeMatch) {
             // Tag still open — streaming in progress
-            return { thinking: raw.slice(open + 7), response: '', streaming: true };
+            return { thinking: raw.slice(openIdx + openLen), response: '', streaming: true };
         }
-        const thinking = raw.slice(open + 7, close).trim();
-        const response = (raw.slice(0, open) + raw.slice(close + 8)).trim();
+
+        const closeIdx = closeMatch.index;
+        const closeLen = closeMatch[0].length;
+        const thinking = raw.slice(openIdx + openLen, closeIdx).trim();
+        const response = (raw.slice(0, openIdx) + raw.slice(closeIdx + closeLen)).trim();
         return { thinking, response, streaming: false };
     }
 

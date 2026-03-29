@@ -52,6 +52,12 @@ _REMEMBER_RE = _re.compile(
 )
 _ATTR_RE = _re.compile(r'(\w+)=["\']([^"\']*)["\']')
 
+# Strip <think> / <thinking> blocks from stored conversation history
+_THINK_STRIP_RE = _re.compile(
+    r'<(think|thinking)>.*?</(think|thinking)>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
 def _parse_remember_tags(text: str) -> list[dict]:
     """Extract all <remember> entries from model output.
 
@@ -1152,7 +1158,9 @@ async def chat_ws(ws: WebSocket):
                 # ── Model-authored memory (organic) ───────────────────────
                 # Parse any <remember> tags the model wrote itself.
                 # Strip them from the stored/displayed response.
-                clean_response = _strip_remember_tags(response_text)
+                # Also strip <think>/<thinking> blocks so they don't pollute history.
+                clean_response = _THINK_STRIP_RE.sub("", response_text).strip()
+                clean_response = _strip_remember_tags(clean_response)
                 clean_response = _strip_remind_tags(clean_response)
                 # Collect showimage hashes before stripping
                 showimage_hashes = _parse_showimage_tags(clean_response)
