@@ -307,6 +307,166 @@ const MemoryPage = (() => {
         } catch { App.toast('Dream failed', 'error'); }
     }
 
+    // ── Reflect ──────────────────────────────────────────────────
+    async function runReflect() {
+        App.toast('Reflecting on memories…', 'info');
+        try {
+            const result = await App.apiPost('/memory/reflect', {});
+            const el = document.getElementById('insight-results');
+            if (result.reflection) {
+                el.innerHTML = '<h3>🌀 Self-Reflection</h3>' +
+                    `<div class="insight-card reflect">${esc(result.reflection)}</div>`;
+                el.style.display = '';
+                App.toast('Reflection stored', 'success');
+            } else if (result.error) {
+                App.toast('Reflect: ' + result.error, 'error');
+            } else {
+                App.toast('No reflection generated (check LLM is loaded)', 'info');
+            }
+            loadStats();
+        } catch { App.toast('Reflect failed', 'error'); }
+    }
+
+    // ── AI Curate ────────────────────────────────────────────────
+    async function runAICurate() {
+        const instruction = prompt(
+            'Optional curation instruction (leave blank for organic):',
+            ''
+        );
+        if (instruction === null) return;
+        App.toast('AI curating memories…', 'info');
+        try {
+            const result = await App.apiPost('/memory/edit', { instruction });
+            if (result.error) {
+                App.toast('Curate: ' + result.error, 'error');
+            } else {
+                const { promoted = 0, demoted = 0, forgotten = 0, updated = 0 } = result;
+                App.toast(
+                    `Done — promoted: ${promoted}, demoted: ${demoted}, ` +
+                    `forgotten: ${forgotten}, updated: ${updated}`,
+                    'success'
+                );
+                browseMemories(0);
+                loadStats();
+            }
+        } catch { App.toast('AI curate failed', 'error'); }
+    }
+
+    // ── Social Impressions ───────────────────────────────────────
+    async function loadSocialImpressions() {
+        const el = document.getElementById('social-list');
+        if (!el) return;
+        try {
+            const impressions = await App.api('/memory/social');
+            if (!impressions.length) {
+                el.innerHTML = '<p class="text-muted">No social impressions yet.</p>';
+                return;
+            }
+            el.innerHTML = impressions.map(m => `
+                <div class="memory-card emotion-${esc(m.emotion || 'neutral')}">
+                    <div class="memory-card-body">
+                        <strong>${esc(m.entity || m.entity_key || '—')}</strong>
+                        <div class="memory-card-content">${esc(m.gist || m.content || '')}</div>
+                    </div>
+                    <div class="memory-card-meta">
+                        <span class="mem-emotion">${esc(m.emotion || '—')}</span>
+                        <span>${m.timestamp ? new Date(m.timestamp).toLocaleDateString() : ''}</span>
+                    </div>
+                </div>`).join('');
+        } catch {
+            el.innerHTML = '<p class="text-muted">Could not load.</p>';
+        }
+    }
+
+    async function addSocialImpression() {
+        const entity = document.getElementById('social-entity').value.trim();
+        const content = document.getElementById('social-content').value.trim();
+        const emotion = document.getElementById('social-emotion').value || 'neutral';
+        const importance = parseInt(document.getElementById('social-importance').value) || 5;
+        if (!entity || !content) { App.toast('Entity and content required', 'error'); return; }
+        try {
+            await App.apiPost('/memory/social', { entity, content, emotion, importance, why_saved: 'user-added social impression' });
+            App.toast(`Impression about "${entity}" saved`, 'success');
+            document.getElementById('social-content').value = '';
+            loadSocialImpressions();
+        } catch { App.toast('Failed to save impression', 'error'); }
+    }
+
+    // ── Lessons ──────────────────────────────────────────────────
+    async function loadLessons() {
+        const el = document.getElementById('lessons-list');
+        if (!el) return;
+        try {
+            const lessons = await App.api('/memory/lessons');
+            if (!lessons.length) {
+                el.innerHTML = '<p class="text-muted">No lessons yet.</p>';
+                return;
+            }
+            el.innerHTML = lessons.map(l => `
+                <div class="lesson-card ${l.failures > 0 ? 'zeigarnik-active' : ''}">
+                    <div class="lesson-topic">${esc(l.topic)}</div>
+                    <div class="lesson-strategy">${esc(l.strategy || l.context_trigger || '')}</div>
+                    <div class="lesson-meta">
+                        <span>imp: ${l.importance}</span>
+                        ${l.failures > 0 ? `<span class="zeigarnik-badge">⚠️ ${l.failures} unresolved</span>` : ''}
+                    </div>
+                </div>`).join('');
+        } catch {
+            el.innerHTML = '<p class="text-muted">Could not load.</p>';
+        }
+    }
+
+    async function addLesson() {
+        const topic = document.getElementById('lesson-topic').value.trim();
+        const trigger = document.getElementById('lesson-trigger').value.trim();
+        const strategy = document.getElementById('lesson-strategy').value.trim();
+        const importance = parseInt(document.getElementById('lesson-importance').value) || 5;
+        if (!topic || !strategy) { App.toast('Topic and strategy required', 'error'); return; }
+        try {
+            await App.apiPost('/memory/lessons', { topic, context_trigger: trigger, strategy, importance });
+            App.toast('Lesson added', 'success');
+            document.getElementById('lesson-topic').value = '';
+            document.getElementById('lesson-trigger').value = '';
+            document.getElementById('lesson-strategy').value = '';
+            loadLessons();
+            loadStats();
+        } catch { App.toast('Failed to add lesson', 'error'); }
+    }
+
+    // ── Reminders ────────────────────────────────────────────────
+    async function loadReminders() {
+        const el = document.getElementById('reminders-list');
+        if (!el) return;
+        try {
+            const reminders = await App.api('/memory/reminders');
+            if (!reminders.length) {
+                el.innerHTML = '<p class="text-muted">No reminders set.</p>';
+                return;
+            }
+            el.innerHTML = reminders.map(r => `
+                <div class="reminder-card ${r.is_due ? 'reminder-due' : ''}">
+                    <div class="reminder-text">${esc(r.text)}</div>
+                    <div class="reminder-meta">
+                        ${r.is_due ? '🔔 DUE NOW' : '⏰ ' + new Date(r.trigger_at).toLocaleString()}
+                    </div>
+                </div>`).join('');
+        } catch {
+            el.innerHTML = '<p class="text-muted">Could not load.</p>';
+        }
+    }
+
+    async function addReminder() {
+        const text = document.getElementById('reminder-text').value.trim();
+        const hours = parseFloat(document.getElementById('reminder-hours').value) || 24;
+        if (!text) { App.toast('Reminder text required', 'error'); return; }
+        try {
+            await App.apiPost('/memory/reminders', { text, hours });
+            App.toast(`Reminder set for ${hours}h`, 'success');
+            document.getElementById('reminder-text').value = '';
+            loadReminders();
+        } catch { App.toast('Failed to set reminder', 'error'); }
+    }
+
     // ── Escape ───────────────────────────────────────────────────
     function esc(str) {
         const el = document.createElement('span');
@@ -336,13 +496,25 @@ const MemoryPage = (() => {
             ['filter-emotion', 'filter-source', 'filter-sort', 'filter-importance'].forEach(id => {
                 document.getElementById(id).addEventListener('change', () => browseMemories(0));
             });
+            // New organic controls
+            document.getElementById('btn-reflect')?.addEventListener('click', runReflect);
+            document.getElementById('btn-ai-curate')?.addEventListener('click', runAICurate);
+            document.getElementById('btn-add-social')?.addEventListener('click', addSocialImpression);
+            document.getElementById('btn-add-lesson')?.addEventListener('click', addLesson);
+            document.getElementById('btn-add-reminder')?.addEventListener('click', addReminder);
             initialized = true;
         }
         loadStats();
         loadChemistry();
         loadFilters();
         browseMemories(0);
+        loadSocialImpressions();
+        loadLessons();
+        loadReminders();
     }
 
-    return { init, editMemory, deleteMemory, toggleCherish, toggleAnchor };
+    return {
+        init, editMemory, deleteMemory, toggleCherish, toggleAnchor,
+        runReflect, runAICurate, loadSocialImpressions, loadLessons, loadReminders
+    };
 })();

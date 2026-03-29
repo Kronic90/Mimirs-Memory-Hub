@@ -307,6 +307,8 @@
                         <button id="btn-sleep" class="btn btn-secondary">🌙 Sleep</button>
                         <button id="btn-run-huginn" class="btn btn-secondary">🔮 Huginn</button>
                         <button id="btn-run-dream" class="btn btn-secondary">💭 Dream</button>
+                        <button id="btn-reflect" class="btn btn-secondary">🌀 Reflect</button>
+                        <button id="btn-ai-curate" class="btn btn-secondary">🤖 AI Curate</button>
                     </div>
                 </div>
 
@@ -359,8 +361,64 @@
                     <button id="btn-next-page" class="btn btn-secondary btn-sm">Next →</button>
                 </div>
 
-                <!-- Insight results (Huginn/Dream) -->
+                <!-- Insight results (Huginn/Dream/Reflect) -->
                 <div id="insight-results" style="display:none;" class="insight-results"></div>
+
+                <!-- Social Impressions panel -->
+                <div class="organic-panel">
+                    <div class="organic-panel-header">
+                        <h3>👥 Social Impressions</h3>
+                        <p class="text-muted">Episodic memories about people and entities</p>
+                    </div>
+                    <div class="organic-panel-form">
+                        <input type="text" id="social-entity" class="input input-sm" placeholder="Entity name (e.g. Alice)" style="width:160px;">
+                        <input type="text" id="social-content" class="input input-sm" placeholder="What happened / impression…" style="flex:1;">
+                        <select id="social-emotion" class="input input-sm" style="width:120px;">
+                            <option value="neutral">neutral</option>
+                            <option value="joy">joy</option>
+                            <option value="sadness">sadness</option>
+                            <option value="anger">anger</option>
+                            <option value="fear">fear</option>
+                            <option value="trust">trust</option>
+                            <option value="surprise">surprise</option>
+                            <option value="disgust">disgust</option>
+                        </select>
+                        <input type="number" id="social-importance" class="input input-sm" value="5" min="1" max="10" style="width:60px;" title="Importance 1-10">
+                        <button id="btn-add-social" class="btn btn-primary btn-sm">+ Add</button>
+                    </div>
+                    <div id="social-list" class="organic-panel-list"></div>
+                </div>
+
+                <!-- Lessons panel -->
+                <div class="organic-panel">
+                    <div class="organic-panel-header">
+                        <h3>📚 Lessons Learned</h3>
+                        <p class="text-muted">Strategies and patterns discovered through experience</p>
+                    </div>
+                    <div class="organic-panel-form">
+                        <input type="text" id="lesson-topic" class="input input-sm" placeholder="Topic (e.g. async tasks)" style="width:180px;">
+                        <input type="text" id="lesson-trigger" class="input input-sm" placeholder="Context trigger…" style="flex:1;">
+                        <input type="text" id="lesson-strategy" class="input input-sm" placeholder="Strategy to apply…" style="flex:2;">
+                        <input type="number" id="lesson-importance" class="input input-sm" value="5" min="1" max="10" style="width:60px;" title="Importance 1-10">
+                        <button id="btn-add-lesson" class="btn btn-primary btn-sm">+ Add</button>
+                    </div>
+                    <div id="lessons-list" class="organic-panel-list"></div>
+                </div>
+
+                <!-- Reminders panel -->
+                <div class="organic-panel">
+                    <div class="organic-panel-header">
+                        <h3>⏰ Reminders</h3>
+                        <p class="text-muted">Prospective memory — things to remember later</p>
+                    </div>
+                    <div class="organic-panel-form">
+                        <input type="text" id="reminder-text" class="input input-sm" placeholder="What to remember…" style="flex:1;">
+                        <input type="number" id="reminder-hours" class="input input-sm" value="24" min="0.1" step="0.5" style="width:80px;" title="Hours until due">
+                        <span class="text-muted" style="font-size:0.8em;align-self:center;">hrs</span>
+                        <button id="btn-add-reminder" class="btn btn-primary btn-sm">+ Set</button>
+                    </div>
+                    <div id="reminders-list" class="organic-panel-list"></div>
+                </div>
             </div>
 
             <!-- ──────── VISUALIZE PAGE ──────── -->

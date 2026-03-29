@@ -2175,6 +2175,63 @@ a:hover { text-decoration: underline; }
 .insight-card.dream {
     border-left: 3px solid #a78bfa;
 }
+.insight-card.reflect {
+    border-left: 3px solid #22d3ee;
+    white-space: pre-wrap;
+}
+
+/* ── Organic panels (social / lessons / reminders) ──────────────── */
+
+.organic-panel {
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.organic-panel-header { margin-bottom: 10px; }
+.organic-panel-header h3 { font-size: 15px; margin: 0 0 2px; }
+.organic-panel-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.organic-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+.lesson-card {
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-left: 3px solid #34d399;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+}
+.lesson-card.zeigarnik-active { border-left-color: #fb923c; }
+.lesson-topic { font-weight: 600; color: var(--text); }
+.lesson-strategy { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+.lesson-meta { display: flex; gap: 10px; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+.zeigarnik-badge { color: #fb923c; }
+.reminder-card {
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-left: 3px solid #60a5fa;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+}
+.reminder-card.reminder-due {
+    border-left-color: #f87171;
+    background: rgba(248, 113, 113, 0.06);
+}
+.reminder-text { color: var(--text); }
+.reminder-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
 /* ── Stat cards (enhanced) ──────────────────────────────────────── */
 

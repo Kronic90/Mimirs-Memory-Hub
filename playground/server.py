@@ -438,6 +438,160 @@ async def memory_filters():
     })
 
 
+# ── Social Impressions ────────────────────────────────────────────
+
+@app.post("/api/memory/social")
+async def memory_add_social(request: Request):
+    """Add a social impression about a person/entity."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.add_social(
+        entity=body.get("entity", ""),
+        content=body.get("content", ""),
+        emotion=body.get("emotion", "neutral"),
+        importance=body.get("importance", 5),
+        why_saved=body.get("why_saved", ""),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
+@app.get("/api/memory/social")
+async def memory_get_social(entity: str = ""):
+    """Get social impressions, optionally filtered by entity."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_social_impressions(entity=entity))
+
+
+# ── Lessons ──────────────────────────────────────────────────────
+
+@app.get("/api/memory/lessons")
+async def memory_get_lessons():
+    """Get all active lessons."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_active_lessons())
+
+
+@app.post("/api/memory/lessons")
+async def memory_add_lesson(request: Request):
+    """Add a lesson derived from experience."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.add_lesson(
+        topic=body.get("topic", ""),
+        context_trigger=body.get("context_trigger", ""),
+        strategy=body.get("strategy", ""),
+        importance=body.get("importance", 5),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
+@app.post("/api/memory/lessons/{lesson_id}/outcome")
+async def memory_record_outcome(lesson_id: str, request: Request):
+    """Record an attempt outcome for a lesson."""
+    body = await request.json()
+    mem = _ensure_memory()
+    ok = mem.record_outcome(
+        lesson_id=lesson_id,
+        action=body.get("action", ""),
+        result=body.get("result", ""),
+        diagnosis=body.get("diagnosis", ""),
+    )
+    return JSONResponse({"ok": ok})
+
+
+# ── Reminders ────────────────────────────────────────────────────
+
+@app.post("/api/memory/reminders")
+async def memory_add_reminder(request: Request):
+    """Create a timed reminder."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.set_reminder(
+        text=body.get("text", ""),
+        hours=float(body.get("hours", 24)),
+    )
+    mem.save()
+    return JSONResponse(result)
+
+
+@app.get("/api/memory/reminders")
+async def memory_get_reminders(include_fired: bool = False):
+    """Get all pending reminders."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_reminders(include_fired=include_fired))
+
+
+# ── LLM Reflect & Edit ───────────────────────────────────────────
+
+@app.post("/api/memory/reflect")
+async def memory_reflect():
+    """Run LLM self-reflection on memories, store as insight."""
+    mem = _ensure_memory()
+    backend_name = _cfg.get("active_backend", "ollama")
+    model_id = _cfg.get("active_model", "")
+    backend = create_backend(backend_name, _cfg.to_dict())
+    # Patch backend model
+    backend._model = model_id
+    result = await mem.reflect(backend)
+    return JSONResponse(result)
+
+
+@app.post("/api/memory/edit")
+async def memory_edit(request: Request):
+    """LLM-driven bulk memory curation (promote/demote/forget/update)."""
+    body = await request.json()
+    mem = _ensure_memory()
+    backend_name = _cfg.get("active_backend", "ollama")
+    model_id = _cfg.get("active_model", "")
+    backend = create_backend(backend_name, _cfg.to_dict())
+    backend._model = model_id
+    instruction = body.get("instruction", "")
+    result = await mem.edit_memories(backend, instruction=instruction)
+    return JSONResponse(result)
+
+
+# ── Per-memory advanced ops ───────────────────────────────────────
+
+@app.post("/api/memory/{index}/reframe")
+async def memory_reframe(index: int, request: Request):
+    """Properly reframe a memory's emotion (logged to audit)."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = mem.reframe_memory(
+        index=index,
+        new_emotion=body.get("emotion", "neutral"),
+        reason=body.get("reason", ""),
+    )
+    if result is not None:
+        return JSONResponse(result)
+    return JSONResponse({"error": "Invalid index"}, status_code=404)
+
+
+@app.post("/api/memory/{index}/relive")
+async def memory_relive(index: int):
+    """Mental Time Travel: touch memory and shift current mood."""
+    mem = _ensure_memory()
+    result = mem.relive_memory(index)
+    if result is not None:
+        return JSONResponse(result)
+    return JSONResponse({"error": "Invalid index"}, status_code=404)
+
+
+# ── Yggdrasil enrichment ─────────────────────────────────────────
+
+@app.post("/api/memory/enrich")
+async def memory_enrich(request: Request):
+    """Run LLM-inferred graph enrichment (Yggdrasil edges)."""
+    body = await request.json()
+    mem = _ensure_memory()
+    result = await asyncio.to_thread(
+        mem.enrich_yggdrasil, body.get("batch_size", 20)
+    )
+    return JSONResponse(result)
+
+
 # ── Conversation history ──────────────────────────────────────────
 
 _conversations_dir: Path = _cfg.profile_dir / "conversations"
@@ -801,6 +955,25 @@ async def chat_ws(ws: WebSocket):
                         turn_info = mem.process_turn(
                             user_text, response_text, preset, curation=curation
                         )
+
+                        # Background: periodic LLM reflect (every 20 turns)
+                        # and edit_memories (every 40 turns) — organic self-curation
+                        turn_count = mem._turn_count
+                        if turn_count > 0 and turn_count % 20 == 0:
+                            async def _bg_reflect():
+                                try:
+                                    await mem.reflect(backend)
+                                except Exception:
+                                    pass
+                            asyncio.create_task(_bg_reflect())
+
+                        if turn_count > 0 and turn_count % 40 == 0:
+                            async def _bg_edit():
+                                try:
+                                    await mem.edit_memories(backend)
+                                except Exception:
+                                    pass
+                            asyncio.create_task(_bg_edit())
                         # Track mood changes
                         global _mood_history, _chemistry_history
                         try:

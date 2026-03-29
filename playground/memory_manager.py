@@ -83,6 +83,8 @@ class MemoryManager:
 
     # Number of turns between automatic consolidation
     _CONSOLIDATION_INTERVAL = 25
+    _HUGINN_INTERVAL = 10
+    _VOLVA_INTERVAL = 30   # Völva dream synthesis every 30 turns
 
     def __init__(self, profile_dir: str | Path, chemistry: bool = True,
                  llm_fn=None):
@@ -334,6 +336,13 @@ class MemoryManager:
             except Exception:
                 pass
 
+        # Run Völva dream synthesis every 30 turns (organic cross-memory insight)
+        if self._turn_count % self._VOLVA_INTERVAL == 0:
+            try:
+                self._mimir.volva_dream()
+            except Exception:
+                pass
+
         self.save()
 
         return {
@@ -453,6 +462,11 @@ class MemoryManager:
 
     def sleep(self, hours: float = 8.0) -> None:
         self._mimir.sleep_reset(hours)
+        # Also enrich the Yggdrasil graph if LLM is available
+        try:
+            self._mimir.enrich_yggdrasil(batch_size=10)
+        except Exception:
+            pass
         self._mimir.save()
 
     def bump_session(self) -> int:
@@ -507,6 +521,20 @@ class MemoryManager:
         )
         return mem.to_dict()
 
+    def get_social_impressions(self, entity: str = "") -> list[dict]:
+        """Return social impressions, optionally filtered by entity."""
+        social = self._mimir.social_impressions  # dict: entity -> [Memory]
+        results = []
+        for ent, mems in social.items():
+            if entity and ent.lower() != entity.lower():
+                continue
+            for m in mems:
+                d = m.to_dict()
+                d["entity_key"] = ent
+                results.append(d)
+        results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return results
+
     # ── facts ─────────────────────────────────────────────────────────
 
     def add_fact(self, entity: str, attribute: str, value: str) -> dict:
@@ -540,6 +568,225 @@ class MemoryManager:
         return [{"id": l.id, "topic": l.topic, "strategy": l.strategy,
                  "importance": l.importance,
                  "failures": l.consecutive_failures} for l in lessons]
+
+    def add_lesson(self, topic: str, context_trigger: str,
+                   strategy: str, importance: int = 5) -> dict:
+        """Add a lesson derived from experience."""
+        lesson = self._mimir.add_lesson(
+            topic=topic,
+            context_trigger=context_trigger,
+            strategy=strategy,
+            importance=importance,
+        )
+        return {"id": lesson.id, "topic": lesson.topic,
+                "context_trigger": lesson.context_trigger,
+                "strategy": lesson.strategy,
+                "importance": lesson.importance,
+                "failures": lesson.consecutive_failures}
+
+    def record_outcome(self, lesson_id: str, action: str,
+                       result: str, diagnosis: str = "") -> bool:
+        """Record an attempt outcome against a lesson."""
+        try:
+            self._mimir.record_outcome(lesson_id, action, result, diagnosis)
+            self.save()
+            return True
+        except Exception:
+            return False
+
+    # ── reminders ────────────────────────────────────────────────────
+
+    def set_reminder(self, text: str, hours: float = 24.0) -> dict:
+        """Create a timed reminder."""
+        reminder = self._mimir.set_reminder(text, hours)
+        return {"text": reminder.text,
+                "trigger_at": reminder.trigger_at,
+                "created": reminder.created,
+                "fired": reminder.fired}
+
+    def get_reminders(self, include_fired: bool = False) -> list[dict]:
+        """Return pending (and optionally fired) reminders."""
+        all_reminders = self._mimir._reminders
+        result = []
+        for r in all_reminders:
+            if r.fired and not include_fired:
+                continue
+            result.append({"text": r.text,
+                           "trigger_at": r.trigger_at,
+                           "created": r.created,
+                           "fired": r.fired,
+                           "is_due": r.is_due})
+        return result
+
+    # ── advanced memory ops ───────────────────────────────────────────
+
+    def reframe_memory(self, index: int, new_emotion: str,
+                       reason: str = "") -> dict | None:
+        """Intentionally reframe a memory's emotion — logged to audit."""
+        refs = self._mimir._reflections
+        if index < 0 or index >= len(refs):
+            return None
+        mem = refs[index]
+        self._mimir.reframe(mem, new_emotion, reason)
+        self.save()
+        return mem.to_dict()
+
+    def relive_memory(self, index: int) -> dict | None:
+        """Mental Time Travel: touch memory, shift mood, fire spreading activation."""
+        refs = self._mimir._reflections
+        if index < 0 or index >= len(refs):
+            return None
+        mem = refs[index]
+        try:
+            result = self._mimir.relive(mem)
+            return result
+        except Exception:
+            return {"memory": mem.to_dict()}
+
+    def enrich_yggdrasil(self, batch_size: int = 20) -> dict:
+        """Run LLM-inferred graph enrichment on recent memories."""
+        try:
+            added = self._mimir.enrich_yggdrasil(batch_size)
+            return {"edges_added": added}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def reflect(self, backend) -> dict:
+        """Ask the LLM to reflect on its memories and store insights."""
+        try:
+            # Build a compact snapshot of recent memories for the LLM
+            recent = self._mimir._reflections[-20:]
+            mem_lines = "\n".join(
+                f"- [{m.emotion}, imp={m.importance}] {m.gist}"
+                for m in recent
+            )
+            stats = self._mimir.stats()
+            prompt = (
+                "You are an AI reviewing your own long-term memory.\n"
+                f"You have {stats.get('total_reflections', 0)} memories stored.\n"
+                f"Current mood: {self._mimir.mood_label}\n\n"
+                "Recent memories:\n"
+                f"{mem_lines}\n\n"
+                "Reflect on 2-3 meaningful patterns, themes, or gaps you notice "
+                "in your memory. What does this tell you about your ongoing "
+                "experiences and growth? Be concise and genuine."
+            )
+            messages = [{"role": "user", "content": prompt}]
+            result = ""
+            async for token in backend.generate(
+                messages=messages,
+                system_prompt="",
+                temperature=0.7,
+                max_tokens=300,
+                model="",
+            ):
+                result += token
+
+            if result.strip():
+                # Store reflection as a Huginn insight
+                mem = self._mimir.remember(
+                    content=f"[self-reflection] {result.strip()}",
+                    emotion="reflective",
+                    importance=6,
+                    source="huginn",
+                    why_saved="periodic LLM self-reflection",
+                )
+                self.save()
+                return {"reflection": result.strip(),
+                        "stored": True}
+            return {"reflection": "", "stored": False}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def edit_memories(self, backend, instruction: str = "") -> dict:
+        """LLM-driven bulk memory curation: promote, demote, forget, update."""
+        try:
+            # Build a numbered list of recent memories
+            recent = self._mimir._reflections[-20:]
+            mem_lines = "\n".join(
+                f"[{i}] emotion={m.emotion}, imp={m.importance}, "
+                f"src={m.source}: {m.gist}"
+                for i, m in enumerate(recent)
+            )
+            if not instruction:
+                instruction = (
+                    "Review these memories and organically curate them. "
+                    "Forget trivial ones, promote important ones, update "
+                    "emotions where they've shifted."
+                )
+            prompt = (
+                f"You are curating your own memory store.\n\n"
+                f"Instruction: {instruction}\n\n"
+                f"Memories (indices 0-{len(recent)-1}):\n{mem_lines}\n\n"
+                "Reply ONLY with a JSON array of operations:\n"
+                '[{"op": "FORGET", "idx": 2}, {"op": "PROMOTE", "idx": 5}, '
+                '{"op": "DEMOTE", "idx": 1}, '
+                '{"op": "UPDATE", "idx": 3, "emotion": "nostalgic", '
+                '"importance": 8}]\n'
+                "Valid ops: FORGET, PROMOTE (importance+2), DEMOTE (importance-2), UPDATE.\n"
+                "Only include memories that genuinely need changing. "
+                "Return [] if nothing needs changing."
+            )
+            import json as _json
+            import re as _re
+            messages = [{"role": "user", "content": prompt}]
+            result = ""
+            async for token in backend.generate(
+                messages=messages,
+                system_prompt="",
+                temperature=0.1,
+                max_tokens=400,
+                model="",
+            ):
+                result += token
+
+            m = _re.search(r"\[.*?\]", result, _re.DOTALL)
+            if not m:
+                return {"promoted": 0, "demoted": 0, "forgotten": 0, "updated": 0}
+            ops = _json.loads(m.group())
+
+            counts = {"promoted": 0, "demoted": 0, "forgotten": 0, "updated": 0}
+            base = len(self._mimir._reflections) - len(recent)
+            to_forget_real = []
+
+            for op in ops:
+                idx = op.get("idx")
+                if idx is None or not isinstance(idx, int):
+                    continue
+                real_idx = base + idx
+                if real_idx < 0 or real_idx >= len(self._mimir._reflections):
+                    continue
+                mem = self._mimir._reflections[real_idx]
+                # Never touch protected memories
+                if mem._is_flashbulb or mem._anchor or mem._cherished:
+                    continue
+                op_type = op.get("op", "").upper()
+                if op_type == "FORGET":
+                    to_forget_real.append(real_idx)
+                    counts["forgotten"] += 1
+                elif op_type == "PROMOTE":
+                    mem._importance = min(10, mem.importance + 2)
+                    counts["promoted"] += 1
+                elif op_type == "DEMOTE":
+                    mem._importance = max(1, mem.importance - 2)
+                    counts["demoted"] += 1
+                elif op_type == "UPDATE":
+                    if "emotion" in op:
+                        mem.emotion = str(op["emotion"])
+                    if "importance" in op:
+                        mem._importance = max(1, min(10, int(op["importance"])))
+                    counts["updated"] += 1
+
+            # Remove forgotten in reverse order to preserve indices
+            for real_idx in sorted(to_forget_real, reverse=True):
+                self._mimir._reflections.pop(real_idx)
+
+            if any(counts.values()):
+                self.save()
+
+            return counts
+        except Exception as e:
+            return {"error": str(e)}
 
     # ── browse / edit / delete ────────────────────────────────────
 
@@ -601,7 +848,8 @@ class MemoryManager:
         return False
 
     def update_memory(self, index: int, changes: dict) -> dict | None:
-        """Edit a memory's mutable fields (importance, emotion)."""
+        """Edit a memory's mutable fields (importance, emotion).
+        Emotion changes go through mimir.reframe() so they're audit-logged."""
         refs = self._mimir._reflections
         if index < 0 or index >= len(refs):
             return None
@@ -609,7 +857,12 @@ class MemoryManager:
         if "importance" in changes:
             mem._importance = max(1, min(10, int(changes["importance"])))
         if "emotion" in changes:
-            mem.emotion = str(changes["emotion"])
+            new_emotion = str(changes["emotion"])
+            reason = changes.get("reason", "user edit")
+            try:
+                self._mimir.reframe(mem, new_emotion, reason)
+            except Exception:
+                mem.emotion = new_emotion  # graceful fallback
         self.save()
         return mem.to_dict()
 
@@ -627,14 +880,19 @@ class MemoryManager:
         return mem._cherished
 
     def toggle_anchor(self, index: int) -> bool | None:
-        """Toggle anchor status on a memory."""
+        """Toggle anchor status on a memory (uses promote_to_anchor for proper floors)."""
         refs = self._mimir._reflections
         if index < 0 or index >= len(refs):
             return None
         mem = refs[index]
-        mem._anchor = not mem._anchor
         if mem._anchor:
-            mem._stability = max(mem._stability, 0.95)
+            mem._anchor = False  # demote
+        else:
+            try:
+                self._mimir.promote_to_anchor(mem)
+            except Exception:
+                mem._anchor = True
+                mem._stability = max(mem._stability, 90.0)
         self.save()
         return mem._anchor
 
