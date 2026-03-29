@@ -57,7 +57,7 @@
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                         <path d="M7 9h.01M12 9h.01M17 9h.01"/>
                     </svg>
-                    <span>Conversations</span>
+                    <span>Saved Chats</span>
                 </li>
                 <li class="nav-item" data-page="multi-chat">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -127,14 +127,7 @@
                         </select>
                     </div>
                     <div class="chat-header-right">
-                        <button id="btn-save-chat" class="btn-icon" title="Save conversation">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                                <polyline points="17 21 17 13 7 13 7 21"/>
-                                <polyline points="7 3 7 8 15 8"/>
-                            </svg>
-                        </button>
-                        <button id="btn-history" class="btn-icon" title="Conversation history">
+                        <button id="btn-history" class="btn-icon" title="Saved chats" onclick="App.navigate('conversations')">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <circle cx="12" cy="12" r="10"/>
                                 <polyline points="12 6 12 12 16 14"/>
@@ -839,54 +832,59 @@
                         </div>
                     </div>
                     <div class="settings-section">
-                        <h3>TTS / STT <span class="label-hint">— voice input and speech output</span></h3>
-                        <div class="form-row">
+                        <h3>TTS / STT <span class="label-hint">— voice in &amp; out (models auto-download on first use)</span></h3>
+                        <div class="form-row" style="align-items:center;gap:16px;">
                             <label class="toggle-label">
                                 <input type="checkbox" id="set-tts-enabled">
-                                <span>Enable TTS (Maya1)</span>
+                                <span>Text-to-Speech (Maya1)</span>
                             </label>
-                            <label class="toggle-label">
+                            <span id="tts-status-badge" class="status-badge" style="font-size:0.75rem;"></span>
+                            <label class="toggle-label" style="margin-left:24px;">
                                 <input type="checkbox" id="set-stt-enabled">
-                                <span>Enable STT (faster-whisper)</span>
+                                <span>Speech-to-Text (Whisper)</span>
                             </label>
+                            <span id="stt-status-badge" class="status-badge" style="font-size:0.75rem;"></span>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>TTS Mode</label>
-                                <select id="set-tts-mode" class="input input-sm">
-                                    <option value="hf">HuggingFace (Transformers)</option>
-                                    <option value="llama_server">llama-server (GGUF)</option>
-                                </select>
+                        <details class="settings-advanced" style="margin-top:8px;">
+                            <summary style="cursor:pointer;color:var(--text-muted);font-size:0.85rem;">Advanced TTS/STT settings</summary>
+                            <div class="form-row" style="margin-top:8px;">
+                                <div class="form-group">
+                                    <label>TTS Mode</label>
+                                    <select id="set-tts-mode" class="input input-sm">
+                                        <option value="hf">HuggingFace (Transformers)</option>
+                                        <option value="llama_server">llama-server (GGUF)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Maya model path / repo</label>
+                                    <input type="text" id="set-tts-model-path" class="input input-sm" placeholder="maya-research/maya1">
+                                </div>
+                                <div class="form-group">
+                                    <label>llama-server URL</label>
+                                    <input type="text" id="set-tts-server-url" class="input input-sm" placeholder="http://localhost:8081">
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label>Maya model path / repo</label>
-                                <input type="text" id="set-tts-model-path" class="input input-sm" placeholder="maya-research/maya1">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Whisper model size</label>
+                                    <select id="set-stt-model-size" class="input input-sm">
+                                        <option value="tiny">Tiny (~40 MB)</option>
+                                        <option value="base" selected>Base (~140 MB)</option>
+                                        <option value="small">Small (~460 MB)</option>
+                                        <option value="medium">Medium (~1.5 GB)</option>
+                                        <option value="large-v3">Large V3 (~2.9 GB)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>STT device</label>
+                                    <select id="set-stt-device" class="input input-sm">
+                                        <option value="auto">Auto</option>
+                                        <option value="cpu">CPU only</option>
+                                        <option value="cuda">CUDA (GPU)</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label>llama-server URL</label>
-                                <input type="text" id="set-tts-server-url" class="input input-sm" placeholder="http://localhost:8081">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Whisper model size</label>
-                                <select id="set-stt-model-size" class="input input-sm">
-                                    <option value="tiny">Tiny (~40 MB)</option>
-                                    <option value="base" selected>Base (~140 MB)</option>
-                                    <option value="small">Small (~460 MB)</option>
-                                    <option value="medium">Medium (~1.5 GB)</option>
-                                    <option value="large-v3">Large V3 (~2.9 GB)</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>STT device</label>
-                                <select id="set-stt-device" class="input input-sm">
-                                    <option value="auto">Auto</option>
-                                    <option value="cpu">CPU only</option>
-                                    <option value="cuda">CUDA (GPU)</option>
-                                </select>
-                            </div>
-                        </div>
+                        </details>
                     </div>
                     <button id="btn-save-settings" class="btn btn-primary">Save Settings</button>
                 </div>
@@ -924,12 +922,18 @@
             <div id="page-conversations" class="page">
                 <div class="page-header">
                     <div>
-                        <h1>Conversations</h1>
-                        <p class="text-muted">Browse and manage your saved conversations</p>
+                        <h1>Saved Chats</h1>
+                        <p class="text-muted">All your conversations — click to continue, or delete to remove</p>
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button id="btn-new-multi-chat" class="btn btn-primary">+ New Multi-Chat</button>
+                        <button id="btn-new-multi-chat" class="btn btn-primary">+ New Multi-Agent Chat</button>
                     </div>
+                </div>
+
+                <div class="conversations-filter" style="margin-bottom:12px;display:flex;gap:8px;">
+                    <button class="btn btn-sm conv-filter-btn active" data-filter="all">All</button>
+                    <button class="btn btn-sm conv-filter-btn" data-filter="chat">Chats</button>
+                    <button class="btn btn-sm conv-filter-btn" data-filter="multi">Multi-Agent</button>
                 </div>
 
                 <div class="conversations-list" id="conversations-list">
@@ -1042,24 +1046,10 @@
         </main>
     </div>
 
-    <!-- Conversation history modal -->
-    <div id="history-modal" class="modal" style="display:none;">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Conversation History</h2>
-                <button class="modal-close" id="btn-close-history">×</button>
-            </div>
-            <div class="modal-body" id="history-list">
-                <p class="text-muted">Loading…</p>
-            </div>
-        </div>
-    </div>
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/chat.js"></script>
     <script src="/static/js/models.js"></script>

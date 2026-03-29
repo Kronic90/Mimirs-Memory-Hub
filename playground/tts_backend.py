@@ -155,15 +155,45 @@ class MayaTTSBackend:
 
     def __init__(self, cfg: dict):
         tts = cfg.get("tts", {})
-        self.enabled    = tts.get("enabled", False)
+        self.enabled    = tts.get("enabled", True)
         self.mode       = tts.get("mode", "hf")          # "hf" | "llama_server"
         self.model_path = tts.get("model_path", "maya-research/maya1")
         self.server_url = tts.get("server_url", "http://localhost:8081").rstrip("/")
         self._model     = None
         self._tokenizer = None
         self._lock      = threading.Lock()
+        self._last_error = ""
+        self._deps_ok   = None   # None = unchecked
 
     # ── Public ───────────────────────────────────────────────────────────────
+
+    @property
+    def status(self) -> dict:
+        """Return dependency / readiness status."""
+        if not self.enabled:
+            return {"enabled": False, "ready": False, "error": "Disabled in settings"}
+        if self._deps_ok is None:
+            self._check_deps()
+        return {
+            "enabled": True,
+            "ready": self._deps_ok,
+            "error": self._last_error,
+            "mode": self.mode,
+        }
+
+    def _check_deps(self):
+        missing = []
+        for mod in ("torch", "transformers", "snac", "soundfile"):
+            try:
+                __import__(mod)
+            except ImportError:
+                missing.append(mod)
+        if missing:
+            self._deps_ok = False
+            self._last_error = f"Missing packages: {', '.join(missing)}. Run: pip install {' '.join(missing)}"
+        else:
+            self._deps_ok = True
+            self._last_error = ""
 
     def generate_audio(self, text: str, voice_prompt: str = "") -> bytes:
         """Return WAV bytes or b'' (disabled / error / not enough SNAC tokens)."""
@@ -178,7 +208,12 @@ class MayaTTSBackend:
             if self.mode == "llama_server":
                 return self._gen_gguf(segment, description)
             return self._gen_hf(segment, description)
-        except Exception:
+        except ImportError as e:
+            self._deps_ok = False
+            self._last_error = f"Missing package: {e.name}"
+            return b""
+        except Exception as e:
+            self._last_error = str(e)
             return b""
 
     def unload(self):

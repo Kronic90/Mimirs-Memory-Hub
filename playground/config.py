@@ -32,13 +32,13 @@ _DEFAULT: dict[str, Any] = {
         "chemistry": True,
     },
     "tts": {
-        "enabled": False,
+        "enabled": True,
         "mode": "hf",
         "model_path": "maya-research/maya1",
         "server_url": "http://localhost:8081",
     },
     "stt": {
-        "enabled": False,
+        "enabled": True,
         "model_size": "base",
         "device": "auto",
     },

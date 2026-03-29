@@ -12,6 +12,15 @@ httpx>=0.27.0
 # ── Mimir memory engine ──────────────────────────────────────────────
 vividmimir                          # core episodic memory system
 
+# ── TTS (Maya1 text-to-speech) ───────────────────────────────────────
+transformers>=4.40.0                # model loading (Maya1 HF mode)
+soundfile>=0.12.0                   # WAV encoding
+snac>=1.2.0                         # SNAC audio codec
+torch>=2.0.0                        # neural net inference
+
+# ── STT (Whisper speech-to-text) ─────────────────────────────────────
+faster-whisper>=1.0.0               # CTranslate2-based Whisper
+
 # ── Optional: local GGUF model support ──────────────────────────────
 # Uncomment the line below to enable running local .gguf files directly.
 # For GPU acceleration you may need a CUDA-specific wheel — see:

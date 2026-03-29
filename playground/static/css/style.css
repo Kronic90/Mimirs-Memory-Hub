@@ -1755,6 +1755,35 @@ details[open] .think-chevron { transform: rotate(90deg); }
     gap: 8px;
 }
 
+.conv-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+.conv-type-badge.chat { background: rgba(99,102,241,0.15); color: #818cf8; }
+.conv-type-badge.multi { background: rgba(16,185,129,0.15); color: #34d399; }
+
+.conv-filter-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    transition: all var(--transition);
+}
+.conv-filter-btn.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
 .btn-small {
     padding: 6px 12px;
     font-size: 12px;

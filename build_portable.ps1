@@ -58,6 +58,14 @@ Remove-Item "$BUILD_DIR\_get-pip.py"
 
 # ── Step 3: Install packages ──────────────────────────────────────────
 Write-Host " [3/5] Installing packages (this takes a few minutes)..." -ForegroundColor Yellow
+
+# Install CPU-only PyTorch first (smaller than default CUDA-capable wheels)
+Write-Host "   Installing PyTorch (CPU-only)..." -ForegroundColor Yellow
+& "$PYTHON_DIR\python.exe" -m pip install torch --index-url https://download.pytorch.org/whl/cpu --quiet --disable-pip-version-check
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "PyTorch CPU install failed - TTS will be unavailable."
+}
+
 & "$PYTHON_DIR\python.exe" -m pip install -r "$ROOT\requirements.txt" --quiet --disable-pip-version-check
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Package installation failed."

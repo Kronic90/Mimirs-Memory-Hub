@@ -583,85 +583,6 @@ const Chat = (() => {
         App.sendWS({ type: 'clear' });
     }
 
-    // ── Save conversation ────────────────────────────────────────
-    async function saveConversation() {
-        try {
-            const result = await App.apiPost('/conversations/save', {});
-            if (result.error) { App.toast(result.error, 'error'); return; }
-            App.toast(`Saved: ${result.title}`, 'success');
-        } catch { App.toast('Save failed', 'error'); }
-    }
-
-    // ── Show conversation history modal ──────────────────────────
-    async function showHistory() {
-        const modal = document.getElementById('history-modal');
-        const list = document.getElementById('history-list');
-        modal.style.display = '';
-        list.innerHTML = '<p class="text-muted">Loading…</p>';
-
-        try {
-            const convos = await App.api('/conversations');
-            if (!convos.length) {
-                list.innerHTML = '<p class="text-muted">No saved conversations yet.</p>';
-                return;
-            }
-            list.innerHTML = '';
-            convos.forEach(c => {
-                const item = document.createElement('div');
-                item.className = 'history-item';
-                const titleEl = document.createElement('span');
-                titleEl.textContent = c.title || c.id;
-                titleEl.className = 'history-title';
-                const metaEl = document.createElement('span');
-                metaEl.className = 'text-muted';
-                metaEl.textContent = `${c.message_count} msgs • ${c.preset || ''} • ${c.created || ''}`;
-                const actionsEl = document.createElement('div');
-                actionsEl.className = 'history-actions';
-
-                const loadBtn = document.createElement('button');
-                loadBtn.className = 'btn btn-sm btn-primary';
-                loadBtn.textContent = 'Load';
-                loadBtn.addEventListener('click', () => loadConversation(c.id));
-
-                const delBtn = document.createElement('button');
-                delBtn.className = 'btn btn-sm btn-secondary';
-                delBtn.textContent = '🗑️';
-                delBtn.addEventListener('click', async () => {
-                    if (!confirm('Delete this conversation?')) return;
-                    await fetch('/api/conversations/' + c.id, { method: 'DELETE' });
-                    showHistory();
-                });
-
-                actionsEl.appendChild(loadBtn);
-                actionsEl.appendChild(delBtn);
-
-                const infoRow = document.createElement('div');
-                infoRow.className = 'history-info';
-                infoRow.appendChild(titleEl);
-                infoRow.appendChild(metaEl);
-
-                item.appendChild(infoRow);
-                item.appendChild(actionsEl);
-                list.appendChild(item);
-            });
-        } catch { list.innerHTML = '<p class="text-muted" style="color:var(--error)">Failed to load.</p>'; }
-    }
-
-    // ── Load a saved conversation ────────────────────────────────
-    async function loadConversation(id) {
-        try {
-            const data = await App.api('/conversations/' + id);
-            const container = document.getElementById('chat-messages');
-            container.innerHTML = '';
-            (data.messages || []).forEach(m => {
-                // createMessageEl handles <think> splitting for assistant messages
-                createMessageEl(m.role, m.content);
-            });
-            document.getElementById('history-modal').style.display = 'none';
-            App.toast('Conversation loaded', 'success');
-        } catch { App.toast('Load failed', 'error'); }
-    }
-
     // ── Auto-resize textarea ─────────────────────────────────────
     function autoResize(el) {
         el.style.height = 'auto';
@@ -675,22 +596,10 @@ const Chat = (() => {
         const input = document.getElementById('chat-input');
         const sendBtn = document.getElementById('btn-send');
         const newBtn = document.getElementById('btn-new-chat');
-        const saveBtn = document.getElementById('btn-save-chat');
-        const historyBtn = document.getElementById('btn-history');
         const toggleBtn = document.getElementById('btn-toggle-panel');
-        const closeHistory = document.getElementById('btn-close-history');
-        const historyBackdrop = document.querySelector('#history-modal .modal-backdrop');
 
         sendBtn.addEventListener('click', send);
         newBtn.addEventListener('click', newChat);
-        if (saveBtn) saveBtn.addEventListener('click', saveConversation);
-        if (historyBtn) historyBtn.addEventListener('click', showHistory);
-        if (closeHistory) closeHistory.addEventListener('click', () => {
-            document.getElementById('history-modal').style.display = 'none';
-        });
-        if (historyBackdrop) historyBackdrop.addEventListener('click', () => {
-            document.getElementById('history-modal').style.display = 'none';
-        });
 
         // Image attachment button
         const attachBtn = document.getElementById('btn-attach-image');
@@ -731,14 +640,8 @@ const Chat = (() => {
         document.addEventListener('keydown', (e) => {
             // Ctrl+Shift+N — new chat
             if (e.ctrlKey && e.shiftKey && e.key === 'N') { e.preventDefault(); newChat(); }
-            // Ctrl+Shift+S — save chat
-            if (e.ctrlKey && e.shiftKey && e.key === 'S') { e.preventDefault(); saveConversation(); }
-            // Ctrl+Shift+H — history
-            if (e.ctrlKey && e.shiftKey && e.key === 'H') { e.preventDefault(); showHistory(); }
-            // Escape — close modal
-            if (e.key === 'Escape') {
-                document.getElementById('history-modal').style.display = 'none';
-            }
+            // Ctrl+Shift+H — go to saved chats
+            if (e.ctrlKey && e.shiftKey && e.key === 'H') { e.preventDefault(); App.navigate('conversations'); }
         });
 
         updateMemoryPanel();
@@ -746,5 +649,5 @@ const Chat = (() => {
         updateMicVisibility();
     }
 
-    return { init, handleMessage };
+    return { init, handleMessage, createMessageEl };
 })();

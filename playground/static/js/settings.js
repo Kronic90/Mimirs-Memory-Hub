@@ -42,9 +42,47 @@ const SettingsPage = (() => {
             if (micBtn) micBtn.style.display = stt.enabled ? '' : 'none';
 
             document.getElementById('set-profile').value = s.active_profile || 'default';
+
+            // Check TTS/STT status
+            checkVoiceStatus();
         } catch {
             App.toast('Could not load settings', 'error');
         }
+    }
+
+    async function checkVoiceStatus() {
+        try {
+            const [ttsRes, sttRes] = await Promise.all([
+                App.api('/tts/status'),
+                App.api('/stt/status'),
+            ]);
+            const ttsBadge = document.getElementById('tts-status-badge');
+            const sttBadge = document.getElementById('stt-status-badge');
+            if (ttsBadge) {
+                if (!ttsRes.enabled) {
+                    ttsBadge.textContent = 'OFF';
+                    ttsBadge.style.color = 'var(--text-muted)';
+                } else if (ttsRes.ready) {
+                    ttsBadge.textContent = '✓ Ready';
+                    ttsBadge.style.color = '#10b981';
+                } else {
+                    ttsBadge.textContent = '⚠ ' + (ttsRes.error || 'Not ready');
+                    ttsBadge.style.color = '#f59e0b';
+                }
+            }
+            if (sttBadge) {
+                if (!sttRes.enabled) {
+                    sttBadge.textContent = 'OFF';
+                    sttBadge.style.color = 'var(--text-muted)';
+                } else if (sttRes.ready) {
+                    sttBadge.textContent = '✓ Ready';
+                    sttBadge.style.color = '#10b981';
+                } else {
+                    sttBadge.textContent = '⚠ ' + (sttRes.error || 'Not ready');
+                    sttBadge.style.color = '#f59e0b';
+                }
+            }
+        } catch { /* ignore */ }
     }
 
     // ── Save settings ────────────────────────────────────────────

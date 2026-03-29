@@ -22,13 +22,38 @@ class WhisperSTTBackend:
 
     def __init__(self, cfg: dict):
         stt = cfg.get("stt", {})
-        self.enabled    = stt.get("enabled", False)
+        self.enabled    = stt.get("enabled", True)
         self.model_size = stt.get("model_size", "base")
         self.device     = stt.get("device", "auto")
         self._model     = None
         self._lock      = threading.Lock()
+        self._last_error = ""
+        self._deps_ok   = None
 
     # ── Public ───────────────────────────────────────────────────────────────
+
+    @property
+    def status(self) -> dict:
+        """Return dependency / readiness status."""
+        if not self.enabled:
+            return {"enabled": False, "ready": False, "error": "Disabled in settings"}
+        if self._deps_ok is None:
+            self._check_deps()
+        return {
+            "enabled": True,
+            "ready": self._deps_ok,
+            "error": self._last_error,
+            "model_size": self.model_size,
+        }
+
+    def _check_deps(self):
+        try:
+            __import__("faster_whisper")
+            self._deps_ok = True
+            self._last_error = ""
+        except ImportError:
+            self._deps_ok = False
+            self._last_error = "Missing package: faster-whisper. Run: pip install faster-whisper"
 
     def transcribe(self, audio_bytes: bytes) -> str:
         """Transcribe raw audio bytes → transcript string (empty string on failure)."""
@@ -39,7 +64,12 @@ class WhisperSTTBackend:
         try:
             segments, _ = self._model.transcribe(buf, beam_size=5)
             return " ".join(seg.text for seg in segments).strip()
-        except Exception:
+        except ImportError as e:
+            self._deps_ok = False
+            self._last_error = f"Missing package: {e.name}"
+            return ""
+        except Exception as e:
+            self._last_error = str(e)
             return ""
 
     def unload(self):

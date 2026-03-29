@@ -52,6 +52,7 @@ _download_progress: dict[str, dict] = {}  # filename -> {status, downloaded, tot
 _tts: MayaTTSBackend | None = None
 _stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
+_current_conv_id: str | None = None     # auto-save tracking
 _characters = CharacterManager()
 _conversations = ConversationManager()
 
@@ -1009,9 +1010,44 @@ _conversations_dir: Path = _cfg.profile_dir / "conversations"
 _conversations_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _auto_save_conversation():
+    """Persist the current chat to disk after each turn."""
+    global _current_conv_id
+    if not _conversation:
+        return
+    import time as _time
+    if _current_conv_id is None:
+        _current_conv_id = str(int(_time.time() * 1000))
+    first_user = next(
+        (m["content"][:60] for m in _conversation if m["role"] == "user"),
+        "Untitled",
+    )
+    path = _conversations_dir / f"{_current_conv_id}.json"
+    # Preserve original created time if file exists
+    created = _time.strftime("%Y-%m-%dT%H:%M:%S")
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            created = existing.get("created", created)
+        except Exception:
+            pass
+    data = {
+        "id": _current_conv_id,
+        "title": first_user,
+        "created": created,
+        "last_modified": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "preset": _cfg.get("active_preset", "companion"),
+        "model": _cfg.get("active_model", ""),
+        "agent": _cfg.get("active_character_id", ""),
+        "type": "chat",
+        "messages": list(_conversation),
+    }
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 @app.get("/api/conversations")
 async def list_conversations():
-    """List saved conversations."""
+    """List saved conversations (single-agent chats)."""
     convos = []
     for f in sorted(_conversations_dir.glob("*.json"), reverse=True):
         try:
@@ -1020,8 +1056,11 @@ async def list_conversations():
                 "id": f.stem,
                 "title": data.get("title", f.stem),
                 "created": data.get("created", ""),
+                "last_modified": data.get("last_modified", data.get("created", "")),
                 "message_count": len(data.get("messages", [])),
                 "preset": data.get("preset", ""),
+                "agent": data.get("agent", ""),
+                "type": "chat",
             })
         except Exception:
             pass
@@ -1057,7 +1096,7 @@ async def save_conversation(request: Request):
 @app.get("/api/conversations/{conv_id}")
 async def load_conversation(conv_id: str):
     """Load a saved conversation."""
-    global _conversation
+    global _conversation, _current_conv_id
     # Sanitize: only allow alphanumeric + underscore
     import re
     if not re.match(r'^[\w]+$', conv_id):
@@ -1067,6 +1106,7 @@ async def load_conversation(conv_id: str):
         return JSONResponse({"error": "Not found"}, status_code=404)
     data = json.loads(path.read_text(encoding="utf-8"))
     _conversation = data.get("messages", [])
+    _current_conv_id = conv_id
     return JSONResponse(data)
 
 
@@ -1158,6 +1198,20 @@ async def deactivate_character():
 
 
 # ── STT endpoint ─────────────────────────────────────────────────────────────
+
+@app.get("/api/tts/status")
+async def tts_status():
+    """Check TTS readiness and dependency status."""
+    tts = _ensure_tts()
+    return JSONResponse(tts.status)
+
+
+@app.get("/api/stt/status")
+async def stt_status():
+    """Check STT readiness and dependency status."""
+    stt = _ensure_stt()
+    return JSONResponse(stt.status)
+
 
 @app.post("/api/stt")
 async def speech_to_text(request: Request):
@@ -1300,7 +1354,9 @@ async def chat_ws(ws: WebSocket):
             msg = json.loads(raw)
 
             if msg.get("type") == "clear":
+                _auto_save_conversation()  # save before clearing
                 _conversation.clear()
+                _current_conv_id = None
                 await ws.send_json({"type": "cleared"})
                 continue
 
@@ -1454,6 +1510,9 @@ async def chat_ws(ws: WebSocket):
 
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
+
+                # Auto-save conversation after each turn
+                _auto_save_conversation()
 
                 # ── Post-turn: mood/chemistry/consolidation ───────────────
                 turn_info = {}
