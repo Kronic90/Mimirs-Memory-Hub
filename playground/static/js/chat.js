@@ -21,6 +21,23 @@ const Chat = (() => {
         }
     }
 
+    // ── Split <think>…</think> from response text ───────────────
+    // Returns { thinking: string|null, response: string, streaming: bool }
+    // Handles both fully-closed tags and still-streaming (unclosed) tags.
+    function splitThinking(raw) {
+        if (!raw) return { thinking: null, response: raw };
+        const open  = raw.indexOf('<think>');
+        const close = raw.indexOf('</think>');
+        if (open === -1) return { thinking: null, response: raw };
+        if (close === -1) {
+            // Tag still open — streaming in progress
+            return { thinking: raw.slice(open + 7), response: '', streaming: true };
+        }
+        const thinking = raw.slice(open + 7, close).trim();
+        const response = (raw.slice(0, open) + raw.slice(close + 8)).trim();
+        return { thinking, response, streaming: false };
+    }
+
     // ── Render markdown safely ───────────────────────────────────
     function renderMarkdown(text) {
         if (typeof marked !== 'undefined') {
@@ -33,7 +50,29 @@ const Chat = (() => {
                     .replace(/\n/g, '<br>');
     }
 
+    // ── Build collapsible think block element ───────────────────
+    function buildThinkBlock(thinkText, isStreaming) {
+        const wrap = document.createElement('details');
+        wrap.className = 'think-block' + (isStreaming ? ' think-streaming' : '');
+
+        const summary = document.createElement('summary');
+        summary.className = 'think-summary';
+        summary.innerHTML = isStreaming
+            ? '<span class="think-icon">🧠</span> <em>Thinking…</em>'
+            : '<span class="think-icon">🧠</span> Thought <span class="think-chevron">›</span>';
+
+        const body = document.createElement('div');
+        body.className = 'think-body';
+        if (thinkText) body.textContent = thinkText;
+
+        wrap.appendChild(summary);
+        wrap.appendChild(body);
+        return wrap;
+    }
+
     // ── Create message element ───────────────────────────────────
+    // Returns the contentEl for streaming updates.
+    // Also attaches a ._thinkEl for updating the think block during streaming.
     function createMessageEl(role, content) {
         const container = document.getElementById('chat-messages');
         const welcome = container.querySelector('.welcome-message');
@@ -45,6 +84,20 @@ const Chat = (() => {
         const avatar = document.createElement('div');
         avatar.className = 'message-avatar';
         avatar.textContent = role === 'user' ? 'U' : 'M';
+
+        const rightCol = document.createElement('div');
+        rightCol.className = 'message-right';
+
+        // Think block — only for assistant messages that already contain <think> tags
+        let thinkEl = null;
+        if (role === 'assistant' && content) {
+            const split = splitThinking(content);
+            if (split.thinking !== null) {
+                thinkEl = buildThinkBlock(split.thinking, split.streaming);
+                rightCol.appendChild(thinkEl);
+                content = split.response;
+            }
+        }
 
         const contentEl = document.createElement('div');
         contentEl.className = 'message-content';
@@ -69,14 +122,14 @@ const Chat = (() => {
         actions.appendChild(copyBtn);
 
         msg.appendChild(avatar);
-        const rightCol = document.createElement('div');
-        rightCol.className = 'message-right';
         rightCol.appendChild(contentEl);
         rightCol.appendChild(actions);
         msg.appendChild(rightCol);
         container.appendChild(msg);
         container.scrollTop = container.scrollHeight;
 
+        // Attach thinkEl reference so the streaming handler can update it
+        contentEl._thinkEl = thinkEl;
         return contentEl;
     }
 
@@ -116,7 +169,35 @@ const Chat = (() => {
             case 'token':
                 if (currentAssistantEl) {
                     currentTokens.push(msg.content);
-                    currentAssistantEl.innerHTML = renderMarkdown(currentTokens.join(''));
+                    const raw = currentTokens.join('');
+                    const split = splitThinking(raw);
+
+                    if (split.thinking !== null) {
+                        // Reasoning model — manage think block
+                        let thinkEl = currentAssistantEl._thinkEl;
+                        if (!thinkEl) {
+                            // First think token — build and insert before contentEl
+                            thinkEl = buildThinkBlock(split.thinking, split.streaming);
+                            currentAssistantEl.parentNode.insertBefore(thinkEl, currentAssistantEl);
+                            currentAssistantEl._thinkEl = thinkEl;
+                        } else {
+                            // Update streaming think body
+                            thinkEl.querySelector('.think-body').textContent = split.thinking || '';
+                            if (!split.streaming && thinkEl.classList.contains('think-streaming')) {
+                                // Thinking done — update summary label
+                                thinkEl.classList.remove('think-streaming');
+                                thinkEl.querySelector('.think-summary').innerHTML =
+                                    '<span class="think-icon">🧠</span> Thought <span class="think-chevron">›</span>';
+                            }
+                        }
+                        currentAssistantEl.innerHTML = split.response
+                            ? renderMarkdown(split.response)
+                            : '';
+                    } else {
+                        // Normal model — no think block
+                        currentAssistantEl.innerHTML = renderMarkdown(raw);
+                    }
+
                     const container = document.getElementById('chat-messages');
                     container.scrollTop = container.scrollHeight;
                 }
@@ -303,6 +384,7 @@ const Chat = (() => {
             const container = document.getElementById('chat-messages');
             container.innerHTML = '';
             (data.messages || []).forEach(m => {
+                // createMessageEl handles <think> splitting for assistant messages
                 createMessageEl(m.role, m.content);
             });
             document.getElementById('history-modal').style.display = 'none';
