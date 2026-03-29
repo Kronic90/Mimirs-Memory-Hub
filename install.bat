@@ -66,7 +66,6 @@ if %errorlevel% neq 0 (
 
 echo.
 echo  ============================================================
-echo   Setup complete!  Run  run.bat  to start.
+echo   Setup complete!
 echo  ============================================================
 echo.
-pause
