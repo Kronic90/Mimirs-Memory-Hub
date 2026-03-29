@@ -40,11 +40,12 @@ Invoke-WebRequest -Uri $PYTHON_URL -OutFile "$BUILD_DIR\_python.zip" -UseBasicPa
 Expand-Archive -Path "$BUILD_DIR\_python.zip" -DestinationPath $PYTHON_DIR -Force
 Remove-Item "$BUILD_DIR\_python.zip"
 
-# Enable site-packages in embedded Python
+# Enable site-packages and add app root to embedded Python's path
 $pthFile = Get-ChildItem -Path $PYTHON_DIR -Filter "python*._pth" | Select-Object -First 1
 if ($pthFile) {
-    Add-Content -Path $pthFile.FullName -Value "`nimport site"
-    Write-Host "   Patched $($pthFile.Name) to enable site-packages."
+    # '.' = python_embeded dir, '..' = app root (where Mimir.py and playground/ live)
+    Add-Content -Path $pthFile.FullName -Value "`n..`nimport site"
+    Write-Host "   Patched $($pthFile.Name) to enable site-packages and app root."
 } else {
     Write-Warning "Could not find python*._pth - site-packages may not load."
 }

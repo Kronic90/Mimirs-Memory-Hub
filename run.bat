@@ -22,9 +22,10 @@ echo  ============================================================
 echo.
 
 cd /d "%ROOT_DIR%"
+set "PYTHONPATH=%ROOT_DIR%"
 
 :: Open browser in the background after a short delay (gives server time to start)
-start "" /b cmd /c "ping 127.0.0.1 -n 4 > nul && start http://127.0.0.1:19009"
+powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep 4; Start-Process 'http://127.0.0.1:19009'" &
 
 "%PYTHON_DIR%\python.exe" -m playground
 
