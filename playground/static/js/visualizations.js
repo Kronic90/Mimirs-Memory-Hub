@@ -311,8 +311,8 @@ function renderChemistryTimeline(history) {
     if (chemistryChartInstance) chemistryChartInstance.destroy();
 
     const labels = history.map((_, i) => `Turn ${i + 1}`);
-    const nts = ['dopamine', 'serotonin', 'oxytocin', 'norepinephrine', 'endorphin'];
-    const colors = ['#f59e0b', '#06b6d4', '#ec4899', '#3b82f6', '#10b981'];
+    const nts = ['dopamine', 'serotonin', 'oxytocin', 'norepinephrine', 'cortisol'];
+    const colors = ['#f59e0b', '#06b6d4', '#ec4899', '#3b82f6', '#ef4444'];
 
     const datasets = nts.map((nt, idx) => ({
         label: nt.charAt(0).toUpperCase() + nt.slice(1),
@@ -338,7 +338,7 @@ function renderChemistryTimeline(history) {
             },
             scales: {
                 y: {
-                    min: 0, max: 200,
+                    min: 0, max: 100,
                     ticks: { color: '#a1a1aa' },
                     grid: { color: 'rgba(100, 100, 150, 0.1)' },
                 },

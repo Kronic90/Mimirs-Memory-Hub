@@ -12,7 +12,8 @@ httpx>=0.27.0
 # ── Mimir memory engine ──────────────────────────────────────────────
 vividmimir                          # core episodic memory system
 
-# ── TTS (Maya1 text-to-speech) ───────────────────────────────────────
+# ── TTS ───────────────────────────────────────────────────────────────
+edge-tts>=7.0.0                     # Edge TTS (default, no GPU needed)
 transformers>=4.40.0                # model loading (Maya1 HF mode)
 soundfile>=0.12.0                   # WAV encoding
 snac>=1.2.0                         # SNAC audio codec

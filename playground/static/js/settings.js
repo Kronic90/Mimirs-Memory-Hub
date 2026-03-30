@@ -28,9 +28,13 @@ const SettingsPage = (() => {
             // TTS / STT
             const tts = s.tts || {};
             document.getElementById('set-tts-enabled').checked = !!tts.enabled;
-            document.getElementById('set-tts-mode').value = tts.mode || 'hf';
+            document.getElementById('set-tts-mode').value = tts.mode || 'edge';
             document.getElementById('set-tts-model-path').value = tts.model_path || 'maya-research/maya1';
             document.getElementById('set-tts-server-url').value = tts.server_url || 'http://localhost:8081';
+
+            // Populate voice dropdown
+            await populateVoices(tts.voice || 'en-US-JennyNeural');
+            updateTTSModeUI();
 
             const stt = s.stt || {};
             document.getElementById('set-stt-enabled').checked = !!stt.enabled;
@@ -85,6 +89,35 @@ const SettingsPage = (() => {
         } catch { /* ignore */ }
     }
 
+    // ── TTS voice helpers ───────────────────────────────────────
+    async function populateVoices(selectedVoice) {
+        const sel = document.getElementById('set-tts-voice');
+        if (!sel) return;
+        try {
+            const data = await App.api('/tts/voices');
+            sel.innerHTML = '';
+            for (const [label, voiceId] of Object.entries(data.voices || {})) {
+                const opt = document.createElement('option');
+                opt.value = voiceId;
+                opt.textContent = label;
+                if (voiceId === selectedVoice) opt.selected = true;
+                sel.appendChild(opt);
+            }
+        } catch {
+            sel.innerHTML = '<option value="en-US-JennyNeural">Jenny (US Female)</option>';
+        }
+    }
+
+    function updateTTSModeUI() {
+        const mode = document.getElementById('set-tts-mode').value;
+        const voiceGrp = document.getElementById('tts-voice-group');
+        const modelGrp = document.getElementById('tts-model-group');
+        const serverGrp = document.getElementById('tts-server-group');
+        if (voiceGrp) voiceGrp.style.display = mode === 'edge' ? '' : 'none';
+        if (modelGrp) modelGrp.style.display = mode !== 'edge' ? '' : 'none';
+        if (serverGrp) serverGrp.style.display = mode === 'llama_server' ? '' : 'none';
+    }
+
     // ── Save settings ────────────────────────────────────────────
     async function save() {
         const patch = {
@@ -106,6 +139,7 @@ const SettingsPage = (() => {
             tts: {
                 enabled: document.getElementById('set-tts-enabled').checked,
                 mode: document.getElementById('set-tts-mode').value,
+                voice: document.getElementById('set-tts-voice').value,
                 model_path: document.getElementById('set-tts-model-path').value,
                 server_url: document.getElementById('set-tts-server-url').value,
             },
@@ -128,6 +162,8 @@ const SettingsPage = (() => {
     function init() {
         if (!initialized) {
             document.getElementById('btn-save-settings').addEventListener('click', save);
+            const modeSelect = document.getElementById('set-tts-mode');
+            if (modeSelect) modeSelect.addEventListener('change', updateTTSModeUI);
             initialized = true;
         }
         load();

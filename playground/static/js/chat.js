@@ -421,7 +421,7 @@ const Chat = (() => {
                 break;
 
             case 'tts_audio':
-                playTTSAudio(msg.audio_b64);
+                playTTSAudio(msg.audio_b64, msg.format || 'wav');
                 break;
 
             case 'tts_fallback':
@@ -430,9 +430,23 @@ const Chat = (() => {
                 break;
 
             case 'mood_update':
-                // Background memory ops finished — update mood indicator
-                if (msg.mood && msg.mood !== 'neutral') {
+                // Background memory ops finished — update mood + chemistry bars
+                if (msg.mood) {
                     updateMoodIndicator(msg.mood, msg.emotion);
+                }
+                // Live-update sidebar chemistry bars
+                if (msg.chemistry) {
+                    const barMap = {
+                        dopamine: 'bar-dopamine', serotonin: 'bar-serotonin',
+                        oxytocin: 'bar-oxytocin', norepinephrine: 'bar-norepinephrine',
+                        cortisol: 'bar-cortisol',
+                    };
+                    for (const [name, barId] of Object.entries(barMap)) {
+                        const el = document.getElementById(barId);
+                        if (el && msg.chemistry[name] !== undefined) {
+                            el.style.width = Math.min(100, msg.chemistry[name] * 100) + '%';
+                        }
+                    }
                 }
                 break;
 
@@ -513,9 +527,26 @@ const Chat = (() => {
         }
     }
 
-    function playTTSAudio(b64) {
+    function playTTSAudio(b64, format) {
         if (!b64) return;
         try {
+            // Use <audio> element for MP3 (more reliable across browsers)
+            if (format === 'mp3') {
+                const binary = atob(b64);
+                const buf = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+                const blob = new Blob([buf], { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.onended = () => URL.revokeObjectURL(url);
+                audio.onerror = (e) => {
+                    console.warn('TTS MP3 playback failed:', e);
+                    URL.revokeObjectURL(url);
+                };
+                audio.play().catch(e => console.warn('TTS play() rejected:', e));
+                return;
+            }
+            // WAV fallback via AudioContext
             ensureAudioCtx();
             const binary = atob(b64);
             const buf = new Uint8Array(binary.length);
@@ -660,7 +691,7 @@ const Chat = (() => {
                 const barMap = {
                     dopamine: 'bar-dopamine', serotonin: 'bar-serotonin',
                     oxytocin: 'bar-oxytocin', norepinephrine: 'bar-norepinephrine',
-                    endorphin: 'bar-endorphin',
+                    cortisol: 'bar-cortisol',
                 };
                 for (const [name, barId] of Object.entries(barMap)) {
                     const el = document.getElementById(barId);

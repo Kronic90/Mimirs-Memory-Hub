@@ -24,7 +24,7 @@ _DEFAULT: dict[str, Any] = {
         "temperature": 0.7,
         "top_p": 0.9,
         "max_tokens": 2048,
-        "context_length": 8192,
+        "context_length": 32768,
     },
     "memory": {
         "enabled": True,
@@ -33,7 +33,8 @@ _DEFAULT: dict[str, Any] = {
     },
     "tts": {
         "enabled": True,
-        "mode": "hf",
+        "mode": "edge",
+        "voice": "en-US-JennyNeural",
         "model_path": "maya-research/maya1",
         "server_url": "http://localhost:8081",
     },

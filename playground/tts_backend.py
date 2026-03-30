@@ -1,25 +1,15 @@
-"""Maya1 Text-to-Speech backend for Mimir's Memory Hub.
+"""Text-to-Speech backend for Mimir's Memory Hub.
 
-Two inference modes:
-  'hf'           — load Maya1 via HuggingFace Transformers (requires ~6 GB VRAM or runs on CPU)
-  'llama_server' — delegate to a llama-server hosting the Maya1 GGUF.
-                   Uses /completion with raw token-ID array (avoids Jinja-template garbling).
-                   Requires: llama-server running with disable-template flag or /completion endpoint.
+Supports multiple engines:
+  'edge'         — Microsoft Edge TTS (free, online, many voices, no GPU needed)  [DEFAULT]
+  'hf'           — Maya1 via HuggingFace Transformers (requires ~6 GB VRAM)
+  'llama_server' — Maya1 via llama-server hosting the GGUF
 
-Maya1 token constants (same IDs as official reference code):
-  CODE_START  128257  — SOS: "start of audio codes"
-  CODE_END    128258  — EOS for audio generation
-  SOH         128259  — Start of Header
-  EOH         128260  — End of Header
-  SOA         128261  — Start of Audio
-  BOS         128000
-  TEXT_EOT    128009
-  SNAC range  128266–156937 (28671 codes × 7-token frames)
-
-Prompt format: SOH + BOS + '<description="..."> text' + TEXT_EOT + EOH + SOA + CODE_START
+Edge TTS is the recommended default — works on all platforms with no GPU.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import re as _re
 import threading
@@ -318,3 +308,128 @@ class MayaTTSBackend:
         if len(snac_tokens) < 7:
             return b""
         return _snac_to_wav(snac_tokens)
+
+
+# ── Edge TTS Backend (default) ───────────────────────────────────────────────
+
+# Popular voices — curated subset for easy selection
+EDGE_VOICES = {
+    # Female
+    "Jenny (Female, US)":       "en-US-JennyNeural",
+    "Aria (Female, US)":        "en-US-AriaNeural",
+    "Sara (Female, US)":        "en-US-SaraNeural",
+    "Sonia (Female, UK)":       "en-GB-SoniaNeural",
+    "Libby (Female, UK)":       "en-GB-LibbyNeural",
+    "Natasha (Female, AU)":     "en-AU-NatashaNeural",
+    "Clara (Female, CA)":       "en-CA-ClaraNeural",
+    "Neerja (Female, IN)":      "en-IN-NeerjaNeural",
+    # Male
+    "Guy (Male, US)":           "en-US-GuyNeural",
+    "Davis (Male, US)":         "en-US-DavisNeural",
+    "Tony (Male, US)":          "en-US-TonyNeural",
+    "Ryan (Male, UK)":          "en-GB-RyanNeural",
+    "William (Male, AU)":       "en-AU-WilliamNeural",
+    "Liam (Male, CA)":          "en-CA-LiamNeural",
+    "Prabhat (Male, IN)":       "en-IN-PrabhatNeural",
+    # Multilingual
+    "Denise (Female, FR)":      "fr-FR-DeniseNeural",
+    "Henri (Male, FR)":         "fr-FR-HenriNeural",
+    "Katja (Female, DE)":       "de-DE-KatjaNeural",
+    "Conrad (Male, DE)":        "de-DE-ConradNeural",
+    "Elvira (Female, ES)":      "es-ES-ElviraNeural",
+    "Alvaro (Male, ES)":        "es-ES-AlvaroNeural",
+    "Nanami (Female, JP)":      "ja-JP-NanamiNeural",
+    "Keita (Male, JP)":         "ja-JP-KeitaNeural",
+    "Xiaoxiao (Female, ZH)":    "zh-CN-XiaoxiaoNeural",
+    "Yunxi (Male, ZH)":         "zh-CN-YunxiNeural",
+}
+
+
+class EdgeTTSBackend:
+    """Edge TTS — free Microsoft neural voices via edge-tts package.
+
+    Produces MP3 audio. No GPU, no API key, works on all platforms.
+    """
+
+    def __init__(self, cfg: dict):
+        tts = cfg.get("tts", {})
+        self.enabled = tts.get("enabled", True)
+        self.voice = tts.get("voice", "en-US-JennyNeural")
+        self._last_error = ""
+        self._deps_ok: bool | None = None
+
+    @property
+    def status(self) -> dict:
+        if not self.enabled:
+            return {"enabled": False, "ready": False, "error": "Disabled in settings"}
+        if self._deps_ok is None:
+            self._check_deps()
+        return {
+            "enabled": True,
+            "ready": self._deps_ok,
+            "error": self._last_error,
+            "mode": "edge",
+            "voice": self.voice,
+            "voices": EDGE_VOICES,
+        }
+
+    def _check_deps(self):
+        try:
+            import edge_tts  # noqa: F401
+            self._deps_ok = True
+            self._last_error = ""
+        except ImportError:
+            self._deps_ok = False
+            self._last_error = "Missing package: edge-tts. Run: pip install edge-tts"
+
+    def generate_audio(self, text: str, voice_prompt: str = "") -> bytes:
+        """Return MP3 bytes or b''."""
+        if not self.enabled or not text.strip():
+            return b""
+        clean = _strip_markdown(text)
+        segment = _tts_segment(clean, max_chars=2000)
+        if not segment:
+            return b""
+        try:
+            return self._gen_edge(segment)
+        except ImportError:
+            self._deps_ok = False
+            self._last_error = "Missing package: edge-tts"
+            return b""
+        except Exception as e:
+            self._last_error = str(e)
+            return b""
+
+    def _gen_edge(self, text: str) -> bytes:
+        """Run edge-tts in a new event loop (safe from executor thread)."""
+        import edge_tts
+
+        async def _produce() -> bytes:
+            comm = edge_tts.Communicate(text, self.voice)
+            buf = io.BytesIO()
+            async for chunk in comm.stream():
+                if chunk["type"] == "audio":
+                    buf.write(chunk["data"])
+            return buf.getvalue()
+
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_produce())
+        finally:
+            loop.close()
+
+    def unload(self):
+        pass
+
+
+# ── Unified TTS Factory ─────────────────────────────────────────────────────
+
+def create_tts(cfg: dict):
+    """Create the appropriate TTS backend based on config['tts']['mode'].
+
+    Returns an EdgeTTSBackend (default) or MayaTTSBackend.
+    """
+    mode = cfg.get("tts", {}).get("mode", "edge")
+    if mode in ("hf", "llama_server"):
+        return MayaTTSBackend(cfg)
+    return EdgeTTSBackend(cfg)

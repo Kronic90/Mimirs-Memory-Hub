@@ -27,7 +27,7 @@ from playground.memory_manager import MemoryManager
 from playground import model_manager
 from playground.character_manager import CharacterManager
 from playground.conversation_manager import ConversationManager
-from playground.tts_backend import MayaTTSBackend
+from playground.tts_backend import create_tts, EDGE_VOICES
 from playground.stt_backend import WhisperSTTBackend
 
 # ── App ───────────────────────────────────────────────────────────────
@@ -54,16 +54,45 @@ _cfg = Config()
 _memory: MemoryManager | None = None
 _char_memories: dict[str, MemoryManager] = {}   # per-character isolated memories
 _download_progress: dict[str, dict] = {}  # filename -> {status, downloaded, total, percent}
-_tts: MayaTTSBackend | None = None
+_tts = None  # EdgeTTSBackend or MayaTTSBackend
 _stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
 _current_conv_id: str | None = None     # auto-save tracking
 _characters = CharacterManager()
 _conversations = ConversationManager()
 
-# History for visualizations
+# History for visualizations (persisted to disk)
 _mood_history: list[dict] = []
 _chemistry_history: list[dict] = []
+_VIZ_HISTORY_FILE = Path(__file__).resolve().parent.parent / "playground_data" / "viz_history.json"
+
+
+def _load_viz_history():
+    """Load mood & chemistry history from disk on startup."""
+    global _mood_history, _chemistry_history
+    try:
+        if _VIZ_HISTORY_FILE.exists():
+            data = json.loads(_VIZ_HISTORY_FILE.read_text(encoding="utf-8"))
+            _mood_history = data.get("mood", [])
+            _chemistry_history = data.get("chemistry", [])
+    except Exception:
+        pass
+
+
+def _save_viz_history():
+    """Persist mood & chemistry history to disk (keeps last 500 entries)."""
+    try:
+        _VIZ_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "mood": _mood_history[-500:],
+            "chemistry": _chemistry_history[-500:],
+        }
+        _VIZ_HISTORY_FILE.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
+_load_viz_history()
 
 # ── Remember-tag parsing ──────────────────────────────────────────────
 
@@ -365,11 +394,19 @@ def _ensure_memory(char_id: str = "") -> MemoryManager:
     return _memory
 
 
-def _ensure_tts() -> MayaTTSBackend:
+def _ensure_tts():
     global _tts
     if _tts is None:
-        _tts = MayaTTSBackend(_cfg.to_dict())
+        _tts = create_tts(_cfg.to_dict())
     return _tts
+
+
+def _reload_tts():
+    """Recreate TTS backend after settings change."""
+    global _tts
+    if _tts is not None:
+        _tts.unload()
+    _tts = create_tts(_cfg.to_dict())
 
 
 def _ensure_stt() -> WhisperSTTBackend:
@@ -1103,6 +1140,75 @@ _conversations_dir: Path = _cfg.profile_dir / "conversations"
 _conversations_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~1.3 tokens per whitespace-delimited word."""
+    return max(1, int(len(text.split()) * 1.3))
+
+
+def _trim_conversation(messages: list[dict], token_budget: int) -> list[dict]:
+    """Return a trimmed message list that fits within *token_budget*.
+
+    Strategy: keep the most recent messages as-is.  If the full conversation
+    exceeds the budget, compress the oldest messages into a single summary
+    message so the model still has context from earlier in the chat.
+    """
+    if not messages:
+        return messages
+
+    # Estimate total tokens
+    total = sum(_estimate_tokens(m.get("content", "")) for m in messages)
+    if total <= token_budget:
+        return messages  # fits fine
+
+    # Always keep at least the last 6 messages (3 turns)
+    keep_recent = min(len(messages), 6)
+    recent = messages[-keep_recent:]
+    recent_tokens = sum(_estimate_tokens(m.get("content", "")) for m in recent)
+
+    # If even recent messages exceed budget, just return them (can't trim further)
+    if recent_tokens >= token_budget:
+        return recent
+
+    # Compress older messages into a summary
+    older = messages[:-keep_recent]
+    if not older:
+        return recent
+
+    summary_parts = []
+    for m in older:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        # Truncate each old message to key info
+        snippet = content[:200] + ("..." if len(content) > 200 else "")
+        summary_parts.append(f"{role}: {snippet}")
+
+    summary_text = (
+        "[Earlier conversation summary — the following is a compressed "
+        "record of the conversation so far. Refer to it for context but "
+        "focus on the recent messages.]\n\n"
+        + "\n".join(summary_parts)
+    )
+
+    # If even the summary is too large, truncate it
+    summary_budget = token_budget - recent_tokens - 100
+    if _estimate_tokens(summary_text) > summary_budget:
+        # Keep only the last N older messages that fit
+        trimmed_parts = []
+        used = 0
+        for part in reversed(summary_parts):
+            part_tokens = _estimate_tokens(part)
+            if used + part_tokens > summary_budget:
+                break
+            trimmed_parts.insert(0, part)
+            used += part_tokens
+        summary_text = (
+            "[Conversation compressed — oldest messages dropped to fit "
+            "context window.]\n\n" + "\n".join(trimmed_parts)
+        )
+
+    return [{"role": "system", "content": summary_text}] + recent
+
+
 def _auto_save_conversation():
     """Persist the current chat to disk after each turn."""
     global _current_conv_id
@@ -1297,6 +1403,12 @@ async def tts_status():
     """Check TTS readiness and dependency status."""
     tts = _ensure_tts()
     return JSONResponse(tts.status)
+
+
+@app.get("/api/tts/voices")
+async def tts_voices():
+    """Return available Edge TTS voices."""
+    return JSONResponse({"voices": EDGE_VOICES})
 
 
 @app.get("/api/stt/status")
@@ -1564,17 +1676,26 @@ async def chat_ws(ws: WebSocket):
             # Add user message
             _conversation.append({"role": "user", "content": user_text})
 
+            # ── Conversation sliding window with compression ──────
+            # Estimate token budget and trim if needed
+            llm_params = _cfg.get("llm_params", {})
+            context_length = llm_params.get("context_length", 32768)
+            max_tokens = llm_params.get("max_tokens", 2048)
+            # Reserve space for system prompt + response
+            sys_est = len(system_prompt.split()) * 2 if system_prompt else 0
+            budget = context_length - max_tokens - sys_est - 200  # safety margin
+            send_messages = _trim_conversation(list(_conversation), budget)
+
             # Stream response
             backend = create_backend(backend_name, _cfg.to_dict())
-            llm_params = _cfg.get("llm_params", {})
             full_response = []
 
             try:
                 async for token in backend.generate(
-                    messages=list(_conversation),
+                    messages=send_messages,
                     system_prompt=system_prompt,
                     temperature=llm_params.get("temperature", 0.7),
-                    max_tokens=llm_params.get("max_tokens", 2048),
+                    max_tokens=max_tokens,
                     model=model_id,
                     images=[image_b64] if image_b64 else None,
                 ):
@@ -1829,17 +1950,21 @@ async def chat_ws(ws: WebSocket):
                         )
 
                         # Send a mood update so the UI can show it
+                        # Send mood + chemistry update to frontend
                         mood_label = turn_info.get("mood_label", "")
                         emotion = turn_info.get("emotion", "")
-                        if mood_label and mood_label != "neutral":
-                            try:
-                                await _bg_ws.send_json({
-                                    "type": "mood_update",
-                                    "mood": mood_label,
-                                    "emotion": emotion,
-                                })
-                            except Exception:
-                                pass
+                        mood_info = mem.get_mood()
+                        chem = mood_info.get("chemistry")
+                        chem_levels = chem.get("levels", {}) if chem else {}
+                        try:
+                            await _bg_ws.send_json({
+                                "type": "mood_update",
+                                "mood": mood_label or "neutral",
+                                "emotion": emotion,
+                                "chemistry": chem_levels,
+                            })
+                        except Exception:
+                            pass
 
                         # Background: periodic LLM reflect / edit_memories
                         turn_count = mem._turn_count
@@ -1859,24 +1984,23 @@ async def chat_ws(ws: WebSocket):
                                     pass
                             asyncio.create_task(_bg_edit())
 
-                        # Track mood changes
+                        # Track mood & chemistry history (persisted)
                         global _mood_history, _chemistry_history
                         try:
-                            import time
-                            mood_info = mem.get_mood()
+                            import time as _t
                             _mood_history.append({
-                                "timestamp": time.time(),
+                                "timestamp": _t.time(),
                                 "mood_label": mood_info.get("mood_label", ""),
                                 "pad": mood_info.get("mood_pad", [0,0,0]),
-                                "emotion": turn_info.get("emotion", ""),
+                                "emotion": emotion,
                             })
-                            chem = mood_info.get("chemistry")
-                            if chem:
+                            if chem_levels:
                                 _chemistry_history.append({
-                                    "timestamp": time.time(),
-                                    "levels": chem.get("levels", {}),
-                                    "description": chem.get("description", ""),
+                                    "timestamp": _t.time(),
+                                    "levels": dict(chem_levels),
+                                    "description": chem.get("description", "") if chem else "",
                                 })
+                            _save_viz_history()
                         except Exception:
                             pass
                     except Exception:
@@ -1892,14 +2016,17 @@ async def chat_ws(ws: WebSocket):
 
                     async def _send_tts(resp_text: str, vp: str, _ws: WebSocket):
                         try:
-                            wav = await asyncio.get_event_loop().run_in_executor(
+                            audio = await asyncio.get_event_loop().run_in_executor(
                                 None, tts.generate_audio, resp_text, vp
                             )
-                            if wav:
+                            if audio:
                                 import base64 as _b64
+                                # Edge TTS returns MP3, Maya returns WAV
+                                fmt = "mp3" if getattr(tts, 'voice', None) else "wav"
                                 await _ws.send_json({
                                     "type": "tts_audio",
-                                    "audio_b64": _b64.b64encode(wav).decode(),
+                                    "audio_b64": _b64.b64encode(audio).decode(),
+                                    "format": fmt,
                                 })
                             else:
                                 print(f"[TTS] generate_audio returned empty bytes")

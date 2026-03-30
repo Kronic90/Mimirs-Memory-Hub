@@ -88,7 +88,7 @@ const MemoryPage = (() => {
                 const colors = {
                     dopamine: '#fbbf24', serotonin: '#60a5fa',
                     oxytocin: '#f472b6', norepinephrine: '#f97316',
-                    endorphin: '#34d399'
+                    cortisol: '#ef4444'
                 };
                 barsEl.innerHTML = '';
                 for (const [name, val] of Object.entries(levels)) {
