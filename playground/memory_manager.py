@@ -769,7 +769,7 @@ class MemoryManager:
         except Exception as e:
             return {"error": str(e)}
 
-    async def reflect(self, backend) -> dict:
+    async def reflect(self, backend, model: str = "") -> dict:
         """Ask the LLM to reflect on its memories and store insights."""
         try:
             # Build a compact snapshot of recent memories for the LLM
@@ -796,7 +796,7 @@ class MemoryManager:
                 system_prompt="",
                 temperature=0.7,
                 max_tokens=300,
-                model="",
+                model=model,
             ):
                 result += token
 
@@ -816,7 +816,8 @@ class MemoryManager:
         except Exception as e:
             return {"error": str(e)}
 
-    async def edit_memories(self, backend, instruction: str = "") -> dict:
+    async def edit_memories(self, backend, instruction: str = "",
+                            model: str = "") -> dict:
         """LLM-driven bulk memory curation: promote, demote, forget, update."""
         try:
             # Build a numbered list of recent memories
@@ -854,7 +855,7 @@ class MemoryManager:
                 system_prompt="",
                 temperature=0.1,
                 max_tokens=400,
-                model="",
+                model=model,
             ):
                 result += token
 

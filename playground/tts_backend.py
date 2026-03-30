@@ -386,6 +386,10 @@ class EdgeTTSBackend:
         """Return MP3 bytes or b''."""
         if not self.enabled or not text.strip():
             return b""
+        if self._deps_ok is None:
+            self._check_deps()
+        if not self._deps_ok:
+            return b""
         clean = _strip_markdown(text)
         segment = _tts_segment(clean, max_chars=2000)
         if not segment:
@@ -428,8 +432,22 @@ def create_tts(cfg: dict):
     """Create the appropriate TTS backend based on config['tts']['mode'].
 
     Returns an EdgeTTSBackend (default) or MayaTTSBackend.
+    Falls back to EdgeTTSBackend when Maya mode is requested but deps are missing.
     """
+    import logging as _logging
+    _log = _logging.getLogger("mimir.tts")
     mode = cfg.get("tts", {}).get("mode", "edge")
-    if mode in ("hf", "llama_server"):
+    if mode == "hf":
+        # Check if CUDA / torch are available — Maya1 HF needs GPU
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                _log.warning("TTS mode 'hf' requires CUDA — falling back to Edge TTS")
+                return EdgeTTSBackend(cfg)
+        except ImportError:
+            _log.warning("TTS mode 'hf' requires torch — falling back to Edge TTS")
+            return EdgeTTSBackend(cfg)
+        return MayaTTSBackend(cfg)
+    if mode == "llama_server":
         return MayaTTSBackend(cfg)
     return EdgeTTSBackend(cfg)

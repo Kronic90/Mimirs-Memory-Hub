@@ -143,7 +143,7 @@ _MEMORY_INTENT_RE = _re.compile(
 def _parse_remember_tags(text: str) -> list[dict]:
     """Extract all <remember> entries from model output.
 
-    Each entry: { content, emotion, importance, why, source }
+    Each entry: { content, emotion, importance, why, source, cherish, anchor }
     """
     entries = []
     for m in _REMEMBER_RE.finditer(text):
@@ -156,6 +156,8 @@ def _parse_remember_tags(text: str) -> list[dict]:
             "importance": importance,
             "why":        attrs.get("why", "model-authored memory"),
             "source":     attrs.get("source", "conversation"),
+            "cherish":    attrs.get("cherish", "").lower() == "true",
+            "anchor":     attrs.get("anchor", "").lower() == "true",
         })
     return entries
 
@@ -284,6 +286,64 @@ def _parse_solution_tags(text: str) -> list[dict]:
 
 def _strip_solution_tags(text: str) -> str:
     return _SOLUTION_RE.sub("", text).strip()
+
+
+# ── Social impression tag parsing ────────────────────────────────────────────
+# <social entity="Scott" emotion="warm" importance="7">He loves hiking</social>
+
+_SOCIAL_RE = _re.compile(
+    r'<social(?P<attrs>[^>]*)>(?P<content>.*?)</social>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+
+def _parse_social_tags(text: str) -> list[dict]:
+    """Extract <social> tags → [{entity, content, emotion, importance}]"""
+    entries = []
+    for m in _SOCIAL_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        entity = attrs.get("entity", "").strip()
+        if not entity:
+            continue
+        entries.append({
+            "entity": entity,
+            "content": m.group("content").strip(),
+            "emotion": attrs.get("emotion", "neutral"),
+            "importance": int(attrs.get("importance", "5")),
+        })
+    return entries
+
+
+def _strip_social_tags(text: str) -> str:
+    return _SOCIAL_RE.sub("", text).strip()
+
+
+# ── Cherish tag parsing (retroactive) ────────────────────────────────────────
+# <cherish query="birthday party"/> or <cherish query="first conversation" anchor="true"/>
+
+_CHERISH_RE = _re.compile(
+    r'<cherish\s+(?P<attrs>[^>]*?)(?:/>|>\s*</cherish>)',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+
+def _parse_cherish_tags(text: str) -> list[dict]:
+    """Extract <cherish> tags → [{query, anchor}]"""
+    entries = []
+    for m in _CHERISH_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        query = attrs.get("query", "").strip()
+        if not query:
+            continue
+        entries.append({
+            "query": query,
+            "anchor": attrs.get("anchor", "").lower() == "true",
+        })
+    return entries
+
+
+def _strip_cherish_tags(text: str) -> str:
+    return _CHERISH_RE.sub("", text).strip()
 
 
 # ── Code block + file saving parsing for Agent mode ──────────────────────────
@@ -978,9 +1038,7 @@ async def memory_reflect():
     backend_name = _cfg.get("active_backend", "ollama")
     model_id = _cfg.get("active_model", "")
     backend = create_backend(backend_name, _cfg.to_dict())
-    # Patch backend model
-    backend._model = model_id
-    result = await mem.reflect(backend)
+    result = await mem.reflect(backend, model=model_id)
     return JSONResponse(result)
 
 
@@ -992,9 +1050,8 @@ async def memory_edit(request: Request):
     backend_name = _cfg.get("active_backend", "ollama")
     model_id = _cfg.get("active_model", "")
     backend = create_backend(backend_name, _cfg.to_dict())
-    backend._model = model_id
     instruction = body.get("instruction", "")
-    result = await mem.edit_memories(backend, instruction=instruction)
+    result = await mem.edit_memories(backend, instruction=instruction, model=model_id)
     return JSONResponse(result)
 
 
@@ -1719,10 +1776,14 @@ async def chat_ws(ws: WebSocket):
                 # Strip task/solution tags from displayed response
                 clean_response = _strip_task_tags(clean_response)
                 clean_response = _strip_solution_tags(clean_response)
+                clean_response = _strip_social_tags(clean_response)
+                clean_response = _strip_cherish_tags(clean_response)
                 remember_tags  = _parse_remember_tags(response_text) if memory_enabled else []
                 remind_tags    = _parse_remind_tags(response_text) if memory_enabled else []
                 task_tags      = _parse_task_tags(response_text) if memory_enabled else []
                 solution_tags  = _parse_solution_tags(response_text) if memory_enabled else []
+                social_tags    = _parse_social_tags(response_text) if memory_enabled else []
+                cherish_tags   = _parse_cherish_tags(response_text) if memory_enabled else []
 
                 # Parse agent code blocks & file-save tags
                 code_blocks = _parse_code_blocks(response_text) if preset_name == "agent" else []
@@ -1772,6 +1833,8 @@ async def chat_ws(ws: WebSocket):
                 _bg_remind_tags = list(remind_tags)
                 _bg_task_tags = list(task_tags)
                 _bg_solution_tags = list(solution_tags)
+                _bg_social_tags = list(social_tags)
+                _bg_cherish_tags = list(cherish_tags)
                 _bg_code_blocks = list(code_blocks)
                 _bg_save_files = list(save_file_tags)
                 _bg_user_text = user_text
@@ -1800,13 +1863,52 @@ async def chat_ws(ws: WebSocket):
                                     why_saved=entry["why"],
                                 )
                             else:
-                                mem.remember(
+                                result = mem.remember(
                                     content=entry["content"],
                                     emotion=entry["emotion"],
                                     importance=entry["importance"],
                                     source=entry.get("source", "conversation"),
                                     why_saved=entry["why"],
                                 )
+                                # Apply cherish/anchor if the model requested it
+                                if result and (entry.get("cherish") or entry.get("anchor")):
+                                    try:
+                                        idx = len(mem._mimir._reflections) - 1
+                                        if entry.get("cherish"):
+                                            mem.toggle_cherish(idx)
+                                        if entry.get("anchor"):
+                                            mem.toggle_anchor(idx)
+                                    except Exception:
+                                        pass
+
+                        # Process retroactive cherish/anchor on existing memories
+                        for ct in _bg_cherish_tags:
+                            try:
+                                matches = mem._mimir.recall(ct["query"], top_k=1)
+                                if matches:
+                                    # Find the index of this memory
+                                    target = matches[0]
+                                    for idx, m in enumerate(mem._mimir._reflections):
+                                        if m is target:
+                                            if not getattr(m, '_cherished', False):
+                                                mem.toggle_cherish(idx)
+                                            if ct.get("anchor") and not getattr(m, '_anchor', False):
+                                                mem.toggle_anchor(idx)
+                                            break
+                            except Exception:
+                                pass
+
+                        # Save social impressions
+                        for si in _bg_social_tags:
+                            try:
+                                mem.add_social(
+                                    entity=si["entity"],
+                                    content=si["content"],
+                                    emotion=si["emotion"],
+                                    importance=si["importance"],
+                                )
+                            except Exception:
+                                pass
 
                         # Save model-authored reminders
                         for r in _bg_remind_tags:
@@ -1971,7 +2073,7 @@ async def chat_ws(ws: WebSocket):
                         if turn_count > 0 and turn_count % 20 == 0:
                             async def _bg_reflect():
                                 try:
-                                    await mem.reflect(backend)
+                                    await mem.reflect(backend, model=model_id)
                                 except Exception:
                                     pass
                             asyncio.create_task(_bg_reflect())
@@ -1979,7 +2081,7 @@ async def chat_ws(ws: WebSocket):
                         if turn_count > 0 and turn_count % 40 == 0:
                             async def _bg_edit():
                                 try:
-                                    await mem.edit_memories(backend)
+                                    await mem.edit_memories(backend, model=model_id)
                                 except Exception:
                                     pass
                             asyncio.create_task(_bg_edit())
