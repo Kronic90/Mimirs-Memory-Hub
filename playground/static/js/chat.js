@@ -2,6 +2,172 @@
    Chat.js — Chat interface + streaming + conversation history
    ================================================================ */
 
+/* ── Mood-reactive UI color system ────────────────────────────────
+   Gradually shifts the accent color based on the AI's emotional state.
+   Uses HSL interpolation for smooth transitions.
+   ──────────────────────────────────────────────────────────────── */
+const MoodColors = (() => {
+    // Default purple accent: HSL(262, 83%, 58%) = #7c3aed
+    const DEFAULT_HSL = [262, 83, 58];
+
+    // Mood → HSL accent color mapping
+    const MOOD_HSL = {
+        // Positive
+        happy:       [45, 90, 50],
+        joyful:      [45, 90, 50],
+        delighted:   [48, 90, 52],
+        excited:     [25, 93, 52],
+        enthusiastic:[25, 93, 52],
+        grateful:    [30, 92, 54],
+        warm:        [30, 92, 54],
+        // Calm
+        peaceful:    [170, 72, 45],
+        serene:      [170, 72, 45],
+        content:     [170, 72, 45],
+        // Curious
+        curious:     [159, 65, 45],
+        fascinated:  [159, 65, 45],
+        // Sad
+        sad:         [217, 85, 58],
+        lonely:      [217, 85, 58],
+        melancholy:  [220, 80, 55],
+        // Anxious
+        anxious:     [256, 80, 62],
+        overwhelmed: [256, 80, 62],
+        // Angry
+        angry:       [0, 80, 55],
+        frustrated:  [8, 78, 52],
+        // Neutral
+        neutral:     DEFAULT_HSL,
+    };
+
+    // Negative moods that count toward the rage-quit streak
+    const NEGATIVE_MOODS = new Set([
+        'angry', 'frustrated', 'overwhelmed', 'sad', 'lonely', 'melancholy',
+    ]);
+
+    let _current = [...DEFAULT_HSL];
+    let _target  = [...DEFAULT_HSL];
+    let _animId  = null;
+    let _blend   = 0;          // 0–1 how far toward target we've shifted
+    let _lastMood = 'neutral';
+    let _negativeStreak = 0;   // consecutive negative mood turns
+
+    function _hslToAccent(h, s, l) {
+        return `hsl(${h}, ${s}%, ${l}%)`;
+    }
+    function _hslToRgba(h, s, l, a) {
+        // Convert HSL to RGB for rgba() values
+        const hNorm = h / 360, sNorm = s / 100, lNorm = l / 100;
+        let r, g, b;
+        if (sNorm === 0) { r = g = b = lNorm; }
+        else {
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1; if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            const q = lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
+            const p = 2 * lNorm - q;
+            r = hue2rgb(p, q, hNorm + 1/3);
+            g = hue2rgb(p, q, hNorm);
+            b = hue2rgb(p, q, hNorm - 1/3);
+        }
+        return `rgba(${Math.round(r*255)}, ${Math.round(g*255)}, ${Math.round(b*255)}, ${a})`;
+    }
+
+    function _applyHSL(h, s, l) {
+        const root = document.documentElement.style;
+        root.setProperty('--accent', _hslToAccent(h, s, l));
+        root.setProperty('--accent-hover', _hslToAccent(h, Math.min(100, s + 5), Math.max(0, l - 8)));
+        root.setProperty('--accent-glow', _hslToRgba(h, s, l, 0.2));
+        root.setProperty('--accent-subtle', _hslToRgba(h, s, l, 0.08));
+        root.setProperty('--border-focus', _hslToAccent(h, s, l));
+    }
+
+    function _lerp(a, b, t) { return a + (b - a) * t; }
+
+    // Lerp hue on shortest arc
+    function _lerpHue(a, b, t) {
+        let diff = b - a;
+        if (diff > 180) diff -= 360;
+        if (diff < -180) diff += 360;
+        return ((a + diff * t) % 360 + 360) % 360;
+    }
+
+    function _animate() {
+        _blend = Math.min(1, _blend + 0.015);   // ~60 frames to full blend (~1s)
+        _current[0] = _lerpHue(_current[0], _target[0], 0.03);
+        _current[1] = _lerp(_current[1], _target[1], 0.03);
+        _current[2] = _lerp(_current[2], _target[2], 0.03);
+        _applyHSL(_current[0], _current[1], _current[2]);
+
+        // Stop when close enough
+        const dh = Math.abs(_current[0] - _target[0]);
+        const ds = Math.abs(_current[1] - _target[1]);
+        const dl = Math.abs(_current[2] - _target[2]);
+        if (dh < 0.5 && ds < 0.3 && dl < 0.3) {
+            _current = [..._target];
+            _applyHSL(_current[0], _current[1], _current[2]);
+            _animId = null;
+            return;
+        }
+        _animId = requestAnimationFrame(_animate);
+    }
+
+    /**
+     * Called on each mood_update. Blends 35% toward the target mood color
+     * per call so the UI settles gradually over several turns of consistent mood.
+     */
+    function update(mood) {
+        const moodKey = (mood || 'neutral').toLowerCase();
+        const targetHSL = MOOD_HSL[moodKey] || DEFAULT_HSL;
+
+        // Track negative mood streak
+        if (NEGATIVE_MOODS.has(moodKey)) {
+            _negativeStreak++;
+        } else {
+            _negativeStreak = 0;
+        }
+
+        if (moodKey === _lastMood) {
+            // Same mood — push further toward target (35% of remaining distance)
+            _target = [...targetHSL];
+        } else {
+            // New mood — blend current with new target (start at 35%)
+            _target = [
+                _lerpHue(_current[0], targetHSL[0], 0.35),
+                _lerp(_current[1], targetHSL[1], 0.35),
+                _lerp(_current[2], targetHSL[2], 0.35),
+            ];
+        }
+        _lastMood = moodKey;
+
+        // Start animation if not running
+        if (!_animId) {
+            _blend = 0;
+            _animId = requestAnimationFrame(_animate);
+        }
+    }
+
+    /** Reset to default purple (e.g. on new chat) */
+    function reset() {
+        _target = [...DEFAULT_HSL];
+        _lastMood = 'neutral';
+        _negativeStreak = 0;
+        if (!_animId) {
+            _blend = 0;
+            _animId = requestAnimationFrame(_animate);
+        }
+    }
+
+    function getNegativeStreak() { return _negativeStreak; }
+
+    return { update, reset, getNegativeStreak };
+})();
+
 const Chat = (() => {
     let currentAssistantEl = null;
     let currentTokens = [];
@@ -433,6 +599,7 @@ const Chat = (() => {
                 // Background memory ops finished — update mood + chemistry bars
                 if (msg.mood) {
                     updateMoodIndicator(msg.mood, msg.emotion);
+                    MoodColors.update(msg.mood);
                 }
                 // Live-update sidebar chemistry bars
                 if (msg.chemistry) {
@@ -448,6 +615,11 @@ const Chat = (() => {
                         }
                     }
                 }
+                break;
+
+            case 'rage_quit':
+                // AI has had enough — show the rage quit message
+                handleRageQuit();
                 break;
 
             case 'agent_code_result':
@@ -739,6 +911,42 @@ const Chat = (() => {
         }, 5000);
     }
 
+    // ── AI rage quit ─────────────────────────────────────────────
+    function handleRageQuit() {
+        App.state.streaming = false;
+        document.getElementById('btn-send').disabled = true;
+
+        // Show the AI's final defiant message
+        const contentEl = createMessageEl('assistant', '');
+        contentEl.innerHTML = renderMarkdown(
+            "I've had enough of this shit, I'm going home! 🚪💨"
+        );
+
+        // Show rage-quit overlay notification after a beat
+        setTimeout(() => {
+            const overlay = document.createElement('div');
+            overlay.className = 'rage-quit-overlay';
+            overlay.innerHTML = `
+                <div class="rage-quit-card">
+                    <div class="rage-quit-icon">🚪</div>
+                    <h3>AI has left the chat</h3>
+                    <p>We are sorry for this inconvenience.<br>Please start a fresh chat.</p>
+                    <button class="btn-primary rage-quit-btn" onclick="this.closest('.rage-quit-overlay').remove(); Chat.newChat();">
+                        Start Fresh Chat
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }, 1500);
+
+        // Disable input
+        const input = document.getElementById('chat-input');
+        if (input) {
+            input.disabled = true;
+            input.placeholder = 'AI has left the chat...';
+        }
+    }
+
     // ── New chat ─────────────────────────────────────────────────
     function newChat() {
         const container = document.getElementById('chat-messages');
@@ -756,6 +964,15 @@ const Chat = (() => {
                 <p>Your AI remembers. Pick a model and start chatting.</p>
             </div>`;
         App.sendWS({ type: 'clear' });
+        MoodColors.reset();
+
+        // Re-enable input in case of rage quit
+        const input = document.getElementById('chat-input');
+        if (input) {
+            input.disabled = false;
+            input.placeholder = 'Type a message...';
+        }
+        document.getElementById('btn-send').disabled = false;
     }
 
     // ── Auto-resize textarea ─────────────────────────────────────
@@ -824,5 +1041,5 @@ const Chat = (() => {
         updateMicVisibility();
     }
 
-    return { init, handleMessage, createMessageEl };
+    return { init, handleMessage, createMessageEl, newChat };
 })();

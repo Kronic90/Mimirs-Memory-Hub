@@ -58,6 +58,9 @@ _tts = None  # EdgeTTSBackend or MayaTTSBackend
 _stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
 _current_conv_id: str | None = None     # auto-save tracking
+_negative_mood_streak: int = 0           # consecutive negative mood turns (rage-quit)
+_NEGATIVE_MOODS = {"angry", "frustrated", "overwhelmed", "sad", "lonely", "melancholy"}
+_RAGE_QUIT_THRESHOLD = 5
 _characters = CharacterManager()
 _conversations = ConversationManager()
 
@@ -1619,6 +1622,7 @@ async def chat_ws(ws: WebSocket):
                 _auto_save_conversation()  # save before clearing
                 _conversation.clear()
                 _current_conv_id = None
+                _negative_mood_streak = 0
                 await ws.send_json({"type": "cleared"})
                 continue
 
@@ -2067,6 +2071,25 @@ async def chat_ws(ws: WebSocket):
                             })
                         except Exception:
                             pass
+
+                        # ── Rage-quit: AI leaves chat after sustained negativity ──
+                        global _negative_mood_streak
+                        effective_mood = (mood_label or "neutral").lower()
+                        if effective_mood in _NEGATIVE_MOODS:
+                            _negative_mood_streak += 1
+                        else:
+                            _negative_mood_streak = 0
+
+                        # Only for character/companion presets
+                        if (_negative_mood_streak >= _RAGE_QUIT_THRESHOLD
+                                and _bg_preset.get("chemistry", False)
+                                and _bg_preset.get("social_priority", False)):
+                            try:
+                                await _bg_ws.send_json({"type": "rage_quit"})
+                                _negative_mood_streak = 0
+                                _conversation.clear()
+                            except Exception:
+                                pass
 
                         # Background: periodic LLM reflect / edit_memories
                         turn_count = mem._turn_count
