@@ -87,6 +87,8 @@ That's it. No Python, no terminal, no setup.
 
 If you already have Python 3.10+ installed, this works anywhere.
 
+> **Python version note:** We recommend **Python 3.11 or 3.12**. Python 3.13+ may have compatibility issues with some dependencies (PyTorch, transformers, etc.).
+
 **1. Clone the repo**
 ```bash
 git clone https://github.com/Kronic90/Mimirs-Memory-Hub.git
