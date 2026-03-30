@@ -228,10 +228,11 @@ const AgentsPage = (() => {
         try {
             await fetch('/api/characters/activate', { method: 'DELETE' });
             activeId = '';
-            App.toast('Agent deactivated', 'info');
+            App.toast('Agent deactivated — Default active', 'info');
             renderList();
             openEditor(editingId);
             App.loadAgentDropdown();
+            App.loadModels();
         } catch {
             App.toast('Deactivate failed', 'error');
         }

@@ -227,6 +227,12 @@ const ModelsPage = (() => {
                             text.textContent = 'Downloaded: ' + (prog_data.path || filename);
                             btn.textContent = '✓ Downloaded';
                             App.toast(filename + ' downloaded!', 'success');
+                            // Auto-switch to local backend and select this model
+                            if (prog_data.path) {
+                                useLocalModel(prog_data.path);
+                            } else {
+                                App.loadModels();
+                            }
                             return;
                         } else if (prog_data.status === 'error') {
                             clearInterval(pollInterval);
@@ -267,6 +273,17 @@ const ModelsPage = (() => {
             const settings = await App.api('/settings');
             scanDirs = settings.scan_directories || [];
             renderScanDirs();
+            // Load cached scan results so user doesn't re-scan every reload
+            loadScanCache();
+        } catch { /* ignore */ }
+    }
+
+    async function loadScanCache() {
+        try {
+            const models = await App.api('/models/scan/cache');
+            if (Array.isArray(models) && models.length > 0) {
+                renderScanResults(models);
+            }
         } catch { /* ignore */ }
     }
 
@@ -321,20 +338,7 @@ const ModelsPage = (() => {
             status.style.display = 'none';
 
             if (Array.isArray(models) && models.length > 0) {
-                list.innerHTML = '';
-                models.forEach(m => {
-                    const card = document.createElement('div');
-                    card.className = 'model-card';
-                    card.innerHTML = `
-                        <div class="model-info">
-                            <div class="model-name">${esc(m.filename)}</div>
-                            <div class="model-meta">${App.formatBytes(m.size)} · ${esc(m.parent_dir)}</div>
-                        </div>
-                        <div class="model-actions">
-                            <button class="btn btn-secondary" onclick="ModelsPage.useLocalModel('${esc(m.path).replace(/\\/g, '\\\\')}')">Use</button>
-                        </div>`;
-                    list.appendChild(card);
-                });
+                renderScanResults(models);
                 App.toast('Found ' + models.length + ' GGUF file(s)', 'success');
             } else {
                 list.innerHTML = '<p class="text-muted">No GGUF files found. Try adding directories above.</p>';
@@ -345,6 +349,24 @@ const ModelsPage = (() => {
         }
         btn.disabled = false;
         btn.textContent = '🔍 Scan for GGUF files';
+    }
+
+    function renderScanResults(models) {
+        const list = document.getElementById('local-models-list');
+        list.innerHTML = '';
+        models.forEach(m => {
+            const card = document.createElement('div');
+            card.className = 'model-card';
+            card.innerHTML = `
+                <div class="model-info">
+                    <div class="model-name">${esc(m.filename)}</div>
+                    <div class="model-meta">${App.formatBytes(m.size)} · ${esc(m.parent_dir)}</div>
+                </div>
+                <div class="model-actions">
+                    <button class="btn btn-secondary" onclick="ModelsPage.useLocalModel('${esc(m.path).replace(/\\/g, '\\\\')}')">Use</button>
+                </div>`;
+            list.appendChild(card);
+        });
     }
 
     function useLocalModel(filePath) {

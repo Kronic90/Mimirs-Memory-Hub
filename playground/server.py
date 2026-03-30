@@ -241,6 +241,45 @@ def _strip_solution_tags(text: str) -> str:
     return _SOLUTION_RE.sub("", text).strip()
 
 
+# ── Code block + file saving parsing for Agent mode ──────────────────────────
+
+_CODE_BLOCK_RE = _re.compile(
+    r'```(\w+)?\s*\n(.*?)```',
+    _re.DOTALL,
+)
+
+_SAVE_FILE_RE = _re.compile(
+    r'<save_file\s+path=["\']([^"\']+)["\']>\s*(.*?)\s*</save_file>',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+
+def _parse_code_blocks(text: str) -> list[dict]:
+    """Extract fenced code blocks → [{language, code}]."""
+    blocks = []
+    for m in _CODE_BLOCK_RE.finditer(text):
+        lang = (m.group(1) or "text").lower()
+        code = m.group(2).strip()
+        if code and lang in ("python", "py"):
+            blocks.append({"language": "python", "code": code})
+    return blocks
+
+
+def _parse_save_file_tags(text: str) -> list[dict]:
+    """Extract <save_file path="...">content</save_file> → [{path, content}]."""
+    entries = []
+    for m in _SAVE_FILE_RE.finditer(text):
+        entries.append({"path": m.group(1).strip(), "content": m.group(2)})
+    return entries
+
+
+def _get_agent_files_dir() -> Path:
+    """Return the agent_files directory, creating it if needed."""
+    d = _cfg.profile_dir.parent.parent / "agent_files"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 # ── Heuristic reminder detection ─────────────────────────────────────────────
 
 _HEURISTIC_REMIND_PHRASES = [
@@ -377,16 +416,20 @@ async def get_models():
     """List models for the active backend."""
     backend_name = _cfg.get("active_backend", "ollama")
 
-    # For local backend, return the active model + any previously scanned models
+    # For local backend, return all downloaded models + the active model
     if backend_name == "local":
-        models = []
+        models_dir = str(_cfg.profile_dir.parent.parent / "models")
+        downloaded = model_manager.list_local_models(models_dir)
+        models = [{"id": m["path"], "name": m["filename"], "size": m["size"]}
+                  for m in downloaded]
+        # Also include the active model if it's outside the models dir
         active = _cfg.get("active_model", "")
         if active:
             from pathlib import Path
             p = Path(active)
-            if p.is_file():
-                models.append({"id": active, "name": p.name,
-                                "size": p.stat().st_size})
+            if p.is_file() and not any(m["id"] == active for m in models):
+                models.insert(0, {"id": active, "name": p.name,
+                                  "size": p.stat().st_size})
         return JSONResponse({"backend": "local", "models": models})
 
     backend = create_backend(backend_name, _cfg.to_dict())
@@ -443,9 +486,23 @@ async def scan_models():
         results = await asyncio.to_thread(
             model_manager.scan_for_gguf, all_dirs
         )
+        # Cache results so they survive reload
+        _cfg.update({"scan_cache": results})
         return JSONResponse(results)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/models/scan/cache")
+async def scan_cache():
+    """Return cached scan results, filtering out files that no longer exist."""
+    cached = _cfg.get("scan_cache", [])
+    if not cached:
+        return JSONResponse([])
+    valid = [m for m in cached if Path(m.get("path", "")).is_file()]
+    if len(valid) != len(cached):
+        _cfg.update({"scan_cache": valid})
+    return JSONResponse(valid)
 
 
 @app.post("/api/models/scan/dirs")
@@ -496,8 +553,8 @@ async def download_status():
 # ── Memory API ────────────────────────────────────────────────────────
 
 @app.get("/api/memory/stats")
-async def memory_stats():
-    mem = _ensure_memory()
+async def memory_stats(char_id: str = ""):
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.stats())
 
 
@@ -604,9 +661,9 @@ async def execute_tool(request: Request):
 # ── Mood & Chemistry API ─────────────────────────────────────────────
 
 @app.get("/api/memory/mood")
-async def memory_mood():
+async def memory_mood(char_id: str = ""):
     """Return current mood, PAD vector, and neurochemistry state."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_mood())
 
 
@@ -653,9 +710,10 @@ async def memory_chemistry():
 @app.get("/api/memory/browse")
 async def memory_browse(offset: int = 0, limit: int = 50,
                          sort: str = "recent", emotion: str = "",
-                         source: str = "", min_importance: int = 0):
+                         source: str = "", min_importance: int = 0,
+                         char_id: str = ""):
     """Paginated memory browser with filters."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.browse_memories(
         offset=offset, limit=limit, sort=sort,
         emotion_filter=emotion, source_filter=source,
@@ -706,16 +764,16 @@ async def memory_anchor(index: int):
 
 
 @app.get("/api/memory/export")
-async def memory_export():
+async def memory_export(char_id: str = ""):
     """Export all memories as JSON."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.export_all())
 
 
 @app.get("/api/memory/filters")
-async def memory_filters():
+async def memory_filters(char_id: str = ""):
     """Return available filter options (unique emotions, sources)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse({
         "emotions": mem.get_unique_emotions(),
         "sources": mem.get_unique_sources(),
@@ -1212,7 +1270,7 @@ async def deactivate_character():
     """Clear the active character — revert to global persona."""
     global _memory
     _cfg.update({"active_character_id": ""})
-    _memory = None
+    _memory = None  # Force re-create with global settings on next turn
     return JSONResponse({"ok": True})
 
 
@@ -1527,6 +1585,10 @@ async def chat_ws(ws: WebSocket):
                 task_tags      = _parse_task_tags(response_text) if memory_enabled else []
                 solution_tags  = _parse_solution_tags(response_text) if memory_enabled else []
 
+                # Parse agent code blocks & file-save tags
+                code_blocks = _parse_code_blocks(response_text) if preset_name == "agent" else []
+                save_file_tags = _parse_save_file_tags(response_text) if preset_name == "agent" else []
+
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
 
@@ -1569,6 +1631,8 @@ async def chat_ws(ws: WebSocket):
                 _bg_remind_tags = list(remind_tags)
                 _bg_task_tags = list(task_tags)
                 _bg_solution_tags = list(solution_tags)
+                _bg_code_blocks = list(code_blocks)
+                _bg_save_files = list(save_file_tags)
                 _bg_user_text = user_text
                 _bg_clean = clean_response
                 _bg_preset = dict(preset)
@@ -1651,6 +1715,57 @@ async def chat_ws(ws: WebSocket):
                                     })
                             except Exception:
                                 pass
+
+                        # ── Agent code execution & file saving ────────────
+                        agent_dir = _get_agent_files_dir()
+
+                        # Save files the model wrote with <save_file> tags
+                        for sf in _bg_save_files:
+                            try:
+                                # Sanitize path — only allow relative paths inside agent_files
+                                rel = sf["path"].replace("\\", "/").lstrip("/")
+                                # Block path traversal
+                                if ".." in rel:
+                                    continue
+                                target = agent_dir / rel
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                target.write_text(sf["content"], encoding="utf-8")
+                                await _bg_ws.send_json({
+                                    "type": "agent_file_saved",
+                                    "path": str(target),
+                                    "filename": rel,
+                                })
+                            except Exception:
+                                pass
+
+                        # Execute Python code blocks in agent mode
+                        for cb in _bg_code_blocks:
+                            try:
+                                from playground.tool_runner import run_tool
+                                # Agent auto-grants code_execution + agent_files path
+                                agent_perms = {
+                                    "code_execution": True,
+                                    "file_access": True,
+                                    "allowed_paths": [str(agent_dir)],
+                                }
+                                result = await asyncio.to_thread(
+                                    run_tool, "run_code",
+                                    {"code": cb["code"], "language": cb["language"]},
+                                    agent_perms,
+                                )
+                                await _bg_ws.send_json({
+                                    "type": "agent_code_result",
+                                    "language": cb["language"],
+                                    "stdout": result.get("stdout", ""),
+                                    "stderr": result.get("stderr", ""),
+                                    "error": result.get("error", ""),
+                                    "exit_code": result.get("exit_code"),
+                                })
+                            except Exception as e:
+                                await _bg_ws.send_json({
+                                    "type": "agent_code_result",
+                                    "error": str(e),
+                                })
 
                         # Heuristic reminder fallback — only if model wrote no <remind> tags
                         if not _bg_remind_tags:
@@ -1768,10 +1883,26 @@ async def chat_ws(ws: WebSocket):
                                 })
                             else:
                                 print(f"[TTS] generate_audio returned empty bytes")
+                                # Tell frontend to use browser fallback
+                                error = tts._last_error or "No audio generated (GPU/model issue)"
+                                await _ws.send_json({
+                                    "type": "tts_fallback",
+                                    "text": resp_text,
+                                    "error": error,
+                                })
                         except Exception as e:
                             print(f"[TTS] Error: {e}")
+                            await _ws.send_json({
+                                "type": "tts_fallback",
+                                "text": resp_text,
+                                "error": str(e),
+                            })
 
                     asyncio.create_task(_send_tts(clean_response, voice_prompt, ws))
+                elif tts.enabled and not clean_response.strip():
+                    pass  # nothing to speak
+                elif not tts.enabled:
+                    pass  # TTS disabled
 
             except Exception as e:
                 await ws.send_json({"type": "error", "message": str(e)})

@@ -293,9 +293,10 @@
                     </div>
                     <!-- API Keys Tab -->
                     <div class="tab-panel" id="tab-api">
-                        <div id="api-cost-warning" class="api-cost-warning" style="display:none;">
+                        <div id="api-cost-warning" class="api-cost-warning">
                             <strong>⚠️ API Cost Notice</strong>
-                            Mimir makes one extra LLM call per message for memory curation — deciding what to remember and how to tag it. This will increase your costs with cloud providers. For unlimited free usage, switch to <strong>Ollama</strong> or a <strong>Local GGUF</strong> model.
+                            Mimir makes one extra LLM call per message for memory curation — deciding what to remember and how to tag it. When using paid APIs (OpenAI, Anthropic, Google), this will roughly double your per-message token costs. <br><br>
+                            <strong>💡 Free alternative:</strong> Use open-source models via <strong>Ollama</strong> or a <strong>Local GGUF</strong> for unlimited free usage with no API costs.
                         </div>
                         <div class="api-keys-form">
                             <div class="form-group">
@@ -331,7 +332,10 @@
                         <h1>Memory</h1>
                         <p class="text-muted">Browse, search, edit and manage all memories</p>
                     </div>
-                    <div style="display:flex;gap:8px;">
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <select id="memory-agent-select" class="input input-sm" title="View memories for this agent" style="min-width:140px;">
+                            <option value="">Global (Default)</option>
+                        </select>
                         <button id="btn-export-memories" class="btn btn-secondary">📥 Export JSON</button>
                         <button id="btn-sleep" class="btn btn-secondary">🌙 Sleep</button>
                         <button id="btn-run-huginn" class="btn btn-secondary">🔮 Huginn</button>

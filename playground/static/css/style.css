@@ -2357,6 +2357,52 @@ details[open] .think-chevron { transform: rotate(90deg); }
     color: #10b981;
     border: 1px solid rgba(16, 185, 129, 0.3);
 }
+
+/* Agent code execution results */
+.agent-code-result {
+    margin: 8px 0;
+    padding: 10px 14px;
+    background: var(--bg-tertiary, #1e1e2e);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+.agent-code-header {
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--accent);
+}
+.agent-code-stdout {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 4px 0;
+    padding: 6px 8px;
+    background: rgba(16, 185, 129, 0.08);
+    border-radius: 4px;
+    color: #a0e0c0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.agent-code-stderr {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 4px 0;
+    padding: 6px 8px;
+    background: rgba(239, 68, 68, 0.08);
+    border-radius: 4px;
+    color: #f87171;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.agent-code-error {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 4px 0;
+    padding: 6px 8px;
+    background: rgba(239, 68, 68, 0.12);
+    border-radius: 4px;
+    color: #ef4444;
+}
     cursor: pointer;
 }
 

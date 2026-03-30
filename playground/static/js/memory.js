@@ -6,12 +6,46 @@ const MemoryPage = (() => {
     let initialized = false;
     let currentOffset = 0;
     const PAGE_SIZE = 30;
+    let selectedCharId = '';  // '' = global, or a character ID
+
+    function _charParam() {
+        return selectedCharId ? '&char_id=' + encodeURIComponent(selectedCharId) : '';
+    }
+    function _charQuery() {
+        return selectedCharId ? '?char_id=' + encodeURIComponent(selectedCharId) : '';
+    }
+
+    // ── Load agent dropdown for memory page ──────────────────────
+    async function loadAgentDropdown() {
+        const select = document.getElementById('memory-agent-select');
+        if (!select) return;
+        try {
+            const [data, settings] = await Promise.all([
+                App.api('/characters'),
+                App.api('/settings'),
+            ]);
+            const agents = data.characters || [];
+            const activeId = settings.active_character_id || '';
+            select.innerHTML = '<option value="">Global (Default)</option>';
+            agents.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = a.name || 'Unnamed';
+                select.appendChild(opt);
+            });
+            // Auto-select the active agent if one is active
+            if (activeId && !selectedCharId) {
+                selectedCharId = activeId;
+            }
+            select.value = selectedCharId;
+        } catch {}
+    }
 
     // ── Load stats ───────────────────────────────────────────────
     async function loadStats() {
         const grid = document.getElementById('stats-grid');
         try {
-            const stats = await App.api('/memory/stats');
+            const stats = await App.api('/memory/stats' + _charQuery());
             const cards = [
                 { label: 'Memories', value: stats.total_reflections || 0, icon: '🧠' },
                 { label: 'Mood', value: stats.mood || '—', icon: '😊' },
@@ -41,7 +75,7 @@ const MemoryPage = (() => {
     // ── Load chemistry bars ──────────────────────────────────────
     async function loadChemistry() {
         try {
-            const mood = await App.api('/memory/mood');
+            const mood = await App.api('/memory/mood' + _charQuery());
             const dash = document.getElementById('chemistry-dashboard');
             const moodLabel = document.getElementById('chem-mood-label');
             if (moodLabel) {
@@ -84,7 +118,7 @@ const MemoryPage = (() => {
     // ── Load filter options ──────────────────────────────────────
     async function loadFilters() {
         try {
-            const f = await App.api('/memory/filters');
+            const f = await App.api('/memory/filters' + _charQuery());
             const emSel = document.getElementById('filter-emotion');
             const srcSel = document.getElementById('filter-source');
             emSel.innerHTML = '<option value="">All emotions</option>';
@@ -116,6 +150,7 @@ const MemoryPage = (() => {
                 offset, limit: PAGE_SIZE, sort,
                 emotion, source, min_importance: minImp,
             });
+            if (selectedCharId) params.set('char_id', selectedCharId);
             const data = await App.api('/memory/browse?' + params);
             renderMemories(data.memories || [], false);
             updatePager(data.total, data.offset, data.limit);
@@ -249,7 +284,7 @@ const MemoryPage = (() => {
     // ── Export ────────────────────────────────────────────────────
     async function exportMemories() {
         try {
-            const memories = await App.api('/memory/export');
+            const memories = await App.api('/memory/export' + _charQuery());
             const blob = new Blob([JSON.stringify(memories, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -660,6 +695,17 @@ const MemoryPage = (() => {
             ['filter-emotion', 'filter-source', 'filter-sort', 'filter-importance'].forEach(id => {
                 document.getElementById(id).addEventListener('change', () => browseMemories(0));
             });
+            // Agent dropdown for per-agent memory viewing
+            const agentSel = document.getElementById('memory-agent-select');
+            if (agentSel) {
+                agentSel.addEventListener('change', () => {
+                    selectedCharId = agentSel.value;
+                    loadStats();
+                    loadChemistry();
+                    loadFilters();
+                    browseMemories(0);
+                });
+            }
             // New organic controls
             document.getElementById('btn-reflect')?.addEventListener('click', runReflect);
             document.getElementById('btn-ai-curate')?.addEventListener('click', runAICurate);
@@ -675,6 +721,7 @@ const MemoryPage = (() => {
             document.getElementById('btn-search-solutions')?.addEventListener('click', searchSolutions);
             initialized = true;
         }
+        loadAgentDropdown();
         loadStats();
         loadChemistry();
         loadFilters();

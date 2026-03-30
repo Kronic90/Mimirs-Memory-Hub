@@ -162,12 +162,7 @@ const App = (() => {
     }
 
     // ── API cost warning helper ───────────────────────────────────
-    function updateApiCostWarning(backend) {
-        const el = document.getElementById('api-cost-warning');
-        if (!el) return;
-        const cloudBackends = ['openai', 'anthropic', 'google', 'custom'];
-        el.style.display = cloudBackends.includes(backend) ? 'block' : 'none';
-    }
+    // Always visible on the API tab — it's informational for all users
 
     // ── Load settings ────────────────────────────────────────────
     async function loadSettings() {
@@ -178,7 +173,6 @@ const App = (() => {
             state.preset = state.settings.active_preset || 'companion';
 
             document.getElementById('backend-select').value = state.backend;
-            updateApiCostWarning(state.backend);
 
             // Populate agent dropdown
             await loadAgentDropdown();
@@ -221,7 +215,6 @@ const App = (() => {
             state.model = '';  // Clear model when switching backends
             await apiPut('/settings', { active_backend: state.backend, active_model: '' });
             loadModels();
-            updateApiCostWarning(state.backend);
         });
         document.getElementById('model-select').addEventListener('change', (e) => {
             state.model = e.target.value;
@@ -232,10 +225,17 @@ const App = (() => {
             if (agentId) {
                 await apiPost('/characters/' + agentId + '/activate', {});
             } else {
-                await fetch('/api/characters/activate', { method: 'DELETE' });
+                try {
+                    await fetch('/api/characters/activate', { method: 'DELETE' });
+                } catch { /* ignore */ }
             }
             // Reload settings to pick up any per-agent model/backend overrides
-            await loadSettings();
+            state.settings = await api('/settings');
+            state.backend = state.settings.active_backend || 'ollama';
+            state.model = state.settings.active_model || '';
+            state.preset = state.settings.active_preset || 'companion';
+            document.getElementById('backend-select').value = state.backend;
+            await loadAgentDropdown();
             await loadModels();
         });
 

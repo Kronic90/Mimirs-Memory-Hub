@@ -378,11 +378,24 @@ const Chat = (() => {
                 playTTSAudio(msg.audio_b64);
                 break;
 
+            case 'tts_fallback':
+                // Maya TTS failed — use browser SpeechSynthesis as fallback
+                playBrowserTTS(msg.text, msg.error);
+                break;
+
             case 'mood_update':
                 // Background memory ops finished — update mood indicator
                 if (msg.mood && msg.mood !== 'neutral') {
                     updateMoodIndicator(msg.mood, msg.emotion);
                 }
+                break;
+
+            case 'agent_code_result':
+                showAgentCodeResult(msg);
+                break;
+
+            case 'agent_file_saved':
+                showTaskPip('💾 File saved: ' + (msg.filename || ''));
                 break;
         }
     }
@@ -416,6 +429,28 @@ const Chat = (() => {
             pip.style.opacity = '0';
             setTimeout(() => pip.remove(), 500);
         }, 5000);
+    }
+
+    // ── Agent code result display ─────────────────────────────────
+    function showAgentCodeResult(msg) {
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = 'agent-code-result';
+        let html = '<div class="agent-code-header">⚙️ Code Execution Result</div>';
+        if (msg.error) {
+            html += `<pre class="agent-code-error">${esc(msg.error)}</pre>`;
+        } else {
+            if (msg.stdout) html += `<pre class="agent-code-stdout">${esc(msg.stdout)}</pre>`;
+            if (msg.stderr) html += `<pre class="agent-code-stderr">${esc(msg.stderr)}</pre>`;
+            if (!msg.stdout && !msg.stderr) html += '<span class="text-muted">(no output)</span>';
+        }
+        div.innerHTML = html;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function esc(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     // ── TTS audio playback ────────────────────────────────────────
@@ -459,6 +494,36 @@ const Chat = (() => {
         } catch (e) {
             console.warn('TTS playback failed:', e);
         }
+    }
+
+    // ── Browser SpeechSynthesis fallback ──────────────────────────
+    let _ttsWarningShown = false;
+    function playBrowserTTS(text, error) {
+        if (!window.speechSynthesis) {
+            if (!_ttsWarningShown) {
+                console.warn('Neither Maya TTS nor browser SpeechSynthesis available');
+                _ttsWarningShown = true;
+            }
+            return;
+        }
+        if (!_ttsWarningShown && error) {
+            App.toast('Maya TTS unavailable, using browser voice. (' + error.slice(0, 60) + ')', 'info');
+            _ttsWarningShown = true;
+        }
+        // Strip markdown/code for cleaner speech
+        const clean = text.replace(/```[\s\S]*?```/g, '')
+            .replace(/`[^`]+`/g, '')
+            .replace(/\*{1,3}(.*?)\*{1,3}/g, '$1')
+            .replace(/#{1,6}\s+/g, '')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            .trim();
+        if (!clean) return;
+        // Limit to first ~500 chars for responsiveness
+        const segment = clean.length > 500 ? clean.slice(0, 500) : clean;
+        const utter = new SpeechSynthesisUtterance(segment);
+        utter.rate = 1.0;
+        utter.pitch = 1.0;
+        speechSynthesis.speak(utter);
     }
 
     // ── Mic / STT recording ────────────────────────────────────────
