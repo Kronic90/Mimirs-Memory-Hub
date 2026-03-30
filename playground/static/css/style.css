@@ -90,17 +90,17 @@ a:hover { text-decoration: underline; }
 .sidebar-logo {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 0 20px 20px;
-    color: var(--text);
+    justify-content: center;
+    padding: 4px 12px 16px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 8px;
 }
-.sidebar-logo svg { color: var(--accent); flex-shrink: 0; }
-.logo-text {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: -0.3px;
+.logo-img {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+    object-fit: contain;
+    filter: brightness(1.6) contrast(1.1);
 }
 
 .nav-items {
