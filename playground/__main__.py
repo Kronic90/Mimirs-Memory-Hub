@@ -9,6 +9,10 @@ _mimir_root = str(Path(__file__).resolve().parent.parent)
 if _mimir_root not in sys.path:
     sys.path.insert(0, _mimir_root)
 
+import os
+if _mimir_root not in os.environ.get("PYTHONPATH", ""):
+    os.environ["PYTHONPATH"] = _mimir_root + os.pathsep + os.environ.get("PYTHONPATH", "")
+
 def main():
     import uvicorn
 

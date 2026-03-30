@@ -16,7 +16,20 @@ _root = str(Path(__file__).resolve().parent.parent)
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from Mimir import Mimir  # type: ignore
+try:
+    from Mimir import Mimir  # type: ignore
+except ModuleNotFoundError:
+    # Fallback: explicit load from file path (handles case-sensitive FS quirks)
+    import importlib.util as _ilu
+    _mimir_file = Path(_root) / "Mimir.py"
+    if not _mimir_file.exists():
+        # Try lowercase on case-sensitive systems
+        _mimir_file = Path(_root) / "mimir.py"
+    _spec = _ilu.spec_from_file_location("Mimir", str(_mimir_file))
+    _mod = _ilu.module_from_spec(_spec)
+    sys.modules["Mimir"] = _mod
+    _spec.loader.exec_module(_mod)
+    Mimir = _mod.Mimir  # type: ignore
 
 # ── lightweight keyword-based emotion detector ────────────────────────
 

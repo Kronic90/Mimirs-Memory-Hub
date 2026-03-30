@@ -15,6 +15,11 @@ _root = str(Path(__file__).resolve().parent.parent)
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
+# Also export as env var so sub-imports see it
+import os as _os
+if _root not in _os.environ.get("PYTHONPATH", ""):
+    _os.environ["PYTHONPATH"] = _root + _os.pathsep + _os.environ.get("PYTHONPATH", "")
+
 from playground.config import Config
 from playground.presets import PRESETS, get_preset
 from playground.llm_backends import create_backend, OllamaBackend

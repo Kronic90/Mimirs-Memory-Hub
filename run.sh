@@ -58,4 +58,5 @@ echo " ============================================================"
 echo ""
 
 cd "$DIR"
+export PYTHONPATH="$DIR:$PYTHONPATH"
 "$VENV/bin/python" -m playground
