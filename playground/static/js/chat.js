@@ -227,6 +227,9 @@ const Chat = (() => {
             return;
         }
 
+        // Ensure AudioContext is ready (browser requires user gesture)
+        ensureAudioCtx();
+
         // Show user message (with image thumbnail if attached)
         const userMsgEl = createMessageEl('user', text);
         if (pendingImageB64) {
@@ -374,6 +377,13 @@ const Chat = (() => {
             case 'tts_audio':
                 playTTSAudio(msg.audio_b64);
                 break;
+
+            case 'mood_update':
+                // Background memory ops finished — update mood indicator
+                if (msg.mood && msg.mood !== 'neutral') {
+                    updateMoodIndicator(msg.mood, msg.emotion);
+                }
+                break;
         }
     }
 
@@ -410,19 +420,42 @@ const Chat = (() => {
 
     // ── TTS audio playback ────────────────────────────────────────
     let _audioCtx = null;
+
+    // Ensure AudioContext is created and resumed (must be called from a
+    // user-gesture handler so browsers allow audio playback).
+    function ensureAudioCtx() {
+        if (!_audioCtx) {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (_audioCtx.state === 'suspended') {
+            _audioCtx.resume();
+        }
+    }
+
     function playTTSAudio(b64) {
         if (!b64) return;
         try {
-            if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            ensureAudioCtx();
             const binary = atob(b64);
             const buf = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
-            _audioCtx.decodeAudioData(buf.buffer, (decoded) => {
-                const src = _audioCtx.createBufferSource();
-                src.buffer = decoded;
-                src.connect(_audioCtx.destination);
-                src.start(0);
-            });
+            // Use both callback and promise forms for cross-browser compat
+            const promise = _audioCtx.decodeAudioData(
+                buf.buffer,
+                (decoded) => {
+                    const src = _audioCtx.createBufferSource();
+                    src.buffer = decoded;
+                    src.connect(_audioCtx.destination);
+                    src.start(0);
+                },
+                (err) => {
+                    console.warn('TTS decodeAudioData failed:', err);
+                }
+            );
+            // Some browsers return a promise
+            if (promise && promise.catch) {
+                promise.catch((err) => console.warn('TTS decode promise error:', err));
+            }
         } catch (e) {
             console.warn('TTS playback failed:', e);
         }

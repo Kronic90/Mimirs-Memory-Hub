@@ -71,9 +71,23 @@ _REMEMBER_RE = _re.compile(
 _ATTR_RE = _re.compile(r'(\w+)=["\']([^"\']*)["\']')
 
 # Strip <think> / <thinking> blocks from stored conversation history
+# Also handles unclosed think tags (model hit max_tokens while still thinking)
 _THINK_STRIP_RE = _re.compile(
-    r'<(think|thinking)>.*?</(think|thinking)>',
+    r'<(think|thinking)>.*?(?:</(think|thinking)>|$)',
     _re.DOTALL | _re.IGNORECASE,
+)
+
+# Extract think block content (for memory-intent fallback)
+_THINK_CONTENT_RE = _re.compile(
+    r'<(?:think|thinking)>(.*?)(?:</(?:think|thinking)>|$)',
+    _re.DOTALL | _re.IGNORECASE,
+)
+# Patterns that indicate memory intent inside think blocks
+_MEMORY_INTENT_RE = _re.compile(
+    r'(?:I should remember|important to (?:note|remember)|key (?:point|detail|info)|'
+    r'worth remembering|need to remember|remember(?:ing)? that)'
+    r'[:\s]+(.+?)(?:\.|$)',
+    _re.IGNORECASE | _re.MULTILINE,
 )
 
 def _parse_remember_tags(text: str) -> list[dict]:
@@ -1514,17 +1528,62 @@ async def chat_ws(ws: WebSocket):
                 # Auto-save conversation after each turn
                 _auto_save_conversation()
 
-                # ── Post-turn: mood/chemistry/consolidation ───────────────
-                turn_info = {}
-                if memory_enabled:
+                # ── Think-model memory fallback ───────────────────────────
+                # If a think model wrote no <remember> tags, look for memory
+                # intent inside the think block itself.
+                if not remember_tags and memory_enabled:
+                    think_matches = _THINK_CONTENT_RE.findall(response_text)
+                    if think_matches:
+                        think_text = " ".join(think_matches)
+                        for m in _MEMORY_INTENT_RE.finditer(think_text):
+                            content = m.group(1).strip()
+                            if len(content) > 10:
+                                remember_tags.append({
+                                    "content": content[:500],
+                                    "emotion": "neutral",
+                                    "importance": 5,
+                                    "why": "extracted from model thinking",
+                                    "source": "conversation",
+                                })
+
+                # ── Send done immediately so UI unblocks ──────────────────
+                await ws.send_json({
+                    "type": "done",
+                    "memory_saved": len([t for t in remember_tags if isinstance(t, dict)]),
+                    "mood": "",
+                    "emotion": "",
+                    "character": active_char.get("name", "") if active_char else "",
+                })
+
+                # Send show_image messages for any <showimage> the model wrote
+                for h in showimage_hashes:
+                    await ws.send_json({"type": "show_image", "hash": h})
+
+                # ── Background: memory ops + TTS (non-blocking) ───────────
+                _bg_remember_tags = list(remember_tags)
+                _bg_remind_tags = list(remind_tags)
+                _bg_task_tags = list(task_tags)
+                _bg_solution_tags = list(solution_tags)
+                _bg_user_text = user_text
+                _bg_clean = clean_response
+                _bg_preset = dict(preset)
+                _bg_pending_img = pending_image_bytes
+                _bg_char = dict(active_char) if active_char else None
+                _bg_ws = ws
+
+                async def _bg_memory_ops():
+                    """Run all memory operations in background so UI stays responsive."""
                     try:
+                        if not memory_enabled:
+                            return
                         # Save each model-authored memory
-                        for entry in remember_tags:
+                        for entry in _bg_remember_tags:
+                            if not isinstance(entry, dict):
+                                continue
                             if (entry.get("source") == "visual"
-                                    and pending_image_bytes is not None):
-                                # Save as visual memory with the uploaded image
+                                    and _bg_pending_img is not None):
                                 mem.remember_visual(
-                                    image_bytes=pending_image_bytes,
+                                    image_bytes=_bg_pending_img,
                                     description=entry["content"],
                                     emotion=entry["emotion"],
                                     importance=entry["importance"],
@@ -1540,11 +1599,11 @@ async def chat_ws(ws: WebSocket):
                                 )
 
                         # Save model-authored reminders
-                        for r in remind_tags:
+                        for r in _bg_remind_tags:
                             mem.set_reminder(text=r["text"], hours=r["hours"])
 
                         # Process model-authored task tags (Agent/Assistant)
-                        for t in task_tags:
+                        for t in _bg_task_tags:
                             try:
                                 if t["action"] == "start":
                                     result = mem.start_task(
@@ -1552,20 +1611,20 @@ async def chat_ws(ws: WebSocket):
                                         priority=t["priority"],
                                         project=t.get("project", ""),
                                     )
-                                    await ws.send_json({
+                                    await _bg_ws.send_json({
                                         "type": "task_created",
                                         "task_id": result["task_id"],
                                         "description": result["description"],
                                     })
                                 elif t["action"] == "complete" and t.get("id"):
                                     mem.complete_task(t["id"], t["content"])
-                                    await ws.send_json({
+                                    await _bg_ws.send_json({
                                         "type": "task_completed",
                                         "task_id": t["id"],
                                     })
                                 elif t["action"] == "fail" and t.get("id"):
                                     mem.fail_task(t["id"], t["content"])
-                                    await ws.send_json({
+                                    await _bg_ws.send_json({
                                         "type": "task_failed",
                                         "task_id": t["id"],
                                     })
@@ -1573,7 +1632,7 @@ async def chat_ws(ws: WebSocket):
                                 pass
 
                         # Process model-authored solution tags (Agent/Assistant)
-                        for s in solution_tags:
+                        for s in _bg_solution_tags:
                             try:
                                 if s["problem"] and s["content"]:
                                     mem.record_solution(
@@ -1581,7 +1640,7 @@ async def chat_ws(ws: WebSocket):
                                         solution=s["content"],
                                         importance=s["importance"],
                                     )
-                                    await ws.send_json({
+                                    await _bg_ws.send_json({
                                         "type": "solution_recorded",
                                         "problem": s["problem"][:100],
                                     })
@@ -1589,54 +1648,60 @@ async def chat_ws(ws: WebSocket):
                                 pass
 
                         # Heuristic reminder fallback — only if model wrote no <remind> tags
-                        if not remind_tags:
-                            heuristic_reminders = _heuristic_reminder_from_user(user_text)
+                        if not _bg_remind_tags:
+                            heuristic_reminders = _heuristic_reminder_from_user(_bg_user_text)
                             for r in heuristic_reminders:
                                 mem.set_reminder(text=r["text"], hours=r["hours"])
                             if heuristic_reminders:
-                                # Notify frontend that a reminder was auto-set
-                                await ws.send_json({
+                                await _bg_ws.send_json({
                                     "type": "reminder_set",
                                     "text": heuristic_reminders[0]["text"],
                                     "hours": heuristic_reminders[0]["hours"],
                                 })
 
-                        # Heuristic fallback — ONLY for task-priority presets
-                        # (agent/assistant) when the model wrote no <remember> tags.
-                        # Keeps goal/task/lesson tracking alive even for non-expressive models.
-                        if not remember_tags and preset.get("task_priority", False):
+                        # Heuristic fallback — task-priority presets only
+                        if not _bg_remember_tags and _bg_preset.get("task_priority", False):
                             from playground.memory_manager import (
                                 detect_emotions, estimate_importance
                             )
-                            combined = user_text + " " + clean_response
+                            combined = _bg_user_text + " " + _bg_clean
                             emotions_fb = detect_emotions(combined)
-                            importance_fb = estimate_importance(user_text, clean_response)
-                            # Only auto-save if there are clear task signals
+                            importance_fb = estimate_importance(_bg_user_text, _bg_clean)
                             task_words = {"task", "goal", "deadline", "reminder",
                                           "lesson", "error", "failed", "fixed",
                                           "todo", "action", "need to", "must"}
                             if any(w in combined.lower() for w in task_words):
                                 mem.remember(
                                     content=(
-                                        f"User: {user_text[:200]}\n"
-                                        f"Response: {clean_response[:300]}"
+                                        f"User: {_bg_user_text[:200]}\n"
+                                        f"Response: {_bg_clean[:300]}"
                                     ),
                                     emotion=emotions_fb[0] if emotions_fb else "neutral",
                                     importance=importance_fb,
                                     source="conversation",
                                     why_saved="auto-captured task/goal signal",
                                 )
-                                remember_tags = ["__fallback__"]  # flag for done msg
 
                         # process_turn handles mood/chemistry/huginn/volva/consolidation
-                        # — memory saving is already done above, so we pass no curation
                         turn_info = mem.process_turn(
-                            user_text, clean_response, preset, curation=None,
+                            _bg_user_text, _bg_clean, _bg_preset, curation=None,
                             skip_save=True,
                         )
 
-                        # Background: periodic LLM reflect (every 20 turns)
-                        # and edit_memories (every 40 turns) — these remain organic
+                        # Send a mood update so the UI can show it
+                        mood_label = turn_info.get("mood_label", "")
+                        emotion = turn_info.get("emotion", "")
+                        if mood_label and mood_label != "neutral":
+                            try:
+                                await _bg_ws.send_json({
+                                    "type": "mood_update",
+                                    "mood": mood_label,
+                                    "emotion": emotion,
+                                })
+                            except Exception:
+                                pass
+
+                        # Background: periodic LLM reflect / edit_memories
                         turn_count = mem._turn_count
                         if turn_count > 0 and turn_count % 20 == 0:
                             async def _bg_reflect():
@@ -1675,19 +1740,10 @@ async def chat_ws(ws: WebSocket):
                         except Exception:
                             pass
                     except Exception:
-                        pass
+                        import traceback
+                        traceback.print_exc()
 
-                await ws.send_json({
-                    "type": "done",
-                    "memory_saved": len([t for t in remember_tags if t != "__fallback__"]),
-                    "mood": turn_info.get("mood_label", ""),
-                    "emotion": turn_info.get("emotion", ""),
-                    "character": active_char.get("name", "") if active_char else "",
-                })
-
-                # Send show_image messages for any <showimage> the model wrote
-                for h in showimage_hashes:
-                    await ws.send_json({"type": "show_image", "hash": h})
+                asyncio.create_task(_bg_memory_ops())
 
                 # ── TTS: generate audio for the response (async background) ──
                 tts = _ensure_tts()
@@ -1705,8 +1761,10 @@ async def chat_ws(ws: WebSocket):
                                     "type": "tts_audio",
                                     "audio_b64": _b64.b64encode(wav).decode(),
                                 })
-                        except Exception:
-                            pass
+                            else:
+                                print(f"[TTS] generate_audio returned empty bytes")
+                        except Exception as e:
+                            print(f"[TTS] Error: {e}")
 
                     asyncio.create_task(_send_tts(clean_response, voice_prompt, ws))
 
