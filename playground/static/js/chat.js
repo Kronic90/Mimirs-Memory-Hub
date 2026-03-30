@@ -46,20 +46,66 @@ const Chat = (() => {
             .replace(_REMIND_OPEN_RE, '')
             .replace(_TASK_OPEN_RE, '')
             .replace(_SOLUTION_OPEN_RE, '')
+            // Clean up any stray GPT-OSS channel markers
+            .replace(/<\|channel\|>\s*(?:analysis|final)\s*<\|message\|>/gi, '')
+            .replace(/<\|end\|>/gi, '')
+            .replace(/<\|start\|>\s*assistant/gi, '')
             .trim();
     }
     // Keep old name as alias so nothing breaks
     const stripRememberTags = stripSpecialTags;
 
     // ── Split think/thinking blocks from response text ───────────────
-    // Handles <think>, <thinking>, case variants, and still-streaming open tags.
+    // Handles <think>, <thinking>, GPT-OSS <|channel|> format, and still-streaming open tags.
     // Returns { thinking: string|null, response: string, streaming: bool }
     const _THINK_OPEN_RE  = /<(think|thinking)>/i;
     const _THINK_CLOSE_RE = /<\/(think|thinking)>/i;
 
+    // GPT-OSS channel tags
+    const _CHANNEL_ANALYSIS_RE = /\<\|channel\|>\s*analysis\s*<\|message\|>/i;
+    const _CHANNEL_FINAL_RE    = /\<\|channel\|>\s*final\s*<\|message\|>/i;
+    const _CHANNEL_END_RE      = /<\|end\|>/gi;
+    const _CHANNEL_START_RE    = /<\|start\|>\s*assistant/gi;
+
     function splitThinking(raw) {
         if (!raw) return { thinking: null, response: raw };
 
+        // --- GPT-OSS <|channel|> format ---
+        const analysisMatch = _CHANNEL_ANALYSIS_RE.exec(raw);
+        if (analysisMatch) {
+            // Find the end of the analysis block
+            const afterAnalysis = raw.slice(analysisMatch.index + analysisMatch[0].length);
+            const endMatch = /<\|end\|>/i.exec(afterAnalysis);
+
+            if (!endMatch) {
+                // Analysis still streaming
+                return { thinking: afterAnalysis, response: '', streaming: true };
+            }
+
+            const thinking = afterAnalysis.slice(0, endMatch.index).trim();
+            // Extract final channel content if present
+            const rest = afterAnalysis.slice(endMatch.index + endMatch[0].length);
+            const finalMatch = _CHANNEL_FINAL_RE.exec(rest);
+            let response = '';
+            if (finalMatch) {
+                const afterFinal = rest.slice(finalMatch.index + finalMatch[0].length);
+                const finalEnd = /<\|end\|>/i.exec(afterFinal);
+                response = finalEnd
+                    ? afterFinal.slice(0, finalEnd.index).trim()
+                    : afterFinal.replace(_CHANNEL_END_RE, '').replace(_CHANNEL_START_RE, '').trim();
+                // Still streaming the final response if no <|end|> yet
+                if (!finalEnd) {
+                    return { thinking, response, streaming: true };
+                }
+            } else {
+                // No final channel yet — might still be streaming
+                response = rest.replace(_CHANNEL_END_RE, '').replace(_CHANNEL_START_RE, '').replace(_CHANNEL_ANALYSIS_RE, '').trim();
+                if (!response) return { thinking, response: '', streaming: true };
+            }
+            return { thinking, response, streaming: false };
+        }
+
+        // --- Standard <think>/<thinking> format ---
         const openMatch  = _THINK_OPEN_RE.exec(raw);
         if (!openMatch) return { thinking: null, response: raw };
 

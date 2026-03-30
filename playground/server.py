@@ -82,9 +82,25 @@ _THINK_STRIP_RE = _re.compile(
     _re.DOTALL | _re.IGNORECASE,
 )
 
+# GPT-OSS / channel-format: strip the entire analysis block from history
+_CHANNEL_ANALYSIS_BLOCK_RE = _re.compile(
+    r'<\|channel\|>\s*analysis\s*<\|message\|>.*?(?:<\|end\|>|$)',
+    _re.DOTALL | _re.IGNORECASE,
+)
+# Clean remaining channel/start/end markers (keeps final message text)
+_CHANNEL_STRIP_RE = _re.compile(
+    r'<\|channel\|>\s*(?:analysis|final)\s*<\|message\|>|<\|end\|>|<\|start\|>\s*assistant',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
 # Extract think block content (for memory-intent fallback)
 _THINK_CONTENT_RE = _re.compile(
     r'<(?:think|thinking)>(.*?)(?:</(?:think|thinking)>|$)',
+    _re.DOTALL | _re.IGNORECASE,
+)
+# GPT-OSS analysis channel content
+_CHANNEL_CONTENT_RE = _re.compile(
+    r'<\|channel\|>\s*analysis\s*<\|message\|>(.*?)(?:<\|end\|>|$)',
     _re.DOTALL | _re.IGNORECASE,
 )
 # Patterns that indicate memory intent inside think blocks
@@ -1570,8 +1586,10 @@ async def chat_ws(ws: WebSocket):
                 # ── Model-authored memory (organic) ───────────────────────
                 # Parse any <remember> tags the model wrote itself.
                 # Strip them from the stored/displayed response.
-                # Also strip <think>/<thinking> blocks so they don't pollute history.
+                # Also strip <think>/<thinking> blocks and GPT-OSS channel tags so they don't pollute history.
                 clean_response = _THINK_STRIP_RE.sub("", response_text).strip()
+                clean_response = _CHANNEL_ANALYSIS_BLOCK_RE.sub("", clean_response)
+                clean_response = _CHANNEL_STRIP_RE.sub("", clean_response).strip()
                 clean_response = _strip_remember_tags(clean_response)
                 clean_response = _strip_remind_tags(clean_response)
                 # Collect showimage hashes before stripping
@@ -1600,6 +1618,8 @@ async def chat_ws(ws: WebSocket):
                 # intent inside the think block itself.
                 if not remember_tags and memory_enabled:
                     think_matches = _THINK_CONTENT_RE.findall(response_text)
+                    # Also check GPT-OSS analysis channel
+                    think_matches += _CHANNEL_CONTENT_RE.findall(response_text)
                     if think_matches:
                         think_text = " ".join(think_matches)
                         for m in _MEMORY_INTENT_RE.finditer(think_text):
