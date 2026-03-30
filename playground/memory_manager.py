@@ -17,19 +17,22 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 try:
-    from Mimir import Mimir  # type: ignore
+    from vividmimir import Mimir  # pip-installed package
 except ModuleNotFoundError:
-    # Fallback: explicit load from file path (handles case-sensitive FS quirks)
-    import importlib.util as _ilu
-    _mimir_file = Path(_root) / "Mimir.py"
-    if not _mimir_file.exists():
-        # Try lowercase on case-sensitive systems
-        _mimir_file = Path(_root) / "mimir.py"
-    _spec = _ilu.spec_from_file_location("Mimir", str(_mimir_file))
-    _mod = _ilu.module_from_spec(_spec)
-    sys.modules["Mimir"] = _mod
-    _spec.loader.exec_module(_mod)
-    Mimir = _mod.Mimir  # type: ignore
+    try:
+        from Mimir import Mimir  # type: ignore  # local dev (Windows)
+    except ModuleNotFoundError:
+        # Fallback: explicit load from file path (handles case-sensitive FS quirks)
+        import importlib.util as _ilu
+        _mimir_file = Path(_root) / "Mimir.py"
+        if not _mimir_file.exists():
+            # Try lowercase on case-sensitive systems
+            _mimir_file = Path(_root) / "mimir.py"
+        _spec = _ilu.spec_from_file_location("Mimir", str(_mimir_file))
+        _mod = _ilu.module_from_spec(_spec)
+        sys.modules["Mimir"] = _mod
+        _spec.loader.exec_module(_mod)
+        Mimir = _mod.Mimir  # type: ignore
 
 # ── lightweight keyword-based emotion detector ────────────────────────
 
@@ -719,7 +722,10 @@ class MemoryManager:
         mems = [m for m in self._mimir._reflections if m.has_visual and m.can_show]
         if not mems:
             return ""
-        from vividmimir import Mimir as _Mimir
+        try:
+            from vividmimir import Mimir as _Mimir
+        except ModuleNotFoundError:
+            from Mimir import Mimir as _Mimir  # type: ignore
         vivid = sorted(mems,
                        key=lambda m: m.mood_adjusted_vividness(self._mimir._mood),
                        reverse=True)[:8]
