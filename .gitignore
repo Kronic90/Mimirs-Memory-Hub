@@ -33,6 +33,7 @@ Thumbs.db
 
 # Build artifacts
 _build_portable/
+Mimirs-Memory-Hub-windows-portable/
 *.zip
 _api_scan.json
 _scan*.txt
