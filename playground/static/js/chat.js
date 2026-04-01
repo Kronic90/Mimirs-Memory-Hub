@@ -561,8 +561,9 @@ const Chat = (() => {
                 if (msg.memory_saved && msg.memory_saved > 0) {
                     const count = msg.memory_saved;
                     showMemorySavedPip(count);
-                    updateMemoryPanel();
                 }
+                // Always refresh sidebar (mood + chemistry + memory count)
+                updateMemoryPanel();
                 if (msg.mood && msg.mood !== 'neutral') {
                     updateMoodIndicator(msg.mood, msg.emotion);
                 }
@@ -627,6 +628,12 @@ const Chat = (() => {
                 if (msg.mood) {
                     updateMoodIndicator(msg.mood, msg.emotion);
                     MoodColors.update(msg.mood);
+                    // Update sidebar mood label
+                    const moodPanelEl = document.getElementById('panel-mood');
+                    if (moodPanelEl) {
+                        moodPanelEl.textContent = msg.mood;
+                        moodPanelEl.className = 'panel-value mood-' + msg.mood;
+                    }
                 }
                 // Live-update sidebar chemistry bars
                 if (msg.chemistry) {
