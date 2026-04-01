@@ -104,6 +104,9 @@ class MemoryManager:
     _CONSOLIDATION_INTERVAL = 25
     _HUGINN_INTERVAL = 10
     _VOLVA_INTERVAL = 30   # Völva dream synthesis every 30 turns
+    _HUGINN_MEMORY_INTERVAL = 15   # Run Huginn every N new memories
+    _REFLECT_MEMORY_INTERVAL = 50  # Run reflect every N new memories
+    _WAKE_THRESHOLD_SECONDS = 1800  # 30 min gap triggers wake-up cycle
 
     def __init__(self, profile_dir: str | Path, chemistry: bool = True,
                  llm_fn=None):
@@ -115,7 +118,73 @@ class MemoryManager:
             llm_fn=llm_fn,
         )
         self._turn_count = 0
+        self._memories_since_huginn = 0
+        self._memories_since_reflect = 0
         self._last_chemistry_tick = time.time()
+        self._wake_log: list[str] = []  # populated by wake_up() for UI notification
+
+        # Check if a wake-up cycle is needed
+        self._session_file = self._dir / "_last_session.txt"
+        self._check_startup_wake()
+
+    # ── startup wake cycle ──────────────────────────────────────────
+
+    def _check_startup_wake(self):
+        """Auto-run sleep/dream on startup if enough time has passed."""
+        now = time.time()
+        last_session_time = 0.0
+        try:
+            if self._session_file.exists():
+                last_session_time = float(self._session_file.read_text().strip())
+        except (ValueError, OSError):
+            pass
+
+        # Write current time as latest session
+        try:
+            self._session_file.write_text(str(now))
+        except OSError:
+            pass
+
+        gap = now - last_session_time
+        if last_session_time > 0 and gap >= self._WAKE_THRESHOLD_SECONDS:
+            self._run_wake_up(gap)
+
+    def _run_wake_up(self, gap_seconds: float):
+        """Execute the full wake-up consolidation cycle."""
+        hours = min(gap_seconds / 3600, 24)
+        log = self._wake_log
+        try:
+            log.append("Running sleep consolidation...")
+            self._mimir.sleep_reset(hours=hours)
+            log.append(f"Sleep cycle complete ({hours:.1f}h gap)")
+        except Exception as e:
+            log.append(f"Sleep cycle error: {e}")
+
+        try:
+            log.append("Running Huginn pattern detection...")
+            insights = self._mimir.huginn()
+            log.append(f"Huginn found {len(insights)} insight(s)")
+        except Exception as e:
+            log.append(f"Huginn error: {e}")
+
+        try:
+            log.append("Running Völva dream synthesis...")
+            dreams = self._mimir.volva_dream()
+            log.append(f"Völva synthesised {len(dreams)} dream(s)")
+        except Exception as e:
+            log.append(f"Völva error: {e}")
+
+        try:
+            self._mimir.save()
+            log.append("Memories consolidated and saved")
+        except Exception:
+            pass
+
+    def get_wake_log(self) -> list[str]:
+        """Return (and clear) the wake-up log for UI notification."""
+        log = list(self._wake_log)
+        self._wake_log.clear()
+        return log
 
     # ── store ─────────────────────────────────────────────────────────
 
@@ -337,8 +406,11 @@ class MemoryManager:
         if any(w in lower for w in ["haha", "lol", "funny", "joke", "lmao"]):
             self.on_event("humor", 0.4)
 
-        # Increment turn counter
+        # Increment turn counter & memory counters
         self._turn_count += 1
+        if should_remember:
+            self._memories_since_huginn += 1
+            self._memories_since_reflect += 1
 
         # Periodic consolidation (muninn)
         consolidated = None
@@ -348,20 +420,35 @@ class MemoryManager:
             except Exception:
                 pass
 
-        # Run huginn every 10 turns for pattern detection
-        insights = None
-        if self._turn_count % 10 == 0:
+        # Run huginn: every 10 turns OR every _HUGINN_MEMORY_INTERVAL new memories
+        if (self._turn_count % self._HUGINN_INTERVAL == 0 or
+                self._memories_since_huginn >= self._HUGINN_MEMORY_INTERVAL):
             try:
                 self._mimir.huginn()
+                self._memories_since_huginn = 0
             except Exception:
                 pass
 
-        # Run Völva dream synthesis every 30 turns (organic cross-memory insight)
+        # Run Völva dream synthesis every 30 turns
         if self._turn_count % self._VOLVA_INTERVAL == 0:
             try:
                 self._mimir.volva_dream()
             except Exception:
                 pass
+
+        # Auto-reflect every _REFLECT_MEMORY_INTERVAL new memories
+        if self._memories_since_reflect >= self._REFLECT_MEMORY_INTERVAL:
+            try:
+                self._mimir.reflect()
+                self._memories_since_reflect = 0
+            except Exception:
+                pass
+
+        # Update last session timestamp
+        try:
+            self._session_file.write_text(str(time.time()))
+        except OSError:
+            pass
 
         self.save()
 
@@ -1096,12 +1183,33 @@ class MemoryManager:
                 "status": t.status,
             })
 
+        # Social impressions — merge into nodes so they appear on the graph
+        social_nodes = []
+        for entity, memories in mimir._social.items():
+            for sm in memories:
+                social_nodes.append({
+                    "id": len(nodes) + len(social_nodes),
+                    "content": sm.content[:120],
+                    "emotion": sm.emotion,
+                    "importance": sm.importance,
+                    "vividness": round(sm.vividness, 3),
+                    "timestamp": sm.timestamp,
+                    "source": "social",
+                    "is_flashbulb": getattr(sm, "_is_flashbulb", False),
+                    "is_anchor": getattr(sm, "_anchor", False),
+                    "is_cherished": getattr(sm, "_cherished", False),
+                    "entity": entity,
+                    "stability": round(getattr(sm, "_stability", 50.0), 1),
+                    "access_count": getattr(sm, "_access_count", 0),
+                })
+        all_nodes = nodes + social_nodes
+
         return {
-            "nodes": nodes,
+            "nodes": all_nodes,
             "edges": edges,
             "lessons": lessons,
             "tasks": tasks,
-            "total": len(reflections),
+            "total": len(all_nodes),
         }
 
     # ── import ────────────────────────────────────────────────────────

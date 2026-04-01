@@ -72,12 +72,31 @@ const VisualizePage = (() => {
         // Calculate layout radius based on node count
         const layoutRadius = Math.max(300, Math.sqrt(totalNodes) * 50);
 
+        // Build entity map for social clustering — each entity gets its own sub-angle
+        const entityNames = [];
+        (data.nodes || []).forEach(n => {
+            if ((n.source === 'social' || n.entity) && n.entity) {
+                if (!entityNames.includes(n.entity)) entityNames.push(n.entity);
+            }
+        });
+        const entityAngleMap = {};
+        const socialBaseAngle = -Math.PI * 0.15;
+        const socialArcSpan = Math.min(Math.PI * 0.7, entityNames.length * 0.35);
+        entityNames.forEach((name, idx) => {
+            entityAngleMap[name] = socialBaseAngle + (idx / Math.max(entityNames.length - 1, 1)) * socialArcSpan;
+        });
+
         // Place memory nodes
         (data.nodes || []).forEach((n, i) => {
             // Cluster by type — angle offset per type
             let clusterAngle = 0;
-            if (n.source === 'social' || n.entity) clusterAngle = 0;
-            else if (n.source === 'huginn') clusterAngle = Math.PI * 0.4;
+            const isSocial = n.source === 'social' || (n.entity && n.entity.length > 0);
+            if (isSocial && n.entity && entityAngleMap[n.entity] != null) {
+                // Each entity gets its own tight sub-cluster
+                clusterAngle = entityAngleMap[n.entity];
+            } else if (isSocial) {
+                clusterAngle = 0;
+            } else if (n.source === 'huginn') clusterAngle = Math.PI * 0.4;
             else if (n.source === 'volva') clusterAngle = Math.PI * 0.8;
             else if (n.source === 'conversation') clusterAngle = Math.PI * 1.2;
             else clusterAngle = Math.PI * 1.6;
@@ -88,8 +107,11 @@ const VisualizePage = (() => {
             else if (n.is_anchor) radius *= 0.6;
             else radius *= (0.5 + Math.random() * 0.5);
 
-            const angle = clusterAngle + (Math.random() - 0.5) * 1.0;
-            const x = Math.cos(angle) * radius + (Math.random() - 0.5) * 60;
+            // Social memories cluster tighter around their entity angle
+            const jitter = isSocial ? 0.3 : 1.0;
+            const posJitter = isSocial ? 30 : 60;
+            const angle = clusterAngle + (Math.random() - 0.5) * jitter;
+            const x = Math.cos(angle) * radius + (Math.random() - 0.5) * posJitter;
             const y = Math.sin(angle) * radius + (Math.random() - 0.5) * 60;
 
             // Size based on vividness (0-10 scale, map to 4-24px)
@@ -245,6 +267,61 @@ const VisualizePage = (() => {
                 }
             });
         }
+
+        // Draw social entity group bubbles
+        const entityGroups = {};
+        visibleNodes.forEach(node => {
+            if ((node.source === 'social' || node.entity) && node.entity) {
+                if (!entityGroups[node.entity]) entityGroups[node.entity] = [];
+                entityGroups[node.entity].push(node);
+            }
+        });
+        const entityColorPalette = [
+            'rgba(59,130,246,', 'rgba(16,185,129,', 'rgba(236,72,153,',
+            'rgba(245,158,11,', 'rgba(139,92,246,', 'rgba(6,182,212,',
+            'rgba(249,115,22,', 'rgba(234,179,8,',
+        ];
+        let entityColorIdx = 0;
+        Object.entries(entityGroups).forEach(([entity, members]) => {
+            if (members.length < 1) return;
+            // Compute bounding circle
+            let cx = 0, cy = 0;
+            members.forEach(m => { cx += m.x; cy += m.y; });
+            cx /= members.length;
+            cy /= members.length;
+            let maxDist = 0;
+            members.forEach(m => {
+                const d = Math.sqrt((m.x - cx) ** 2 + (m.y - cy) ** 2);
+                if (d > maxDist) maxDist = d;
+            });
+            const bubbleRadius = maxDist + 40;
+            const eColor = entityColorPalette[entityColorIdx % entityColorPalette.length];
+            entityColorIdx++;
+
+            // Filled bubble background
+            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, bubbleRadius);
+            gradient.addColorStop(0, eColor + '0.06)');
+            gradient.addColorStop(1, eColor + '0.01)');
+            ctx.beginPath();
+            ctx.arc(cx, cy, bubbleRadius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // Dashed ring
+            ctx.beginPath();
+            ctx.arc(cx, cy, bubbleRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = eColor + '0.25)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Entity label
+            ctx.font = 'bold 12px system-ui, sans-serif';
+            ctx.fillStyle = eColor + '0.7)';
+            ctx.textAlign = 'center';
+            ctx.fillText(entity, cx, cy - bubbleRadius - 8);
+        });
 
         // Draw nodes
         visibleNodes.forEach(node => {

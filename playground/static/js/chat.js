@@ -629,7 +629,36 @@ const Chat = (() => {
             case 'agent_file_saved':
                 showTaskPip('💾 File saved: ' + (msg.filename || ''));
                 break;
+
+            case 'wake_up':
+                showWakeUpNotification(msg);
+                break;
         }
+    }
+
+    // ── Wake-up notification ──────────────────────────────────────
+    function showWakeUpNotification(msg) {
+        const container = document.getElementById('chat-messages');
+        const banner = document.createElement('div');
+        banner.className = 'wake-up-banner';
+        banner.style.cssText = 'background:linear-gradient(135deg,rgba(124,58,237,0.15),rgba(59,130,246,0.1));' +
+            'border:1px solid rgba(124,58,237,0.3);border-radius:12px;padding:16px 20px;' +
+            'margin:12px 0;animation:fadeInUp 0.5s ease;';
+        const title = msg.message || 'Agent waking up...';
+        const details = (msg.details || []).map(d => `<div style="font-size:12px;color:#a1a1aa;margin-top:2px;">• ${d}</div>`).join('');
+        banner.innerHTML =
+            `<div style="display:flex;align-items:center;gap:8px;margin-bottom:${details ? '8px' : '0'};">` +
+            `<span style="font-size:20px;">🌅</span>` +
+            `<span style="font-weight:600;color:var(--text);">${title}</span>` +
+            `</div>` + details;
+        container.appendChild(banner);
+        container.scrollTop = container.scrollHeight;
+        // Fade out after 10 seconds
+        setTimeout(() => {
+            banner.style.transition = 'opacity 1s ease';
+            banner.style.opacity = '0';
+            setTimeout(() => banner.remove(), 1000);
+        }, 10000);
     }
 
     // ── Reminder-set pip ──────────────────────────────────────────

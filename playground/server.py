@@ -1613,6 +1613,19 @@ async def chat_ws(ws: WebSocket):
     global _conversation
     await ws.accept()
 
+    # Send wake-up notification if a consolidation cycle just ran
+    try:
+        mem = _ensure_memory()
+        wake_log = mem.get_wake_log()
+        if wake_log:
+            await ws.send_json({
+                "type": "wake_up",
+                "message": "Agent waking up — consolidating memories...",
+                "details": wake_log,
+            })
+    except Exception:
+        pass
+
     try:
         while True:
             raw = await ws.receive_text()
@@ -2367,16 +2380,26 @@ async def get_landscape():
         nodes_3d.append({
             "id": node["id"],
             "content": node["content"],
-            "x": node["vividness"],  # Vividness on X
-            "y": node["importance"],  # Importance on Y
-            "z": node["stability"],   # Stability on Z
+            "x": node["vividness"],       # Vividness on X
+            "y": node["importance"],      # Importance on Y
+            "z": node["stability"],       # Stability on Z
             "color": node.get("source", "episodic"),
             "size": node["vividness"],
             "emotion": node["emotion"],
+            "importance": node["importance"],
+            "is_cherished": node.get("is_cherished", False),
+            "is_anchor": node.get("is_anchor", False),
+            "is_flashbulb": node.get("is_flashbulb", False),
+            "entity": node.get("entity", ""),
+            "access_count": node.get("access_count", 0),
             "timestamp": node["timestamp"],
         })
     
-    return JSONResponse({"nodes": nodes_3d, "total": len(nodes_3d)})
+    return JSONResponse({
+        "nodes": nodes_3d,
+        "edges": graph.get("edges", []),
+        "total": len(nodes_3d),
+    })
 
 
 @app.get("/api/visualization/cherished")
