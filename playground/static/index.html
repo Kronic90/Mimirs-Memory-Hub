@@ -113,6 +113,9 @@
                             <option value="openai">OpenAI</option>
                             <option value="anthropic">Anthropic</option>
                             <option value="google">Google Gemini</option>
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="vllm">vLLM (Remote)</option>
+                            <option value="openai_compat">OpenAI-Compatible</option>
                             <option value="custom">Custom</option>
                         </select>
                         <select id="model-select" class="header-select">
@@ -304,6 +307,40 @@
                                 <label>Google Gemini API Key</label>
                                 <input type="password" id="key-google" class="input" placeholder="AI…">
                             </div>
+
+                            <hr style="border-color: var(--border); margin: 12px 0;">
+                            <h4 style="color: var(--text-muted); margin-bottom: 8px;">OpenRouter</h4>
+                            <div class="form-group">
+                                <label>OpenRouter API Key</label>
+                                <input type="password" id="key-openrouter" class="input" placeholder="sk-or-…">
+                            </div>
+
+                            <hr style="border-color: var(--border); margin: 12px 0;">
+                            <h4 style="color: var(--text-muted); margin-bottom: 8px;">vLLM (Remote Server)</h4>
+                            <p class="text-muted" style="font-size:0.8rem; margin-bottom:8px;">Connect to a vLLM server running on another machine. Format: http://IP:PORT/v1</p>
+                            <div class="form-group">
+                                <label>vLLM Server URL</label>
+                                <input type="text" id="key-vllm-url" class="input" placeholder="http://192.168.1.100:8000/v1">
+                            </div>
+                            <div class="form-group">
+                                <label>vLLM API Key (optional)</label>
+                                <input type="password" id="key-vllm-key" class="input" placeholder="Optional">
+                            </div>
+
+                            <hr style="border-color: var(--border); margin: 12px 0;">
+                            <h4 style="color: var(--text-muted); margin-bottom: 8px;">OpenAI-Compatible</h4>
+                            <p class="text-muted" style="font-size:0.8rem; margin-bottom:8px;">Any server that speaks the OpenAI API — LM Studio, text-gen-webui, TabbyAPI, etc.</p>
+                            <div class="form-group">
+                                <label>Server URL</label>
+                                <input type="text" id="key-compat-url" class="input" placeholder="http://localhost:5000/v1">
+                            </div>
+                            <div class="form-group">
+                                <label>API Key (optional)</label>
+                                <input type="password" id="key-compat-key" class="input" placeholder="Optional">
+                            </div>
+
+                            <hr style="border-color: var(--border); margin: 12px 0;">
+                            <h4 style="color: var(--text-muted); margin-bottom: 8px;">Custom Endpoint</h4>
                             <div class="form-group">
                                 <label>Custom Endpoint URL</label>
                                 <input type="text" id="key-custom-url" class="input" placeholder="http://localhost:1234/v1">
@@ -813,6 +850,7 @@
                             <select id="set-default-preset" class="input input-sm">
                                 <option value="companion">Companion</option>
                                 <option value="agent">Agent</option>
+                                <option value="copilot">Copilot (Coding)</option>
                                 <option value="assistant">Assistant</option>
                                 <option value="character">Character</option>
                                 <option value="custom">Custom</option>
@@ -1083,6 +1121,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/chat.js"></script>

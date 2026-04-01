@@ -23,6 +23,8 @@ def run_tool(tool_name: str, params: dict, permissions: dict) -> dict:
         "read_file": _tool_read_file,
         "write_file": _tool_write_file,
         "list_directory": _tool_list_directory,
+        "search_files": _tool_search_files,
+        "grep_files": _tool_grep_files,
         "web_search": _tool_web_search,
         "fetch_page": _tool_fetch_page,
         "run_code": _tool_run_code,
@@ -108,6 +110,86 @@ def _tool_list_directory(params: dict, permissions: dict) -> dict:
             "size": e.stat().st_size if e.is_file() else None,
         })
     return {"path": str(p), "entries": entries[:200]}
+
+
+def _tool_search_files(params: dict, permissions: dict) -> dict:
+    """Search for files by name pattern within allowed directories."""
+    if not permissions.get("file_access"):
+        return {"error": "File access not enabled. Enable it in Tools settings."}
+    pattern = params.get("pattern", "")
+    directory = params.get("path", "")
+    if not directory:
+        return {"error": "path parameter required (directory to search in)"}
+    err = _check_path_allowed(directory, permissions)
+    if err:
+        return {"error": err}
+    p = Path(directory)
+    if not p.is_dir():
+        return {"error": f"Not a directory: {directory}"}
+    import fnmatch
+    matches = []
+    for root, dirs, files in os.walk(str(p)):
+        # Skip hidden dirs and common large dirs
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', '__pycache__', '.git', 'venv', '.venv')]
+        for fname in files:
+            if not pattern or fnmatch.fnmatch(fname.lower(), pattern.lower()):
+                full = os.path.join(root, fname)
+                matches.append(full)
+            if len(matches) >= 100:
+                break
+        if len(matches) >= 100:
+            break
+    return {"pattern": pattern, "path": str(p), "matches": matches, "total": len(matches)}
+
+
+def _tool_grep_files(params: dict, permissions: dict) -> dict:
+    """Search file contents for a text pattern within allowed directories."""
+    if not permissions.get("file_access"):
+        return {"error": "File access not enabled. Enable it in Tools settings."}
+    query = params.get("query", "")
+    directory = params.get("path", "")
+    if not query or not directory:
+        return {"error": "query and path parameters required"}
+    err = _check_path_allowed(directory, permissions)
+    if err:
+        return {"error": err}
+    p = Path(directory)
+    if not p.is_dir():
+        return {"error": f"Not a directory: {directory}"}
+    import re
+    try:
+        pattern = re.compile(query, re.IGNORECASE)
+    except re.error:
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+    TEXT_EXTS = {'.py', '.js', '.ts', '.jsx', '.tsx', '.html', '.css', '.json', '.md',
+                 '.txt', '.yml', '.yaml', '.toml', '.cfg', '.ini', '.sh', '.bat', '.ps1',
+                 '.c', '.h', '.cpp', '.hpp', '.java', '.go', '.rs', '.rb', '.php'}
+    results = []
+    for root, dirs, files in os.walk(str(p)):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', '__pycache__', '.git', 'venv', '.venv')]
+        for fname in files:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in TEXT_EXTS:
+                continue
+            full = os.path.join(root, fname)
+            try:
+                with open(full, 'r', encoding='utf-8', errors='replace') as fh:
+                    for lineno, line in enumerate(fh, 1):
+                        if pattern.search(line):
+                            results.append({
+                                "file": full,
+                                "line": lineno,
+                                "text": line.rstrip()[:200],
+                            })
+                            if len(results) >= 50:
+                                break
+            except (OSError, UnicodeDecodeError):
+                continue
+            if len(results) >= 50:
+                break
+        if len(results) >= 50:
+            break
+    return {"query": query, "path": str(p), "results": results, "total": len(results)}
 
 
 # ── Web tools ─────────────────────────────────────────────────────────

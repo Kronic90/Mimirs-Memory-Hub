@@ -114,6 +114,7 @@ const AgentsPage = (() => {
       <select id="ae-preset-type" class="input input-sm">
         <option value="companion" ${pt==='companion'?'selected':''}>🤝 Companion</option>
         <option value="agent" ${pt==='agent'?'selected':''}>⚡ Agent</option>
+        <option value="copilot" ${pt==='copilot'?'selected':''}>💻 Copilot</option>
         <option value="assistant" ${pt==='assistant'?'selected':''}>💼 Assistant</option>
         <option value="character" ${pt==='character'?'selected':''}>🎭 Character</option>
         <option value="custom" ${pt==='custom'?'selected':''}>⚙️ Custom</option>

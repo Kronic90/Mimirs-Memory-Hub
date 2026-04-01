@@ -92,11 +92,25 @@ function renderLandscape3D(data) {
 
     // ── Scene setup ──────────────────────────────────────────
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x050510, 0.015);
+    scene.fog = new THREE.FogExp2(0x050510, 0.008);
 
-    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-    camera.position.set(18, 14, 18);
-    camera.lookAt(5, 5, 5);
+    // Compute center and extent of node cloud for camera/grid
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+    nodes.forEach(n => {
+        minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+        minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+        minZ = Math.min(minZ, n.z); maxZ = Math.max(maxZ, n.z);
+    });
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+    const extent = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 4);
+    const gridSize = Math.ceil(extent + 4);
+
+    const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 500);
+    const camDist = extent * 1.6 + 6;
+    camera.position.set(cx + camDist * 0.7, cy + camDist * 0.5, cz + camDist * 0.7);
+    camera.lookAt(cx, cy, cz);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -136,9 +150,9 @@ function renderLandscape3D(data) {
     rimLight.position.set(-10, 8, -5);
     scene.add(rimLight);
 
-    // ── Grid (subtle, stylised) ──────────────────────────────
-    const gridHelper = new THREE.GridHelper(12, 12, 0x1a1a3e, 0x111128);
-    gridHelper.position.y = -0.5;
+    // ── Grid (centered on node cloud) ──────────────────────
+    const gridHelper = new THREE.GridHelper(gridSize, gridSize, 0x1a1a3e, 0x111128);
+    gridHelper.position.set(cx, minY - 0.5, cz);
     scene.add(gridHelper);
 
     // ── Axis labels (floating text using sprites) ────────────
@@ -157,13 +171,13 @@ function renderLandscape3D(data) {
         return sprite;
     }
     const xLabel = makeTextSprite('Vividness →', '#a78bfa');
-    xLabel.position.set(6, -1.2, 0);
+    xLabel.position.set(cx, minY - 1.5, minZ - 1);
     scene.add(xLabel);
     const yLabel = makeTextSprite('↑ Importance', '#34d399');
-    yLabel.position.set(-1.5, 6, 0);
+    yLabel.position.set(minX - 1.5, cy, cz);
     scene.add(yLabel);
     const zLabel = makeTextSprite('Stability →', '#60a5fa');
-    zLabel.position.set(0, -1.2, 6);
+    zLabel.position.set(minX - 1, minY - 1.5, cz);
     scene.add(zLabel);
 
     // ── Color palette ────────────────────────────────────────
@@ -331,10 +345,17 @@ function renderLandscape3D(data) {
     if (typeof THREE.OrbitControls !== 'undefined') {
         controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.target.set(5, 5, 5);
+        controls.dampingFactor = 0.08;
+        controls.target.set(cx, cy, cz);
         controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.5;
+        controls.autoRotateSpeed = 0.3;
+        controls.minDistance = 3;
+        controls.maxDistance = camDist * 3;
+        controls.maxPolarAngle = Math.PI * 0.85;
+        controls.rotateSpeed = 0.6;
+        controls.zoomSpeed = 0.8;
+        controls.panSpeed = 0.5;
+        controls.enablePan = true;
     }
 
     // ── Animation ────────────────────────────────────────────
@@ -375,7 +396,7 @@ function renderLandscape3D(data) {
             // Simple auto-rotate fallback
             const rotSpeed = 0.0004;
             camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotSpeed);
-            camera.lookAt(5, 5, 5);
+            camera.lookAt(cx, cy, cz);
         }
 
         renderer.render(scene, camera);
@@ -410,7 +431,7 @@ function renderLandscape3D(data) {
                 `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">` +
                 `<span>😊 ${nd.emotion}</span>` +
                 `<span>⭐ Imp: ${nd.importance}</span>` +
-                `<span>✨ Viv: ${(nd.x || 0).toFixed(1)}</span>` +
+                `<span>✨ Viv: ${(nd.vividness || nd.x || 0).toFixed ? (nd.vividness || nd.x || 0).toFixed(1) : nd.vividness || '?'}</span>` +
                 `</div>` +
                 (badges.length ? `<div style="margin-top:4px;">${badges.join(' ')}</div>` : '') +
                 (nd.entity ? `<div style="color:#60a5fa;margin-top:4px;">👤 ${escapeHtml(nd.entity)}</div>` : '');
@@ -445,7 +466,7 @@ function renderLandscape3D(data) {
             if (isDragging) {
                 const deltaX = e.clientX - prevX;
                 camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), deltaX * 0.005);
-                camera.lookAt(5, 5, 5);
+                camera.lookAt(cx, cy, cz);
                 prevX = e.clientX;
                 prevY = e.clientY;
             }

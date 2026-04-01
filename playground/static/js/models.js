@@ -418,6 +418,11 @@ const ModelsPage = (() => {
             'openai': getInputByLabel('OpenAI API Key')?.value?.trim() || '',
             'anthropic': getInputByLabel('Anthropic API Key')?.value?.trim() || '',
             'google': getInputByLabel('Google Gemini API Key')?.value?.trim() || '',
+            'openrouter': getInputByLabel('OpenRouter API Key')?.value?.trim() || '',
+            'vllm-url': getInputByLabel('vLLM Server URL')?.value?.trim() || '',
+            'vllm-key': getInputByLabel('vLLM API Key (optional)')?.value?.trim() || '',
+            'compat-url': getInputByLabel('Server URL')?.value?.trim() || '',
+            'compat-key': getInputByLabel('API Key (optional)')?.value?.trim() || '',
             'custom-url': getInputByLabel('Custom Endpoint URL')?.value?.trim() || '',
             'custom-key': getInputByLabel('Custom Endpoint API Key (optional)')?.value?.trim() || '',
         };
@@ -426,6 +431,9 @@ const ModelsPage = (() => {
             openai: domValues['openai'] ? `[${domValues['openai'].length} chars]` : '(empty)',
             anthropic: domValues['anthropic'] ? `[${domValues['anthropic'].length} chars]` : '(empty)',
             google: domValues['google'] ? `[${domValues['google'].length} chars]` : '(empty)',
+            openrouter: domValues['openrouter'] ? `[${domValues['openrouter'].length} chars]` : '(empty)',
+            vllm_url: domValues['vllm-url'] ? domValues['vllm-url'] : '(empty)',
+            compat_url: domValues['compat-url'] ? domValues['compat-url'] : '(empty)',
             custom_url: domValues['custom-url'] ? domValues['custom-url'] : '(empty)',
             custom_key: domValues['custom-key'] ? `[${domValues['custom-key'].length} chars]` : '(empty)',
         });
@@ -435,6 +443,7 @@ const ModelsPage = (() => {
             ['openai',    'openai'],
             ['anthropic', 'anthropic'],
             ['google',    'google'],
+            ['openrouter', 'openrouter'],
             ['custom',    'custom-key'],
         ];
         
@@ -458,6 +467,26 @@ const ModelsPage = (() => {
             backends.custom.base_url = customUrl;
             console.log(`✓ Added custom URL: ${customUrl}`);
         }
+
+        // vLLM server
+        const vllmUrl = domValues['vllm-url'];
+        const vllmKey = domValues['vllm-key'];
+        if (vllmUrl) {
+            if (!backends.vllm) backends.vllm = {};
+            backends.vllm.base_url = vllmUrl;
+            if (vllmKey) backends.vllm.api_key = vllmKey;
+            console.log(`✓ Added vLLM URL: ${vllmUrl}`);
+        }
+
+        // OpenAI-compatible server
+        const compatUrl = domValues['compat-url'];
+        const compatKey = domValues['compat-key'];
+        if (compatUrl) {
+            if (!backends.openai_compat) backends.openai_compat = {};
+            backends.openai_compat.base_url = compatUrl;
+            if (compatKey) backends.openai_compat.api_key = compatKey;
+            console.log(`✓ Added OpenAI-compat URL: ${compatUrl}`);
+        }
         
         if (Object.keys(backends).length === 0) {
             App.toast('No keys to save', 'warning');
@@ -479,6 +508,9 @@ const ModelsPage = (() => {
                         openai: settings.backends?.openai?.api_key ? `[masked or stored]` : '(empty)',
                         anthropic: settings.backends?.anthropic?.api_key ? `[masked or stored]` : '(empty)',
                         google: settings.backends?.google?.api_key ? `[masked or stored]` : '(empty)',
+                        openrouter: settings.backends?.openrouter?.api_key ? `[masked or stored]` : '(empty)',
+                        vllm: settings.backends?.vllm?.base_url || '(empty)',
+                        openai_compat: settings.backends?.openai_compat?.base_url || '(empty)',
                     });
                 } catch (e) {
                     console.error('Could not verify save:', e);

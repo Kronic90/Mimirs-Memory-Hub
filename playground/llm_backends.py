@@ -5,7 +5,10 @@ Supported backends:
     - OpenAI        (GPT-4o, etc.)
     - Anthropic     (Claude)
     - Google Gemini
-    - Custom        (any OpenAI-compatible endpoint — LM Studio, vLLM, etc.)
+    - OpenRouter    (multi-provider gateway — https://openrouter.ai)
+    - vLLM          (remote vLLM server — OpenAI-compatible)
+    - OpenAI-compat (any OpenAI-compatible endpoint — LM Studio, text-gen-webui, etc.)
+    - Custom        (legacy alias for OpenAI-compatible)
 """
 from __future__ import annotations
 
@@ -133,10 +136,11 @@ class OpenAIBackend(LLMBackend):
     name = "openai"
 
     def __init__(self, api_key: str = "", base_url: str = "https://api.openai.com/v1",
-                 default_model: str = "gpt-4o"):
+                 default_model: str = "gpt-4o", extra_headers: dict | None = None):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
+        self.extra_headers = extra_headers or {}
 
     async def generate(
         self,
@@ -173,6 +177,7 @@ class OpenAIBackend(LLMBackend):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        headers.update(self.extra_headers)
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
             async with client.stream("POST", f"{self.base_url}/chat/completions",
@@ -195,6 +200,7 @@ class OpenAIBackend(LLMBackend):
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        headers.update(self.extra_headers)
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{self.base_url}/models", headers=headers)
             resp.raise_for_status()
@@ -522,5 +528,27 @@ def create_backend(name: str, cfg: dict) -> LLMBackend:
     elif name == "custom":
         cc = backends_cfg.get("custom", {})
         return OpenAIBackend(api_key=cc.get("api_key", ""), base_url=cc.get("base_url", "http://localhost:1234/v1"))
+    elif name == "openrouter":
+        rc = backends_cfg.get("openrouter", {})
+        return OpenAIBackend(
+            api_key=rc.get("api_key", ""),
+            base_url="https://openrouter.ai/api/v1",
+            extra_headers={
+                "HTTP-Referer": rc.get("site_url", "https://github.com/Kronic90/Mimirs-Memory-Hub"),
+                "X-Title": rc.get("site_title", "Mimir's Memory Hub"),
+            },
+        )
+    elif name == "vllm":
+        vc = backends_cfg.get("vllm", {})
+        return OpenAIBackend(
+            api_key=vc.get("api_key", ""),
+            base_url=vc.get("base_url", "http://localhost:8000/v1"),
+        )
+    elif name == "openai_compat":
+        oc = backends_cfg.get("openai_compat", {})
+        return OpenAIBackend(
+            api_key=oc.get("api_key", ""),
+            base_url=oc.get("base_url", "http://localhost:5000/v1"),
+        )
     else:
         return OllamaBackend()

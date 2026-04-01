@@ -377,6 +377,22 @@ def _parse_code_blocks(text: str) -> list[dict]:
     return blocks
 
 
+def _parse_tool_calls(text: str) -> list[dict]:
+    """Extract ```tool blocks → [{tool, params}] for copilot workflow."""
+    calls = []
+    for m in _CODE_BLOCK_RE.finditer(text):
+        lang = (m.group(1) or "text").lower()
+        code = m.group(2).strip()
+        if code and lang == "tool":
+            try:
+                data = json.loads(code)
+                if isinstance(data, dict) and "tool" in data:
+                    calls.append(data)
+            except (json.JSONDecodeError, ValueError):
+                pass
+    return calls
+
+
 def _parse_save_file_tags(text: str) -> list[dict]:
     """Extract <save_file path="...">content</save_file> → [{path, content}]."""
     entries = []
@@ -968,9 +984,12 @@ async def memory_record_outcome(lesson_id: str, request: Request):
 @app.get("/api/memory/relationships")
 async def memory_relationships(entity: str = ""):
     """Get relationship strength scores for all (or one) entity."""
-    mem = _ensure_memory()
-    result = mem.get_relationship_strength(entity)
-    return JSONResponse(result)
+    try:
+        mem = _ensure_memory()
+        result = mem.get_relationship_strength(entity)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse([], status_code=200)
 
 
 # ── Topic Clusters ───────────────────────────────────────────────
@@ -978,8 +997,11 @@ async def memory_relationships(entity: str = ""):
 @app.get("/api/memory/clusters")
 async def memory_clusters():
     """Get auto-detected topic clusters from memories."""
-    mem = _ensure_memory()
-    return JSONResponse(mem.get_topic_clusters())
+    try:
+        mem = _ensure_memory()
+        return JSONResponse(mem.get_topic_clusters())
+    except Exception as e:
+        return JSONResponse([], status_code=200)
 
 
 # ── Emotional Trajectory ────────────────────────────────────────
@@ -987,8 +1009,11 @@ async def memory_clusters():
 @app.get("/api/memory/trajectory")
 async def memory_trajectory(window_days: int = 30):
     """Get emotional trajectory analysis over a time window."""
-    mem = _ensure_memory()
-    return JSONResponse(mem.get_emotional_trajectory(window_days))
+    try:
+        mem = _ensure_memory()
+        return JSONResponse(mem.get_emotional_trajectory(window_days))
+    except Exception as e:
+        return JSONResponse({}, status_code=200)
 
 
 # ── Forgotten Memory Recovery (Memory Attic) ─────────────────────
@@ -996,15 +1021,21 @@ async def memory_trajectory(window_days: int = 30):
 @app.get("/api/memory/dormant")
 async def memory_dormant(limit: int = 20):
     """Get dormant memories that are fading from active storage."""
-    mem = _ensure_memory()
-    return JSONResponse(mem.get_dormant_memories(limit))
+    try:
+        mem = _ensure_memory()
+        return JSONResponse(mem.get_dormant_memories(limit))
+    except Exception as e:
+        return JSONResponse([], status_code=200)
 
 
 @app.get("/api/memory/attic")
 async def memory_attic(limit: int = 50):
     """Browse archived (pruned) memories in the Memory Attic."""
-    mem = _ensure_memory()
-    return JSONResponse(mem.get_attic_memories(limit))
+    try:
+        mem = _ensure_memory()
+        return JSONResponse(mem.get_attic_memories(limit))
+    except Exception as e:
+        return JSONResponse([], status_code=200)
 
 
 @app.post("/api/memory/rediscover")
@@ -1871,8 +1902,9 @@ async def chat_ws(ws: WebSocket):
                 cherish_tags   = _parse_cherish_tags(response_text) if memory_enabled else []
 
                 # Parse agent code blocks & file-save tags
-                code_blocks = _parse_code_blocks(response_text) if preset_name == "agent" else []
-                save_file_tags = _parse_save_file_tags(response_text) if preset_name == "agent" else []
+                code_blocks = _parse_code_blocks(response_text) if preset_name in ("agent", "copilot") else []
+                save_file_tags = _parse_save_file_tags(response_text) if preset_name in ("agent", "copilot") else []
+                tool_calls = _parse_tool_calls(response_text) if preset_name == "copilot" else []
 
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
@@ -1922,6 +1954,7 @@ async def chat_ws(ws: WebSocket):
                 _bg_cherish_tags = list(cherish_tags)
                 _bg_code_blocks = list(code_blocks)
                 _bg_save_files = list(save_file_tags)
+                _bg_tool_calls = list(tool_calls)
                 _bg_user_text = user_text
                 _bg_clean = clean_response
                 _bg_preset = dict(preset)
@@ -2093,6 +2126,39 @@ async def chat_ws(ws: WebSocket):
                                 await _bg_ws.send_json({
                                     "type": "agent_code_result",
                                     "error": str(e),
+                                })
+
+                        # Execute copilot tool calls (```tool blocks)
+                        for tc in _bg_tool_calls:
+                            try:
+                                from playground.tool_runner import run_tool
+                                tool_perms = _cfg.get("tool_permissions", {})
+                                # Copilot auto-grants file + code within agent_files
+                                copilot_perms = {
+                                    **tool_perms,
+                                    "code_execution": True,
+                                    "file_access": True,
+                                    "web_search": tool_perms.get("web_search", False),
+                                    "allowed_paths": list(set(
+                                        tool_perms.get("allowed_paths", []) + [str(agent_dir)]
+                                    )),
+                                }
+                                result = await asyncio.to_thread(
+                                    run_tool,
+                                    tc.get("tool", ""),
+                                    tc.get("params", {}),
+                                    copilot_perms,
+                                )
+                                await _bg_ws.send_json({
+                                    "type": "tool_result",
+                                    "tool": tc.get("tool", ""),
+                                    "result": result,
+                                })
+                            except Exception as e:
+                                await _bg_ws.send_json({
+                                    "type": "tool_result",
+                                    "tool": tc.get("tool", ""),
+                                    "result": {"error": str(e)},
                                 })
 
                         # Heuristic reminder fallback — only if model wrote no <remind> tags
@@ -2445,20 +2511,47 @@ async def get_yggdrasil():
 @app.get("/api/visualization/landscape")
 async def get_landscape():
     """Return memory landscape data for 3D scatterplot."""
+    import random
     mem = _ensure_memory()
     graph = mem.get_graph()
     
-    # Process nodes for 3D coordinates
+    raw_nodes = graph.get("nodes", [])
+    if not raw_nodes:
+        return JSONResponse({"nodes": [], "edges": [], "total": 0})
+    
+    # Collect raw values for normalization
+    vividness_vals = [n.get("vividness", 5) for n in raw_nodes]
+    importance_vals = [n.get("importance", 5) for n in raw_nodes]
+    stability_vals = [n.get("stability", 5) for n in raw_nodes]
+    
+    def normalize_spread(vals, grid_size=10):
+        """Normalize values to [0, grid_size] with spread to avoid clustering."""
+        mn, mx = min(vals), max(vals)
+        span = mx - mn if mx != mn else 1.0
+        return [(v - mn) / span * grid_size for v in vals]
+    
+    xs = normalize_spread(vividness_vals)
+    ys = normalize_spread(importance_vals)
+    zs = normalize_spread(stability_vals)
+    
+    # Add per-node jitter so overlapping values don't stack
+    rng = random.Random(42)  # deterministic jitter
+    
     nodes_3d = []
-    for i, node in enumerate(graph.get("nodes", [])):
+    for i, node in enumerate(raw_nodes):
+        jx = rng.uniform(-0.4, 0.4)
+        jy = rng.uniform(-0.3, 0.3)
+        jz = rng.uniform(-0.4, 0.4)
         nodes_3d.append({
             "id": node["id"],
             "content": node["content"],
-            "x": node["vividness"],       # Vividness on X
-            "y": node["importance"],      # Importance on Y
-            "z": node["stability"],       # Stability on Z
+            "x": round(xs[i] + jx + 1, 2),       # Offset by 1 to center in grid
+            "y": round(ys[i] + jy + 0.5, 2),     # Start above grid level (y=0)
+            "z": round(zs[i] + jz + 1, 2),
+            "vividness": node.get("vividness", 5),
+            "stability": node.get("stability", 5),
             "color": node.get("source", "episodic"),
-            "size": node["vividness"],
+            "size": node.get("vividness", 5),
             "emotion": node["emotion"],
             "importance": node["importance"],
             "is_cherished": node.get("is_cherished", False),
