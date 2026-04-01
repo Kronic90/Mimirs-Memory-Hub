@@ -59,7 +59,11 @@ _stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
 _current_conv_id: str | None = None     # auto-save tracking
 _negative_mood_streak: int = 0           # consecutive negative mood turns (rage-quit)
-_NEGATIVE_MOODS = {"angry", "frustrated", "overwhelmed", "sad", "lonely", "melancholy"}
+_NEGATIVE_MOODS = {
+    "angry", "frustrated", "overwhelmed", "sad", "lonely", "melancholy",
+    "hurt", "disappointed", "resentful", "afraid", "jealous",
+    "guilty", "insecure", "vulnerable",
+}
 _RAGE_QUIT_THRESHOLD = 5
 _characters = CharacterManager()
 _conversations = ConversationManager()

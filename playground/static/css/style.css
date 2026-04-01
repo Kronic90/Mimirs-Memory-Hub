@@ -443,26 +443,60 @@ details[open] .think-chevron { transform: rotate(90deg); }
 
 /* ── Panel value mood colours ───────────────────────────────────── */
 
+/* ── Positive-active ── */
 .panel-value.mood-happy,
 .panel-value.mood-joyful,
-.panel-value.mood-delighted   { color: #fbbf24; }
+.panel-value.mood-delighted    { color: #fbbf24; }
 .panel-value.mood-excited,
 .panel-value.mood-enthusiastic { color: #f97316; }
+.panel-value.mood-amused       { color: #f0b429; }
+.panel-value.mood-playful      { color: #e879a8; }
+.panel-value.mood-proud,
+.panel-value.mood-triumphant   { color: #d4a017; }
+.panel-value.mood-inspired     { color: #b57edc; }
+.panel-value.mood-motivated    { color: #e8641b; }
+/* ── Positive-calm ── */
+.panel-value.mood-grateful,
+.panel-value.mood-warm,
+.panel-value.mood-appreciative { color: #fb923c; }
+.panel-value.mood-tender,
+.panel-value.mood-affectionate { color: #f472b6; }
+.panel-value.mood-hopeful      { color: #d4c020; }
+/* ── Calm ── */
+.panel-value.mood-peaceful,
+.panel-value.mood-serene,
+.panel-value.mood-content      { color: #5eead4; }
+/* ── Curious ── */
+.panel-value.mood-curious,
+.panel-value.mood-fascinated   { color: #34d399; }
+/* ── Neutral / reflective ── */
+.panel-value.mood-neutral      { color: var(--text-muted); }
+.panel-value.mood-thoughtful,
+.panel-value.mood-reflective,
+.panel-value.mood-contemplative { color: #8da4c2; }
+.panel-value.mood-understanding { color: #6db4c4; }
+.panel-value.mood-nostalgic,
+.panel-value.mood-bittersweet  { color: #c4a86a; }
+.panel-value.mood-wistful      { color: #7da8d4; }
+/* ── Negative-low arousal ── */
 .panel-value.mood-sad,
 .panel-value.mood-lonely,
 .panel-value.mood-melancholy   { color: #60a5fa; }
+.panel-value.mood-disappointed { color: #5b8cc4; }
+.panel-value.mood-guilty       { color: #b07070; }
+.panel-value.mood-insecure,
+.panel-value.mood-vulnerable   { color: #a78bcc; }
+/* ── Negative-high arousal ── */
 .panel-value.mood-angry,
 .panel-value.mood-frustrated   { color: #ef4444; }
 .panel-value.mood-anxious,
 .panel-value.mood-overwhelmed  { color: #a78bfa; }
-.panel-value.mood-curious,
-.panel-value.mood-fascinated   { color: #34d399; }
-.panel-value.mood-peaceful,
-.panel-value.mood-serene,
-.panel-value.mood-content      { color: #5eead4; }
-.panel-value.mood-grateful,
-.panel-value.mood-warm         { color: #fb923c; }
-.panel-value.mood-neutral      { color: var(--text-muted); }
+.panel-value.mood-hurt         { color: #e06080; }
+.panel-value.mood-confused      { color: #9b7ec8; }
+.panel-value.mood-embarrassed  { color: #e07060; }
+.panel-value.mood-jealous      { color: #7da040; }
+.panel-value.mood-afraid       { color: #7b6ec0; }
+.panel-value.mood-resentful    { color: #c04050; }
 
 /* ── Memory side panel ──────────────────────────────────────────── */
 

@@ -10,35 +10,62 @@ const MoodColors = (() => {
     // Default purple accent: HSL(262, 83%, 58%) = #7c3aed
     const DEFAULT_HSL = [262, 83, 58];
 
-    // Mood → HSL accent color mapping
+    // Mood → HSL accent color mapping  (covers all 46 EMOTION_VECTORS)
     const MOOD_HSL = {
-        // Positive
-        happy:       [45, 90, 50],
-        joyful:      [45, 90, 50],
-        delighted:   [48, 90, 52],
-        excited:     [25, 93, 52],
-        enthusiastic:[25, 93, 52],
-        grateful:    [30, 92, 54],
-        warm:        [30, 92, 54],
-        // Calm
-        peaceful:    [170, 72, 45],
-        serene:      [170, 72, 45],
-        content:     [170, 72, 45],
-        // Curious
-        curious:     [159, 65, 45],
-        fascinated:  [159, 65, 45],
-        // Sad
-        sad:         [217, 85, 58],
-        lonely:      [217, 85, 58],
-        melancholy:  [220, 80, 55],
-        // Anxious
-        anxious:     [256, 80, 62],
-        overwhelmed: [256, 80, 62],
-        // Angry
-        angry:       [0, 80, 55],
-        frustrated:  [8, 78, 52],
-        // Neutral
-        neutral:     DEFAULT_HSL,
+        // ── Positive-active ──
+        happy:        [45, 90, 50],
+        joyful:       [45, 90, 50],
+        delighted:    [48, 90, 52],
+        excited:      [25, 93, 52],
+        enthusiastic: [25, 93, 52],
+        amused:       [38, 88, 52],
+        playful:      [330, 75, 58],
+        proud:        [35, 85, 48],
+        triumphant:   [40, 95, 46],
+        inspired:     [280, 70, 60],
+        motivated:    [18, 90, 50],
+        // ── Positive-calm ──
+        grateful:     [30, 92, 54],
+        warm:         [30, 92, 54],
+        appreciative: [30, 92, 54],
+        tender:       [340, 65, 62],
+        affectionate: [345, 70, 60],
+        hopeful:      [55, 80, 50],
+        // ── Calm ──
+        peaceful:     [170, 72, 45],
+        serene:       [170, 72, 45],
+        content:      [170, 72, 45],
+        // ── Curious ──
+        curious:      [159, 65, 45],
+        fascinated:   [159, 65, 45],
+        // ── Neutral / reflective ──
+        neutral:      DEFAULT_HSL,
+        thoughtful:   [230, 45, 55],
+        reflective:   [230, 45, 55],
+        contemplative:[225, 40, 52],
+        understanding:[200, 50, 50],
+        nostalgic:    [35, 55, 55],
+        bittersweet:  [30, 50, 50],
+        wistful:      [210, 50, 58],
+        // ── Negative-low arousal ──
+        sad:          [217, 85, 58],
+        lonely:       [217, 85, 58],
+        melancholy:   [220, 80, 55],
+        disappointed: [215, 60, 52],
+        guilty:       [0, 30, 48],
+        insecure:     [250, 45, 55],
+        vulnerable:   [310, 45, 55],
+        // ── Negative-high arousal ──
+        anxious:      [256, 80, 62],
+        overwhelmed:  [256, 80, 62],
+        angry:        [0, 80, 55],
+        frustrated:   [8, 78, 52],
+        hurt:         [350, 65, 50],
+        confused:     [270, 50, 55],
+        embarrassed:  [5, 60, 58],
+        jealous:      [80, 70, 40],
+        afraid:       [250, 70, 48],
+        resentful:    [355, 60, 45],
     };
 
     // Negative moods that count toward the rage-quit streak
