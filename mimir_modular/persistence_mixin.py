@@ -205,6 +205,18 @@ class PersistenceMixin:
                 self._data_dir / "inferred_edges.json",
                 edges_serializable)
 
+        # ── Memory Attic (archived pruned memories) ──────────────────
+        if self._attic:
+            self._write_json(
+                self._data_dir / "attic.json",
+                [m.to_dict() for m in self._attic])
+
+        # ── Persistent mood history ──────────────────────────────────
+        if self._mood_history:
+            self._write_json(
+                self._data_dir / "mood_history.json",
+                self._mood_history)
+
         if self._embed is not None:
             try:
                 self._embed.save()
@@ -306,6 +318,20 @@ class PersistenceMixin:
                                 (int(parts[0]), int(parts[1]))] = float(strength)
                         except ValueError:
                             pass
+
+        # ── Memory Attic ─────────────────────────────────────────
+        attic_path = self._data_dir / "attic.json"
+        if attic_path.exists():
+            data = self._read_json(attic_path)
+            if isinstance(data, list):
+                self._attic = [Memory.from_dict(d) for d in data]
+
+        # ── Persistent mood history ──────────────────────────────────
+        mh_path = self._data_dir / "mood_history.json"
+        if mh_path.exists():
+            data = self._read_json(mh_path)
+            if isinstance(data, list):
+                self._mood_history = data
 
         if len(self._reflections) >= 2:
             self._build_yggdrasil()

@@ -531,6 +531,9 @@
                     <button class="viz-tab" data-viz="mood-timeline">😊 Mood Timeline</button>
                     <button class="viz-tab" data-viz="cherished">💎 Cherished Memories</button>
                     <button class="viz-tab" data-viz="chemistry">⚗️ Neurochemistry</button>
+                    <button class="viz-tab" data-viz="relationships">🤝 Relationships</button>
+                    <button class="viz-tab" data-viz="clusters">🏷️ Topic Clusters</button>
+                    <button class="viz-tab" data-viz="attic">🏚️ Memory Attic</button>
                 </div>
 
                 <!-- Original Yggdrasil Graph (Default) -->
@@ -594,6 +597,33 @@
                     <div id="chemistry-chart-container" class="viz-container" style="height:500px;">
                         <canvas id="chemistry-chart"></canvas>
                     </div>
+                </div>
+
+                <!-- Relationship Strength View -->
+                <div id="viz-relationships" class="viz-view" style="display:none;">
+                    <div class="viz-controls">
+                        <p class="text-muted" style="margin-right:12px;">How strong your relationships are with different people</p>
+                        <button id="btn-relationships-refresh" class="btn btn-secondary btn-sm" onclick="loadRelationships()">↻ Refresh</button>
+                    </div>
+                    <div id="relationships-container" class="viz-container" style="min-height:300px; padding:16px;"></div>
+                </div>
+
+                <!-- Topic Clusters View -->
+                <div id="viz-clusters" class="viz-view" style="display:none;">
+                    <div class="viz-controls">
+                        <p class="text-muted" style="margin-right:12px;">Memories automatically grouped by shared themes</p>
+                        <button id="btn-clusters-refresh" class="btn btn-secondary btn-sm" onclick="loadTopicClusters()">↻ Refresh</button>
+                    </div>
+                    <div id="clusters-container" class="viz-container" style="min-height:300px; padding:16px;"></div>
+                </div>
+
+                <!-- Memory Attic View -->
+                <div id="viz-attic" class="viz-view" style="display:none;">
+                    <div class="viz-controls">
+                        <p class="text-muted" style="margin-right:12px;">Forgotten &amp; dormant memories you can rediscover</p>
+                        <button id="btn-attic-refresh" class="btn btn-secondary btn-sm" onclick="loadMemoryAttic()">↻ Refresh</button>
+                    </div>
+                    <div id="attic-container" class="viz-container" style="min-height:300px; padding:16px;"></div>
                 </div>
             </div>
 

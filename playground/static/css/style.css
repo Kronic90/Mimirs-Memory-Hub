@@ -2945,3 +2945,198 @@ details[open] .think-chevron { transform: rotate(90deg); }
     from { transform: translateY(30px); opacity: 0; }
     to   { transform: translateY(0);    opacity: 1; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   Relationship Strength Cards
+   ═══════════════════════════════════════════════════════════════ */
+
+.rel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.rel-card {
+    background: var(--bg-secondary, #1e1b2e);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--border, #333);
+}
+
+.rel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.rel-name {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text);
+}
+
+.rel-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.rel-bar-bg {
+    background: rgba(255,255,255,0.08);
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.rel-bar {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.5s ease;
+}
+
+.rel-score {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.rel-components {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.rel-comp {
+    font-size: 0.7rem;
+    background: rgba(255,255,255,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   Topic Cluster Cards
+   ═══════════════════════════════════════════════════════════════ */
+
+.cluster-card {
+    background: var(--bg-secondary, #1e1b2e);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border, #333);
+}
+
+.cluster-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.cluster-theme {
+    font-weight: 600;
+    font-size: 1.05rem;
+}
+
+.cluster-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.cluster-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.cluster-meta code {
+    background: rgba(168, 85, 247, 0.15);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    color: var(--accent, #a855f7);
+}
+
+.cluster-memories {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cluster-mem {
+    display: flex;
+    gap: 8px;
+    font-size: 0.85rem;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+}
+
+.cluster-mem-emotion {
+    flex-shrink: 0;
+    color: var(--accent, #a855f7);
+    font-weight: 500;
+    min-width: 80px;
+}
+
+.cluster-mem-content {
+    color: var(--text-secondary);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   Memory Attic Cards
+   ═══════════════════════════════════════════════════════════════ */
+
+.attic-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.attic-card {
+    background: var(--bg-secondary, #1e1b2e);
+    border-radius: 12px;
+    padding: 14px;
+    border: 1px solid var(--border, #333);
+    position: relative;
+}
+
+.attic-card.archived {
+    border-left: 3px solid #a855f7;
+    opacity: 0.85;
+}
+
+.attic-card.dormant {
+    border-left: 3px solid #6366f1;
+    opacity: 0.9;
+}
+
+.attic-content {
+    font-size: 0.9rem;
+    color: var(--text);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.attic-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.attic-rediscover,
+.attic-card .btn-sm {
+    margin-top: 4px;
+}

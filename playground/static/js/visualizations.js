@@ -42,6 +42,12 @@ function switchVizualizationView(vizType) {
             loadCherishedWall();
         } else if (vizType === 'chemistry') {
             loadChemistryTimeline();
+        } else if (vizType === 'relationships') {
+            loadRelationships();
+        } else if (vizType === 'clusters') {
+            loadTopicClusters();
+        } else if (vizType === 'attic') {
+            loadMemoryAttic();
         }
     }
 }
@@ -679,4 +685,203 @@ function hexToRgb(hex) {
         g: parseInt(result[2], 16),
         b: parseInt(result[3], 16),
     } : { r: 124, g: 58, b: 237 };
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 6. RELATIONSHIP STRENGTH
+// ═══════════════════════════════════════════════════════════════
+
+async function loadRelationships() {
+    const container = document.getElementById('relationships-container');
+    if (!container) return;
+    container.innerHTML = '<p class="text-muted">Loading relationships…</p>';
+    try {
+        const data = await App.api('/memory/relationships');
+        if (!data || data.length === 0) {
+            container.innerHTML = '<p class="text-muted">No social relationships recorded yet.</p>';
+            return;
+        }
+        let html = '<div class="rel-grid">';
+        for (const r of data) {
+            const barColor = r.score >= 80 ? '#a855f7' : r.score >= 60 ? '#6366f1' :
+                             r.score >= 40 ? '#3b82f6' : r.score >= 20 ? '#64748b' : '#475569';
+            html += `
+                <div class="rel-card">
+                    <div class="rel-header">
+                        <span class="rel-name">${escapeHtml(r.entity)}</span>
+                        <span class="rel-label" style="color:${barColor}">${r.label}</span>
+                    </div>
+                    <div class="rel-bar-bg">
+                        <div class="rel-bar" style="width:${r.score}%; background:${barColor};"></div>
+                    </div>
+                    <div class="rel-score">${r.score}/100 · ${r.memory_count} memories</div>
+                    <div class="rel-components">
+                        ${Object.entries(r.components || {}).map(([k,v]) =>
+                            `<span class="rel-comp">${k}: ${(v*100).toFixed(0)}%</span>`
+                        ).join(' ')}
+                    </div>
+                </div>`;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<p class="text-muted">Error: ${err.message}</p>`;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 7. TOPIC CLUSTERS
+// ═══════════════════════════════════════════════════════════════
+
+async function loadTopicClusters() {
+    const container = document.getElementById('clusters-container');
+    if (!container) return;
+    container.innerHTML = '<p class="text-muted">Analysing memory clusters…</p>';
+    try {
+        const data = await App.api('/memory/clusters');
+        if (!data || data.length === 0) {
+            container.innerHTML = '<p class="text-muted">Not enough memories to form clusters yet.</p>';
+            return;
+        }
+        const colors = ['#a855f7','#6366f1','#3b82f6','#14b8a6','#f59e0b','#ef4444','#ec4899','#84cc16','#06b6d4','#f97316'];
+        let html = '';
+        data.forEach((cluster, ci) => {
+            const color = colors[ci % colors.length];
+            html += `
+                <div class="cluster-card" style="border-left:4px solid ${color};">
+                    <div class="cluster-header">
+                        <span class="cluster-theme" style="color:${color}">${escapeHtml(cluster.theme)}</span>
+                        <span class="cluster-count">${cluster.memory_count} memories</span>
+                    </div>
+                    <div class="cluster-meta">
+                        <span>Keywords: ${cluster.keywords.map(k => `<code>${escapeHtml(k)}</code>`).join(' ')}</span>
+                        <span>Emotion: ${cluster.dominant_emotion}</span>
+                        <span>Avg importance: ${cluster.avg_importance}</span>
+                    </div>
+                    <div class="cluster-memories">`;
+            for (const mem of cluster.memories.slice(0, 5)) {
+                html += `<div class="cluster-mem">
+                    <span class="cluster-mem-emotion">${mem.emotion}</span>
+                    <span class="cluster-mem-content">${escapeHtml(mem.content)}</span>
+                </div>`;
+            }
+            if (cluster.memory_count > 5) {
+                html += `<p class="text-muted">… and ${cluster.memory_count - 5} more</p>`;
+            }
+            html += '</div></div>';
+        });
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<p class="text-muted">Error: ${err.message}</p>`;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 8. MEMORY ATTIC — Forgotten & Dormant Memories
+// ═══════════════════════════════════════════════════════════════
+
+async function loadMemoryAttic() {
+    const container = document.getElementById('attic-container');
+    if (!container) return;
+    container.innerHTML = '<p class="text-muted">Searching the memory attic…</p>';
+    try {
+        const [dormant, attic] = await Promise.all([
+            App.api('/memory/dormant'),
+            App.api('/memory/attic'),
+        ]);
+
+        let html = '';
+
+        // Section: Archived (Attic)
+        html += '<h4 style="color:#a855f7; margin-bottom:8px;">🏚️ Archived Memories</h4>';
+        html += '<p class="text-muted" style="font-size:0.85rem;">These were pruned by Muninn but preserved here. Click Rediscover to bring one back.</p>';
+        if (attic && attic.length > 0) {
+            html += '<div class="attic-list">';
+            for (const m of attic) {
+                html += `
+                    <div class="attic-card archived">
+                        <div class="attic-content">${escapeHtml(m.content)}</div>
+                        <div class="attic-meta">
+                            <span>${m.emotion}</span>
+                            <span>Imp: ${m.importance}</span>
+                            <span>Viv: ${m.vividness}</span>
+                            <span>${m.timestamp ? m.timestamp.slice(0,10) : ''}</span>
+                        </div>
+                        <button class="btn btn-sm btn-primary attic-rediscover"
+                            onclick="rediscoverFromAttic(${m.attic_index})">✨ Rediscover</button>
+                    </div>`;
+            }
+            html += '</div>';
+        } else {
+            html += '<p class="text-muted">No archived memories yet — Muninn hasn\'t pruned anything.</p>';
+        }
+
+        // Section: Dormant (still active but fading)
+        html += '<h4 style="color:#6366f1; margin-top:24px; margin-bottom:8px;">💤 Dormant Memories</h4>';
+        html += '<p class="text-muted" style="font-size:0.85rem;">These are fading from active storage. Nudge them to strengthen the memory.</p>';
+        if (dormant && dormant.length > 0) {
+            html += '<div class="attic-list">';
+            for (const m of dormant) {
+                html += `
+                    <div class="attic-card dormant">
+                        <div class="attic-content">${escapeHtml(m.content)}</div>
+                        <div class="attic-meta">
+                            <span>${m.emotion}</span>
+                            <span>Imp: ${m.importance}</span>
+                            <span>Viv: ${m.vividness}</span>
+                            <span>Accessed: ${m.access_count}x</span>
+                            <span>Hints: ${m.hint_keywords.join(', ')}</span>
+                        </div>
+                        <button class="btn btn-sm btn-secondary"
+                            onclick="nudgeDormant(${m.index})">💡 Nudge</button>
+                    </div>`;
+            }
+            html += '</div>';
+        } else {
+            html += '<p class="text-muted">No dormant memories — everything is still fresh!</p>';
+        }
+
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<p class="text-muted">Error: ${err.message}</p>`;
+    }
+}
+
+async function rediscoverFromAttic(atticIndex) {
+    try {
+        const result = await App.api('/memory/rediscover', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ action: 'rediscover', attic_index: atticIndex }),
+        });
+        if (result && !result.error) {
+            App.toast?.('Memory rediscovered! ✨');
+        } else {
+            App.toast?.('Could not rediscover that memory.');
+        }
+        loadMemoryAttic();
+    } catch (err) {
+        console.error('Rediscover failed:', err);
+    }
+}
+
+async function nudgeDormant(index) {
+    try {
+        const result = await App.api('/memory/rediscover', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ action: 'nudge', index }),
+        });
+        if (result && !result.error) {
+            App.toast?.('Memory nudged — vividness boosted! 💡');
+        } else {
+            App.toast?.('Could not nudge that memory.');
+        }
+        loadMemoryAttic();
+    } catch (err) {
+        console.error('Nudge failed:', err);
+    }
 }

@@ -963,6 +963,70 @@ async def memory_record_outcome(lesson_id: str, request: Request):
     return JSONResponse({"ok": ok})
 
 
+# ── Relationship Strength ────────────────────────────────────────
+
+@app.get("/api/memory/relationships")
+async def memory_relationships(entity: str = ""):
+    """Get relationship strength scores for all (or one) entity."""
+    mem = _ensure_memory()
+    result = mem.get_relationship_strength(entity)
+    return JSONResponse(result)
+
+
+# ── Topic Clusters ───────────────────────────────────────────────
+
+@app.get("/api/memory/clusters")
+async def memory_clusters():
+    """Get auto-detected topic clusters from memories."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_topic_clusters())
+
+
+# ── Emotional Trajectory ────────────────────────────────────────
+
+@app.get("/api/memory/trajectory")
+async def memory_trajectory(window_days: int = 30):
+    """Get emotional trajectory analysis over a time window."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_emotional_trajectory(window_days))
+
+
+# ── Forgotten Memory Recovery (Memory Attic) ─────────────────────
+
+@app.get("/api/memory/dormant")
+async def memory_dormant(limit: int = 20):
+    """Get dormant memories that are fading from active storage."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_dormant_memories(limit))
+
+
+@app.get("/api/memory/attic")
+async def memory_attic(limit: int = 50):
+    """Browse archived (pruned) memories in the Memory Attic."""
+    mem = _ensure_memory()
+    return JSONResponse(mem.get_attic_memories(limit))
+
+
+@app.post("/api/memory/rediscover")
+async def memory_rediscover(request: Request):
+    """Recover a memory from the attic or nudge a dormant one."""
+    body = await request.json()
+    mem = _ensure_memory()
+    action = body.get("action", "rediscover")
+
+    if action == "nudge":
+        index = body.get("index", -1)
+        result = mem.nudge_dormant_memory(index)
+    else:
+        query = body.get("query", "")
+        attic_index = body.get("attic_index", -1)
+        result = mem.rediscover_memory(query=query, attic_index=attic_index)
+
+    if result:
+        mem.save()
+    return JSONResponse(result or {"error": "Memory not found"})
+
+
 # ── Reminders ────────────────────────────────────────────────────
 
 @app.post("/api/memory/reminders")
@@ -2071,6 +2135,12 @@ async def chat_ws(ws: WebSocket):
                             _bg_user_text, _bg_clean, _bg_preset, curation=None,
                             skip_save=True,
                         )
+
+                        # Record mood snapshot for persistent emotional trajectory
+                        try:
+                            mem._mimir.record_mood_snapshot()
+                        except Exception:
+                            pass
 
                         # Send a mood update so the UI can show it
                         # Send mood + chemistry update to frontend

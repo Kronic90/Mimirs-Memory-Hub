@@ -333,7 +333,7 @@ class NeuroscienceMixin:
                     to_remove.add(j if keeper is mi else i)
                     merged += 1
 
-        # ── 2. Prune dead memories ────────────────────────────────────
+        # ── 2. Prune dead memories (archive to attic) ─────────────────
         for i in range(n):
             if i in to_remove:
                 continue
@@ -348,6 +348,8 @@ class NeuroscienceMixin:
                         self._embed.remove(m._embed_uid)
                     except Exception:
                         pass
+                # Archive to attic instead of permanent deletion
+                self._attic.append(m)
                 to_remove.add(i)
                 pruned += 1
 

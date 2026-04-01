@@ -123,6 +123,12 @@ class Mimir(
         # ── Auto-consolidation counter ────────────────────────────────
         self._memories_since_consolidation: int = 0
 
+        # ── Memory attic (archived/pruned memories recoverable) ───────
+        self._attic: list[Memory] = []
+
+        # ── Persistent mood history (emotional trajectory) ────────────
+        self._mood_history: list[dict] = []
+
         # ── Yggdrasil — memory graph (World Tree) ────────────────────
         self._yggdrasil: dict[int, list[tuple[int, str, float]]] = {}
 
@@ -632,6 +638,444 @@ class Mimir(
                 len(e) for e in self._yggdrasil.values()),
             "project": self.get_project_overview(),
         }
+
+    # ──────────────────────────────────────────────────────────────────
+    #  Feature: Relationship Strength Indicator
+    # ──────────────────────────────────────────────────────────────────
+
+    def relationship_strength(self, entity: str = "") -> dict | list[dict]:
+        """Compute relationship strength scores for social entities.
+
+        Returns a dict for a single entity, or a list of all entity
+        scores (sorted strongest-first) if *entity* is empty.
+
+        Score components (each 0-1, combined 0-100):
+        - memory_count : more memories = stronger relationship
+        - avg_importance: how important those memories are
+        - avg_warmth   : average emotional valence (pleasure axis)
+        - recency      : how recently we interacted
+        - consistency  : how regularly memories appear over time
+        """
+        from .helpers import _emotion_to_vector
+
+        def _score_entity(name: str, mems: list[Memory]) -> dict:
+            if not mems:
+                return {"entity": name, "score": 0, "label": "stranger",
+                        "memory_count": 0, "components": {}}
+
+            now = datetime.now()
+            count = len(mems)
+            # Memory count (log-scaled, caps at ~20 memories)
+            count_score = min(1.0, math.log2(count + 1) / math.log2(21))
+
+            # Average importance (1-10 → 0-1)
+            avg_imp = sum(m.importance for m in mems) / count
+            imp_score = (avg_imp - 1) / 9.0
+
+            # Average emotional warmth (pleasure axis)
+            pleasures = []
+            for m in mems:
+                vec = _emotion_to_vector(m.emotion)
+                if vec:
+                    pleasures.append(vec[0])
+            warmth = ((sum(pleasures) / len(pleasures)) + 1) / 2 if pleasures else 0.5
+
+            # Recency (days since last memory, 0-1 with decay)
+            try:
+                dates = [datetime.fromisoformat(m.timestamp) for m in mems]
+                latest = max(dates)
+                days_ago = (now - latest).total_seconds() / 86400
+                recency = max(0.0, 1.0 - (days_ago / 180))
+            except Exception:
+                recency = 0.5
+
+            # Consistency (span of relationship / expected gaps)
+            try:
+                if len(dates) >= 2:
+                    earliest = min(dates)
+                    span_days = max(1, (latest - earliest).total_seconds() / 86400)
+                    expected_gap = span_days / count
+                    consistency = min(1.0, 1.0 / (1 + expected_gap / 30))
+                else:
+                    consistency = 0.3
+            except Exception:
+                consistency = 0.3
+
+            # Composite score (0-100)
+            raw = (count_score * 0.25
+                   + imp_score * 0.20
+                   + warmth * 0.20
+                   + recency * 0.20
+                   + consistency * 0.15)
+            score = round(raw * 100)
+
+            # Qualitative label
+            if score >= 80:
+                label = "close confidant"
+            elif score >= 60:
+                label = "good friend"
+            elif score >= 40:
+                label = "friend"
+            elif score >= 20:
+                label = "acquaintance"
+            else:
+                label = "distant"
+
+            return {
+                "entity": name,
+                "score": score,
+                "label": label,
+                "memory_count": count,
+                "components": {
+                    "memory_count": round(count_score, 3),
+                    "avg_importance": round(imp_score, 3),
+                    "warmth": round(warmth, 3),
+                    "recency": round(recency, 3),
+                    "consistency": round(consistency, 3),
+                },
+            }
+
+        if entity:
+            mems = self._social.get(entity, [])
+            return _score_entity(entity, mems)
+
+        results = []
+        for name, mems in self._social.items():
+            results.append(_score_entity(name, mems))
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
+
+    # ──────────────────────────────────────────────────────────────────
+    #  Feature: Memory Topic Clustering
+    # ──────────────────────────────────────────────────────────────────
+
+    def get_topic_clusters(self, min_cluster: int = 2,
+                           max_clusters: int = 20) -> list[dict]:
+        """Automatically cluster memories by shared topic/theme.
+
+        Uses word-overlap adjacency to group memories, then identifies
+        the dominant keywords and emotion for each cluster.
+        Returns clusters sorted by size (largest first).
+        """
+        real_mems = [
+            (i, m) for i, m in enumerate(self._reflections)
+            if m.source not in ("huginn", "volva")]
+
+        if len(real_mems) < min_cluster:
+            return []
+
+        # Build word-sets
+        word_sets: dict[int, set[str]] = {}
+        for i, m in real_mems:
+            ws = m.content_words
+            if ws:
+                word_sets[i] = ws
+
+        # Adjacency via word overlap
+        indices = list(word_sets.keys())
+        adj: dict[int, set[int]] = {i: set() for i in indices}
+        for a_pos in range(len(indices)):
+            ia = indices[a_pos]
+            wa = word_sets[ia]
+            for b_pos in range(a_pos + 1, len(indices)):
+                ib = indices[b_pos]
+                wb = word_sets[ib]
+                inter = len(wa & wb)
+                union = len(wa | wb)
+                if union > 0 and inter / union >= 0.15:
+                    adj[ia].add(ib)
+                    adj[ib].add(ia)
+
+        # Connected components (BFS)
+        visited: set[int] = set()
+        clusters_raw: list[list[int]] = []
+        for start in indices:
+            if start in visited:
+                continue
+            queue = [start]
+            component: list[int] = []
+            while queue:
+                node = queue.pop(0)
+                if node in visited:
+                    continue
+                visited.add(node)
+                component.append(node)
+                for neighbor in adj[node]:
+                    if neighbor not in visited:
+                        queue.append(neighbor)
+            if len(component) >= min_cluster:
+                clusters_raw.append(component)
+
+        # Build cluster summaries
+        clusters: list[dict] = []
+        for component in clusters_raw:
+            mems = [self._reflections[i] for i in component]
+
+            # Top keywords (most frequent across cluster, excluding stop words)
+            from collections import Counter
+            all_words: list[str] = []
+            for m in mems:
+                all_words.extend(m.content_words)
+            word_freq = Counter(all_words)
+            top_keywords = [w for w, _ in word_freq.most_common(5)]
+
+            # Dominant emotion
+            emotions = [m.emotion for m in mems]
+            emotion_freq = Counter(emotions)
+            dominant_emotion = emotion_freq.most_common(1)[0][0]
+
+            # Theme label from top 2-3 keywords
+            theme_label = " & ".join(top_keywords[:3])
+
+            # Average importance
+            avg_imp = round(sum(m.importance for m in mems) / len(mems), 1)
+
+            # Time span
+            try:
+                timestamps = [datetime.fromisoformat(m.timestamp) for m in mems]
+                earliest = min(timestamps).isoformat()
+                latest = max(timestamps).isoformat()
+            except Exception:
+                earliest = mems[0].timestamp
+                latest = mems[-1].timestamp
+
+            clusters.append({
+                "theme": theme_label,
+                "keywords": top_keywords,
+                "dominant_emotion": dominant_emotion,
+                "memory_count": len(mems),
+                "avg_importance": avg_imp,
+                "earliest": earliest,
+                "latest": latest,
+                "memory_indices": component,
+                "memories": [
+                    {"content": m.content[:120], "emotion": m.emotion,
+                     "importance": m.importance, "timestamp": m.timestamp}
+                    for m in mems
+                ],
+            })
+
+        clusters.sort(key=lambda c: c["memory_count"], reverse=True)
+        return clusters[:max_clusters]
+
+    # ──────────────────────────────────────────────────────────────────
+    #  Feature: Emotional Trajectory Tracking
+    # ──────────────────────────────────────────────────────────────────
+
+    def record_mood_snapshot(self):
+        """Record current mood + timestamp to persistent history."""
+        self._mood_history.append({
+            "timestamp": datetime.now().isoformat(),
+            "mood": list(self._mood),
+            "label": self.mood_label,
+            "memory_count": len(self._reflections),
+        })
+        # Keep last 500 snapshots
+        if len(self._mood_history) > 500:
+            self._mood_history = self._mood_history[-500:]
+
+    def emotional_trajectory(self, window_days: int = 30) -> dict:
+        """Analyse emotional trends over a time window.
+
+        Returns overall direction, dominant moods, patterns,
+        and a per-day mood summary.
+        """
+        from collections import Counter
+
+        now = datetime.now()
+        cutoff = now - timedelta(days=window_days)
+
+        # Filter to window
+        in_window = []
+        for entry in self._mood_history:
+            try:
+                ts = datetime.fromisoformat(entry["timestamp"])
+                if ts >= cutoff:
+                    in_window.append(entry)
+            except Exception:
+                continue
+
+        if not in_window:
+            return {"trend": "insufficient data", "entries": 0}
+
+        # Per-day summary
+        day_moods: dict[str, list[dict]] = {}
+        for entry in in_window:
+            day = entry["timestamp"][:10]
+            if day not in day_moods:
+                day_moods[day] = []
+            day_moods[day].append(entry)
+
+        daily_summary: list[dict] = []
+        for day, entries in sorted(day_moods.items()):
+            labels = [e["label"] for e in entries]
+            dominant = Counter(labels).most_common(1)[0][0]
+            avg_p = sum(e["mood"][0] for e in entries) / len(entries)
+            avg_a = sum(e["mood"][1] for e in entries) / len(entries)
+            daily_summary.append({
+                "date": day,
+                "dominant_mood": dominant,
+                "avg_pleasure": round(avg_p, 3),
+                "avg_arousal": round(avg_a, 3),
+                "snapshots": len(entries),
+            })
+
+        # Overall trends
+        all_labels = [e["label"] for e in in_window]
+        label_counts = Counter(all_labels)
+        top_moods = [m for m, _ in label_counts.most_common(5)]
+
+        # Pleasure trend (first half vs second half)
+        if len(in_window) >= 4:
+            mid = len(in_window) // 2
+            first_p = sum(e["mood"][0] for e in in_window[:mid]) / mid
+            second_p = sum(e["mood"][0] for e in in_window[mid:]) / (len(in_window) - mid)
+            delta_p = second_p - first_p
+            if delta_p > 0.15:
+                trend = "improving"
+            elif delta_p < -0.15:
+                trend = "declining"
+            else:
+                trend = "stable"
+        else:
+            trend = "too few data points"
+            delta_p = 0.0
+
+        # Detect emotional patterns
+        patterns: list[str] = []
+        if len(daily_summary) >= 3:
+            moods_seq = [d["dominant_mood"] for d in daily_summary]
+            # Check for oscillation
+            changes = sum(1 for i in range(1, len(moods_seq))
+                          if moods_seq[i] != moods_seq[i-1])
+            if changes / max(len(moods_seq) - 1, 1) > 0.7:
+                patterns.append("high emotional variability — mood shifts frequently")
+            # Check for sustained negative
+            neg_moods = {"sad", "lonely", "melancholy", "anxious",
+                        "frustrated", "angry", "hurt", "afraid"}
+            neg_streak = 0
+            max_neg_streak = 0
+            for m in moods_seq:
+                if m in neg_moods:
+                    neg_streak += 1
+                    max_neg_streak = max(max_neg_streak, neg_streak)
+                else:
+                    neg_streak = 0
+            if max_neg_streak >= 3:
+                patterns.append(f"sustained negative mood streak ({max_neg_streak} days)")
+            # Check for growth (anxiety → breakthrough)
+            for i in range(1, len(moods_seq)):
+                if moods_seq[i-1] in neg_moods and moods_seq[i] in {"excited", "proud", "triumphant", "inspired"}:
+                    patterns.append(f"breakthrough pattern: {moods_seq[i-1]} → {moods_seq[i]}")
+
+        return {
+            "trend": trend,
+            "pleasure_delta": round(delta_p, 3),
+            "top_moods": top_moods,
+            "patterns": patterns,
+            "entries": len(in_window),
+            "days_covered": len(daily_summary),
+            "daily": daily_summary,
+            "window_days": window_days,
+        }
+
+    # ──────────────────────────────────────────────────────────────────
+    #  Feature: Forgotten Memory Recovery (Memory Attic)
+    # ──────────────────────────────────────────────────────────────────
+
+    def get_dormant_memories(self, limit: int = 20) -> list[dict]:
+        """Return low-vividness, low-access memories that are 'just out of reach'.
+
+        These are still in the active store but haven't been touched in a while.
+        """
+        now = datetime.now()
+        dormant: list[tuple[float, int, Memory]] = []
+
+        for i, m in enumerate(self._reflections):
+            if m.source in ("huginn", "volva"):
+                continue
+            try:
+                age_days = (now - datetime.fromisoformat(m.timestamp)).total_seconds() / 86400
+            except Exception:
+                continue
+            if age_days < 7:
+                continue
+            viv = m.vividness
+            if viv < 0.5 and m._access_count <= 2:
+                dormancy = age_days * (1 - viv) * (1 / (m._access_count + 1))
+                dormant.append((dormancy, i, m))
+
+        dormant.sort(key=lambda x: x[0], reverse=True)
+
+        return [
+            {
+                "index": idx,
+                "content": m.content[:200],
+                "emotion": m.emotion,
+                "importance": m.importance,
+                "vividness": round(m.vividness, 3),
+                "access_count": m._access_count,
+                "timestamp": m.timestamp,
+                "dormancy_score": round(score, 1),
+                "hint_keywords": list(m.content_words)[:5],
+            }
+            for score, idx, m in dormant[:limit]
+        ]
+
+    def get_attic_memories(self, limit: int = 50) -> list[dict]:
+        """Return archived (pruned) memories from the memory attic."""
+        results = []
+        for i, m in enumerate(self._attic):
+            results.append({
+                "attic_index": i,
+                "content": m.content[:200],
+                "emotion": m.emotion,
+                "importance": m.importance,
+                "vividness": round(m.vividness, 3),
+                "timestamp": m.timestamp,
+                "source": m.source,
+                "entity": m.entity or "",
+            })
+        return results[-limit:]
+
+    def rediscover(self, query: str = "", attic_index: int = -1) -> Memory | None:
+        """Recover a memory from the attic back into active storage.
+
+        Either provide a *query* to find the best match, or an *attic_index*
+        to recover a specific memory.
+        """
+        if attic_index >= 0 and attic_index < len(self._attic):
+            mem = self._attic.pop(attic_index)
+            mem._stability = max(mem._stability, 3.0)
+            self._reflections.append(mem)
+            idx = len(self._reflections) - 1
+            self._index_memory(idx, mem)
+            self._touch_memory(mem)
+            return mem
+
+        if query and self._attic:
+            from .helpers import _content_words, _overlap_ratio
+            query_words = _content_words(query)
+            best_score = 0.0
+            best_idx = -1
+            for i, m in enumerate(self._attic):
+                overlap = _overlap_ratio(query_words, m.content_words)
+                if overlap > best_score:
+                    best_score = overlap
+                    best_idx = i
+            if best_idx >= 0 and best_score > 0.1:
+                return self.rediscover(attic_index=best_idx)
+
+        return None
+
+    def nudge_dormant(self, index: int) -> Memory | None:
+        """Nudge a dormant memory — touch it to boost vividness and stability."""
+        if 0 <= index < len(self._reflections):
+            mem = self._reflections[index]
+            self._touch_memory(mem)
+            mem._stability = min(mem._stability * 1.3, STABILITY_CAP)
+            return mem
+        return None
 
     # ──────────────────────────────────────────────────────────────────
     #  Stats

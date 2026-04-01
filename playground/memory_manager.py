@@ -1227,3 +1227,34 @@ class MemoryManager:
         if timestamp:
             mem.timestamp = timestamp
         return mem.to_dict()
+
+    # ── Relationship Strength ─────────────────────────────────────────
+
+    def get_relationship_strength(self, entity: str = "") -> dict | list[dict]:
+        return self._mimir.relationship_strength(entity)
+
+    # ── Topic Clusters ────────────────────────────────────────────────
+
+    def get_topic_clusters(self) -> list[dict]:
+        return self._mimir.get_topic_clusters()
+
+    # ── Emotional Trajectory ──────────────────────────────────────────
+
+    def get_emotional_trajectory(self, window_days: int = 30) -> dict:
+        return self._mimir.emotional_trajectory(window_days)
+
+    # ── Forgotten Memory Recovery ─────────────────────────────────────
+
+    def get_dormant_memories(self, limit: int = 20) -> list[dict]:
+        return self._mimir.get_dormant_memories(limit)
+
+    def get_attic_memories(self, limit: int = 50) -> list[dict]:
+        return self._mimir.get_attic_memories(limit)
+
+    def rediscover_memory(self, query: str = "", attic_index: int = -1) -> dict | None:
+        mem = self._mimir.rediscover(query=query, attic_index=attic_index)
+        return mem.to_dict() if mem else None
+
+    def nudge_dormant_memory(self, index: int) -> dict | None:
+        mem = self._mimir.nudge_dormant(index)
+        return mem.to_dict() if mem else None
