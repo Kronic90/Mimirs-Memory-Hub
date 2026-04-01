@@ -47,7 +47,11 @@ sys.path.insert(0, str(WORKSPACE / "Mimir"))
 sys.path.insert(1, str(WORKSPACE / "standalone memory"))
 sys.path.insert(2, str(WORKSPACE))
 
-from Mimir import Mimir, _resonance_words
+try:
+    from mimir_modular import Mimir
+    from mimir_modular.helpers import _resonance_words
+except ModuleNotFoundError:
+    from Mimir import Mimir, _resonance_words  # type: ignore
 
 
 # ══════════════════════════════════════════════════════════════════════════

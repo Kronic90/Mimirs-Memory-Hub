@@ -20,19 +20,22 @@ try:
     from vividmimir import Mimir  # pip-installed package
 except ModuleNotFoundError:
     try:
-        from Mimir import Mimir  # type: ignore  # local dev (Windows)
+        from mimir_modular import Mimir  # modular package (local dev)
     except ModuleNotFoundError:
-        # Fallback: explicit load from file path (handles case-sensitive FS quirks)
-        import importlib.util as _ilu
-        _mimir_file = Path(_root) / "Mimir.py"
-        if not _mimir_file.exists():
-            # Try lowercase on case-sensitive systems
-            _mimir_file = Path(_root) / "mimir.py"
-        _spec = _ilu.spec_from_file_location("Mimir", str(_mimir_file))
-        _mod = _ilu.module_from_spec(_spec)
-        sys.modules["Mimir"] = _mod
-        _spec.loader.exec_module(_mod)
-        Mimir = _mod.Mimir  # type: ignore
+        try:
+            from Mimir import Mimir  # type: ignore  # monolith fallback
+        except ModuleNotFoundError:
+            # Fallback: explicit load from file path (handles case-sensitive FS quirks)
+            import importlib.util as _ilu
+            _mimir_file = Path(_root) / "Mimir.py"
+            if not _mimir_file.exists():
+                # Try lowercase on case-sensitive systems
+                _mimir_file = Path(_root) / "mimir.py"
+            _spec = _ilu.spec_from_file_location("Mimir", str(_mimir_file))
+            _mod = _ilu.module_from_spec(_spec)
+            sys.modules["Mimir"] = _mod
+            _spec.loader.exec_module(_mod)
+            Mimir = _mod.Mimir  # type: ignore
 
 # ── lightweight keyword-based emotion detector ────────────────────────
 
@@ -725,7 +728,10 @@ class MemoryManager:
         try:
             from vividmimir import Mimir as _Mimir
         except ModuleNotFoundError:
-            from Mimir import Mimir as _Mimir  # type: ignore
+            try:
+                from mimir_modular import Mimir as _Mimir
+            except ModuleNotFoundError:
+                from Mimir import Mimir as _Mimir  # type: ignore
         vivid = sorted(mems,
                        key=lambda m: m.mood_adjusted_vividness(self._mimir._mood),
                        reverse=True)[:8]
