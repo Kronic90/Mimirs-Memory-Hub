@@ -31,6 +31,7 @@ Most AI chat apps give the AI a simple chat history window. Mimir gives it somet
 - **Memories carry emotional weight** — important or emotional moments are recalled more readily
 - **Memories fade naturally** — less significant things are gradually forgotten, just like a real mind
 - **Mood evolves over time** — how the AI feels right now shapes what it remembers and how it responds
+- **Neurochemistry simulation** — dopamine, serotonin, oxytocin, and cortisol modulate encoding, recall, and emotional responses
 - **Multiple characters** — create distinct AI personalities, each with their own separate memory
 - **Multi-agent conversations** — get multiple characters talking together in one conversation
 
@@ -46,9 +47,185 @@ Most AI chat apps give the AI a simple chat history window. Mimir gives it somet
 | 🃏 **SillyTavern import** | Import character cards directly — single files or entire folders |
 | 🤝 **Multi-agent chat** | Multiple characters in one conversation, with configurable turn order |
 | 📊 **Memory browser** | Search, filter, edit, cherish, pin, or delete individual memories |
-| 📈 **Visualizations** | Mood timeline, memory landscape, neurochemistry charts |
+| 📈 **8 Visualizations** | Neural graph, 3D constellation, mood timeline, neurochemistry, relationships, topic clusters, cherished wall, memory attic |
 | 🔧 **Agent tools** | In agent mode: sandboxed file access, web search, custom tool permissions |
 | 🖥️ **Local or cloud** | Ollama, local GGUF files, OpenAI, Anthropic, or Google |
+| 🎤 **Voice I/O** | Optional text-to-speech and speech-to-text |
+| 🖼️ **Image upload** | Send images to vision-capable models |
+
+---
+
+## The Memory System — How It Works
+
+Mimir's memory isn't a simple conversation log. It's a layered cognitive simulation inspired by real neuroscience. Here's what happens under the hood:
+
+### Memory Encoding
+
+When you say something, Mimir doesn't just store the text. It:
+
+1. **Assigns an emotion** — detected from the content (one of 46 distinct emotions)
+2. **Rates importance** (1-10) — based on emotional intensity, personal relevance, and novelty
+3. **Calculates novelty** — new topics get an encoding boost; repeated things don't
+4. **Encodes with mood context** — the AI's current emotional state is baked into the memory
+5. **Modulates via neurochemistry** — high dopamine boosts encoding strength; cortisol warps recall
+6. **Checks for flashbulb moments** — extremely important + highly emotional = permanent memory
+
+### Memory Recall
+
+When the AI needs to respond, it searches memory using a multi-signal hybrid retrieval system:
+
+- **BM25 keyword matching** — finds memories with literal word overlap
+- **VividEmbed semantic search** — a custom emotion-aware embedding model that factors in emotional similarity, not just content
+- **Spreading activation** — activating one memory boosts connected memories (temporal, emotional, entity-based)
+- **Mood-congruent recall** — the AI's current mood biases which memories surface (happy mood → happier memories)
+- **Proustian recall** — 5% chance of a random faded memory spontaneously resurfacing, sometimes unlocking forgotten context
+
+### Memory Consolidation (Sleep)
+
+Running "Sleep" triggers a consolidation cycle modeled on real sleep memory processing:
+
+- **Huginn** (the "thinking raven") — scans for recurring themes, sentiment arcs per entity, open conversational threads, and emotional drift
+- **Muninn** (the "remembering raven") — merges near-duplicates, prunes dead memories (archiving them to the Memory Attic), and strengthens co-activated pairs
+- **Völva** (the "dreaming seeress") — synthesizes cross-theme insights from distant memory pairs, like dreams connecting unrelated experiences
+- **Chunking** — old memories with high overlap are combined into gist summaries, preserving the core while freeing space
+
+### Memory Decay
+
+Every memory has a **vividness** score that decays over time following a modified Ebbinghaus forgetting curve:
+
+- Recent memories are vivid; old ones fade
+- Each time a memory is accessed, its **stability** increases, slowing future decay
+- **Flashbulb memories** (importance ≥ 9, high emotion) never decay
+- **Cherished** (💎) and **Anchored** (⚓) memories are protected from pruning
+- Memories that fade below the vividness threshold are archived to the **Memory Attic** — not deleted, but recoverable
+
+### Yggdrasil — The Memory Graph
+
+All memories are connected in a graph structure called **Yggdrasil** (the World Tree). Edges form automatically from 6 types of relationships:
+
+| Edge Type | What It Connects |
+|---|---|
+| **Temporal** | Memories from the same conversation or day |
+| **Emotional** | Memories sharing the same emotional tone |
+| **Thematic** | Memories about the same topic (word overlap) |
+| **Causal** | Sequential memories where one builds on another |
+| **Entity** | Memories mentioning the same person or entity |
+| **Contrast** | Memories with opposing emotional drift (e.g., sadness → joy) |
+
+This graph drives spreading activation during recall, and it's the map powering the visualizations.
+
+### Social Memory
+
+Mimir maintains separate memory tracks for people and entities. Every mention of a person gets stored in their social memory file, building a persistent impression that tracks:
+
+- What they said and did
+- How you felt about interactions with them
+- Sentiment arcs over time (are things getting better or worse?)
+- **Relationship Strength** scores — a composite metric from memory count, emotional warmth, recency, consistency
+
+### Emotional Architecture
+
+The AI's emotional state is a 3-axis PAD (Pleasure-Arousal-Dominance) vector that evolves every turn:
+
+- **Pleasure** — positive to negative valence
+- **Arousal** — calm to excited intensity
+- **Dominance** — in-control to overwhelmed
+
+This maps to 46 discrete emotion labels. The mood shifts each turn based on the detected emotion in the conversation, with smooth interpolation (35% blend for new emotions, slower lerp for the UI color).
+
+When using character presets, a **neurochemistry** system also runs:
+- **Dopamine** — reward, motivation, encoding boost
+- **Serotonin** — contentment, emotional stability
+- **Oxytocin** — social bonding, trust
+- **Cortisol** — stress, recall distortion
+
+### Task & Project Memory
+
+In Agent mode, Mimir tracks:
+- **Tasks** — goals, priorities, status, deadlines
+- **Actions** — what was done and its result
+- **Solution patterns** — reusable strategies learned from successes
+- **Artifacts** — files, code, or outputs produced
+
+### Lessons
+
+The AI learns explicit lessons from experience. Each lesson tracks:
+- The topic and context trigger
+- The strategy that worked (or didn't)
+- Success/failure history
+- Consecutive failure count (for strategy updates)
+
+---
+
+## Visualizations
+
+Mimir includes 8 interactive visualization modes, all accessible from the **Visualize** tab in the sidebar.
+
+### 🧠 Neural Memory Graph
+
+The default view. Shows all memories as nodes in a force-directed graph, connected by Yggdrasil edges. Node colors indicate source type (episodic, social, Huginn insight, Völva dream, flashbulb, cherished, anchor). Click any node to see the full memory content, emotion, importance, and when it was formed.
+
+<!-- ![Neural Memory Graph](docs/screenshots/graph.png) -->
+
+### 🗻 3D Neural Constellation
+
+An immersive 3D scatter plot where each memory is a glowing star. The axes map to Importance (x), Vividness (y), and Stability (z). Brighter stars are more important; node size reflects access count. Rotate, zoom, and hover to explore. Particle trails connect memories along the time axis.
+
+<!-- ![3D Constellation](docs/screenshots/constellation.png) -->
+
+### 😊 Mood Timeline
+
+A line chart tracking the AI's emotional state over the current session. Shows Pleasure, Arousal, and Dominance values over time, with mood labels annotated at each data point. Useful for seeing how a conversation's emotional arc evolved.
+
+<!-- ![Mood Timeline](docs/screenshots/mood-timeline.png) -->
+
+### ⚗️ Neurochemistry Timeline
+
+Tracks dopamine, serotonin, oxytocin, and cortisol levels over the session. Each neurotransmitter is plotted as a separate line. Watch how emotional conversations spike certain chemicals and how they decay between turns.
+
+<!-- ![Neurochemistry](docs/screenshots/chemistry.png) -->
+
+### 💎 Cherished Memories Wall
+
+A gallery of all memories you've marked as cherished (💎). These are the memories that matter most — protected from decay, always accessible, displayed as glowing cards with their emotion, importance, and timestamp.
+
+<!-- ![Cherished Wall](docs/screenshots/cherished.png) -->
+
+### 🤝 Relationship Strength
+
+Shows every social entity (person) the AI has memories about, with a computed **relationship strength score** (0-100) based on:
+- **Memory count** — how many memories involve this person
+- **Average importance** — how significant those memories are
+- **Emotional warmth** — average positive valence in interactions
+- **Recency** — how recently you mentioned them
+- **Consistency** — how regularly they appear over time
+
+Each entity is labeled: *distant*, *acquaintance*, *friend*, *good friend*, or *close confidant*.
+
+<!-- ![Relationships](docs/screenshots/relationships.png) -->
+
+### 🏷️ Topic Clusters
+
+Automatically groups memories by shared themes using word-overlap adjacency. Each cluster shows:
+- A computed **theme label** from top keywords
+- The **dominant emotion** across the cluster
+- Average importance
+- Time span
+- Individual memory previews
+
+Useful for seeing what topics dominate the AI's memory and how they're emotionally colored.
+
+<!-- ![Topic Clusters](docs/screenshots/clusters.png) -->
+
+### 🏚️ Memory Attic
+
+The Memory Attic has two sections:
+
+**Archived Memories** — memories that were pruned by Muninn during consolidation but preserved here instead of being permanently deleted. You can click **✨ Rediscover** to bring any archived memory back into active storage.
+
+**Dormant Memories** — memories still in active storage but fading (low vividness, rarely accessed, older than 7 days). Click **💡 Nudge** to boost their stability and prevent them from being pruned.
+
+<!-- ![Memory Attic](docs/screenshots/attic.png) -->
 
 ---
 
@@ -205,7 +382,20 @@ playground_data/
 ├── settings.json          ← Your settings (backend, model, API keys)
 ├── profiles/
 │   └── default/
-│       └── mimir_data/    ← Your AI's memory database
+│       └── mimir_data/
+│           ├── reflections.json    ← Episodic memories
+│           ├── social/             ← Per-entity social memories
+│           ├── lessons.json        ← Learned strategies
+│           ├── reminders.json      ← Timed reminders
+│           ├── facts.json          ← Short-term facts
+│           ├── chemistry.json      ← Neurochemistry state
+│           ├── meta.json           ← Mood, session count
+│           ├── mood_history.json   ← Persistent emotional trajectory
+│           ├── attic.json          ← Archived (pruned) memories
+│           ├── tasks.json          ← Task records
+│           ├── actions.json        ← Action log
+│           ├── solutions.json      ← Solution patterns
+│           └── inferred_edges.json ← Yggdrasil graph edges
 ├── characters/            ← Character files
 ├── conversations/         ← Multi-agent conversation history
 └── models/                ← Downloaded GGUF models (if any)
@@ -219,11 +409,31 @@ Nothing is synced anywhere. API keys are stored only in `settings.json` on your 
 
 | Preset | Best for | Memory style |
 |---|---|---|
-| **Companion** | Friendly, emotional conversations | High emotion weight, relationship-focused |
-| **Character** | Roleplay and immersive fiction | Maximum emotion weight, fully in-character |
-| **Agent** | Tasks, research, file work | Low emotion weight, tool-use enabled |
-| **Assistant** | General help and Q&A | Minimal emotional processing, practical |
+| **Companion** | Friendly, emotional conversations | High emotion weight, relationship-focused, neurochemistry active |
+| **Character** | Roleplay and immersive fiction | Maximum emotion weight, fully in-character, neurochemistry active |
+| **Agent** | Tasks, research, file work | Low emotion weight, tool-use enabled, task memory active |
+| **Assistant** | General help and Q&A | Minimal emotional processing, practical recall |
 | **Custom** | Whatever you want | Fully configurable |
+
+---
+
+## UI Features
+
+### Mood-Reactive Background
+
+The entire chat background subtly shifts color based on the AI's current emotional state. All 46 emotions have unique HSL color profiles. The color transitions smoothly with a 3% lerp per animation frame, taking roughly 2-3 conversational turns to fully shift.
+
+### Neurochemistry Sidebar
+
+When using character/companion presets, the sidebar shows real-time neurotransmitter levels as animated bars — dopamine, serotonin, oxytocin, and cortisol.
+
+### Rage Quit
+
+If the AI experiences 5 consecutive turns of negative emotion (sadness, anger, frustration, etc.), it will dramatically leave the conversation. This only activates with character presets that have chemistry enabled.
+
+### Auto Wake-Up
+
+Between sessions, the AI undergoes an automatic wake-up cycle that consolidates memories, runs Huginn/Muninn analysis, and generates a reflection on what happened while it was "asleep."
 
 ---
 
@@ -231,9 +441,12 @@ Nothing is synced anywhere. API keys are stored only in `settings.json` on your 
 
 - **Cherish** important memories so they never decay — use the 💎 button in the Memory browser
 - **Anchor** critical facts so they always surface — use the ⚓ button
-- Run **Sleep** (Memory → Sleep) to consolidate and tidy the memory database, same as how human sleep consolidates the day
+- Run **Sleep** (Memory → Sleep) to consolidate and tidy the memory database
 - Each **profile** is a completely separate memory space — useful for keeping different contexts isolated
 - In **Agent mode**, configure tool permissions to let the AI read files or search the web on your behalf
+- Check the **Memory Attic** periodically — you might find forgotten memories worth rediscovering
+- View **Relationships** to see how strong the AI's bonds are with different people
+- Browse **Topic Clusters** to see what themes dominate the AI's memory landscape
 
 ---
 
@@ -246,6 +459,29 @@ When using the **Agent** preset, Mimir can use sandboxed tools:
 - **Fetch page** — retrieve and strip HTML from URLs
 
 Configure which tools are enabled and which paths/domains are allowed under **Tools** in the sidebar.
+
+---
+
+## API Endpoints
+
+Mimir exposes a full REST API for all features. Key endpoints:
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/memory/stats` | GET | Memory statistics |
+| `/api/memory/recall` | POST | Recall memories by query |
+| `/api/memory/remember` | POST | Store a new memory |
+| `/api/memory/browse` | GET | Browse all memories with filters |
+| `/api/memory/graph` | GET | Full Yggdrasil graph data |
+| `/api/memory/relationships` | GET | Relationship strength scores |
+| `/api/memory/clusters` | GET | Auto-detected topic clusters |
+| `/api/memory/trajectory` | GET | Emotional trajectory analysis |
+| `/api/memory/dormant` | GET | Fading/dormant memories |
+| `/api/memory/attic` | GET | Archived (pruned) memories |
+| `/api/memory/rediscover` | POST | Recover or nudge a memory |
+| `/api/memory/sleep` | POST | Run consolidation cycle |
+| `/api/memory/mood` | GET | Current mood state |
+| `/api/memory/chemistry` | GET | Neurochemistry levels |
 
 ---
 
