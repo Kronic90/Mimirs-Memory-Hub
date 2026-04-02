@@ -100,9 +100,9 @@ def build_mimir_prompt(mimir: Mimir, preset_name: str, query: str) -> str:
     """Build the full system prompt as server.py would: preset suffix + memory context."""
     preset = PRESETS[preset_name]
 
-    # Recall relevant memories for this query
-    recalled = mimir.recall(query, limit=8)
-    context_block = mimir.get_context_block(recalled, query=query)
+    # Prime recall so get_context_block has relevant memories loaded
+    mimir.recall(query, limit=8)
+    context_block = mimir.get_context_block(conversation_context=query)
 
     parts = []
     parts.append(f"Your name is Mimir. You are helpful and thoughtful.")
@@ -842,17 +842,18 @@ def save_results(all_results: dict, all_responses: dict, outdir: Path):
 
 
 def main():
+    global MODEL_PATH
+
     parser = argparse.ArgumentParser(description="Mimir A/B Preset Evaluation")
     parser.add_argument("--preset", choices=list(PRESET_MAP.keys()),
                        help="Run only one preset (default: all)")
     parser.add_argument("--quick", action="store_true",
                        help="Run fewer scenarios per preset")
-    parser.add_argument("--model", type=str, default=MODEL_PATH,
+    parser.add_argument("--model", type=str, default=None,
                        help="Path to GGUF model file")
     args = parser.parse_args()
 
-    global MODEL_PATH
-    if args.model != MODEL_PATH:
+    if args.model:
         MODEL_PATH = args.model
 
     presets_to_run = [args.preset] if args.preset else list(PRESET_MAP.keys())

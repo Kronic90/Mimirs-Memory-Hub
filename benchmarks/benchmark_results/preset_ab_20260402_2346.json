@@ -1,0 +1,26 @@
+{
+  "companion": {
+    "vanilla_fact_recall": 0.75,
+    "mimir_fact_recall": 0.75,
+    "vanilla_emotion_ack": 0.6060606060606061,
+    "mimir_emotion_ack": 0.6515151515151515
+  },
+  "agent": {
+    "vanilla_tool_selection": 0.3333333333333333,
+    "mimir_tool_selection": 0.7222222222222222,
+    "vanilla_step_coverage": 0.7041666666666666,
+    "mimir_step_coverage": 0.8166666666666667
+  },
+  "character": {
+    "vanilla_persona_consistency": 0.4166666666666667,
+    "mimir_persona_consistency": 0.6666666666666666
+  },
+  "assistant": {
+    "vanilla_fact_recall": 0.8166666666666667,
+    "mimir_fact_recall": 0.8666666666666667,
+    "vanilla_conciseness": 1.0,
+    "mimir_conciseness": 1.0,
+    "vanilla_info_density": 0.7105654761904762,
+    "mimir_info_density": 0.526392489845303
+  }
+}
