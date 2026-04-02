@@ -241,3 +241,78 @@ def delete_local_model(models_dir: str, filename: str) -> bool:
         p.unlink()
         return True
     return False
+
+
+# ── mmproj / Vision projection file scanner ──────────────────────────
+
+_MMPROJ_KEYWORDS = {"mmproj", "clip-model", "clip_model", "vision-adapter",
+                     "visual-encoder", "vision-encoder", "projector",
+                     "vision_proj", "mm-projector"}
+
+
+def scan_for_mmproj(directories: list[str] | None = None,
+                    max_depth: int = 4) -> list[dict]:
+    """Scan directories for mmproj / CLIP projection GGUF files.
+
+    These are the vision projection files required by LLaVA-style models
+    (filenames typically contain 'mmproj' or 'clip').
+    """
+    scan_dirs = directories or _default_scan_dirs()
+    results: list[dict] = []
+    seen: set[str] = set()
+
+    for base_dir in scan_dirs:
+        base = Path(base_dir)
+        if not base.exists() or not base.is_dir():
+            continue
+        try:
+            _scan_mmproj_recursive(base, max_depth, 0, results, seen)
+        except PermissionError:
+            continue
+
+    results.sort(key=lambda x: x["filename"].lower())
+    return results
+
+
+def _scan_mmproj_recursive(current: Path, max_depth: int, depth: int,
+                           results: list[dict], seen: set[str]) -> None:
+    """Walk directory tree looking for mmproj/clip projection files."""
+    if depth > max_depth:
+        return
+    try:
+        entries = list(current.iterdir())
+    except (PermissionError, OSError):
+        return
+
+    for entry in entries:
+        name = entry.name
+        if name.startswith("$") or name.startswith("."):
+            continue
+        if entry.is_file() and entry.suffix.lower() == ".gguf":
+            name_lower = name.lower()
+            if any(kw in name_lower for kw in _MMPROJ_KEYWORDS):
+                resolved = str(entry.resolve())
+                if resolved not in seen:
+                    seen.add(resolved)
+                    try:
+                        size = entry.stat().st_size
+                    except OSError:
+                        size = 0
+                    results.append({
+                        "filename": name,
+                        "path": resolved,
+                        "size": size,
+                        "parent_dir": str(entry.parent),
+                    })
+        elif entry.is_dir():
+            skip = {"node_modules", "__pycache__", ".git", "venv", "env",
+                    "windows", "program files", "program files (x86)",
+                    "$recycle.bin", "system volume information",
+                    "anaconda3", "anaconda", "miniconda3", "conda",
+                    "site-packages", "lib", "libs",
+                    "bin", "etc", "share", "include", "scripts",
+                    "appdata", "programdata", "recovery",
+                    ".conda", ".npm", ".cargo", ".rustup",
+                    "python", "pipcache", "tmp"}
+            if name.lower() not in skip:
+                _scan_mmproj_recursive(entry, max_depth, depth + 1, results, seen)

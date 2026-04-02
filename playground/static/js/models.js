@@ -565,7 +565,50 @@ const ModelsPage = (() => {
                             backends: { local: { mmproj_path: mmProjInput.value.trim() } }
                         });
                         App.toast('mmproj path saved', 'success');
+                        App.loadVisionModels();
                     } catch { App.toast('Failed to save mmproj path', 'error'); }
+                });
+            }
+
+            // Scan for mmproj files button
+            const btnScanMmproj = document.getElementById('btn-scan-mmproj');
+            const mmProjResults = document.getElementById('mmproj-scan-results');
+            if (btnScanMmproj && mmProjResults) {
+                btnScanMmproj.addEventListener('click', async () => {
+                    btnScanMmproj.disabled = true;
+                    btnScanMmproj.textContent = '⏳ Scanning…';
+                    mmProjResults.innerHTML = '';
+                    try {
+                        const results = await App.api('/models/mmproj/scan');
+                        if (results && results.length > 0) {
+                            results.forEach(m => {
+                                const row = document.createElement('div');
+                                row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:4px;padding:4px 8px;background:var(--surface);border-radius:6px;font-size:0.85rem;';
+                                row.innerHTML = `
+                                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${m.path}">${m.filename}</span>
+                                    <span class="text-muted">${App.formatBytes(m.size)}</span>
+                                    <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.78rem;">Use</button>
+                                `;
+                                row.querySelector('button').addEventListener('click', () => {
+                                    const mmInput = document.getElementById('local-mmproj-path');
+                                    if (mmInput) mmInput.value = m.path;
+                                    App.apiPut('/settings', {
+                                        backends: { local: { mmproj_path: m.path } }
+                                    }).then(() => {
+                                        App.toast('mmproj set: ' + m.filename, 'success');
+                                        App.loadVisionModels();
+                                    });
+                                });
+                                mmProjResults.appendChild(row);
+                            });
+                        } else {
+                            mmProjResults.innerHTML = '<p class="text-muted" style="font-size:0.82rem;">No mmproj files found. Download one alongside your VL model.</p>';
+                        }
+                    } catch {
+                        mmProjResults.innerHTML = '<p style="color:var(--error);font-size:0.82rem;">Scan failed</p>';
+                    }
+                    btnScanMmproj.disabled = false;
+                    btnScanMmproj.textContent = '🔍 Scan';
                 });
             }
 

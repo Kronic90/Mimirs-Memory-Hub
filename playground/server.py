@@ -672,6 +672,150 @@ async def update_scan_dirs(request: Request):
     return JSONResponse({"ok": True, "directories": valid})
 
 
+# ── Vision / mmproj endpoints ─────────────────────────────────────────
+
+@app.get("/api/models/mmproj/scan")
+async def scan_mmproj():
+    """Scan for mmproj / CLIP projection files alongside GGUF models."""
+    custom_dirs = _cfg.get("scan_directories", [])
+    try:
+        all_dirs = model_manager._default_scan_dirs()
+        for d in custom_dirs:
+            if d not in all_dirs:
+                all_dirs.append(d)
+        results = await asyncio.to_thread(model_manager.scan_for_mmproj, all_dirs)
+        _cfg.update({"mmproj_cache": results})
+        return JSONResponse(results)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/models/mmproj/cache")
+async def mmproj_cache():
+    """Return cached mmproj scan results."""
+    cached = _cfg.get("mmproj_cache", [])
+    if not cached:
+        return JSONResponse([])
+    valid = [m for m in cached if Path(m.get("path", "")).is_file()]
+    if len(valid) != len(cached):
+        _cfg.update({"mmproj_cache": valid})
+    return JSONResponse(valid)
+
+
+@app.post("/api/models/mmproj/set")
+async def set_mmproj(request: Request):
+    """Set the active mmproj path for the local backend."""
+    body = await request.json()
+    path = body.get("path", "")
+    if path and not Path(path).is_file():
+        return JSONResponse({"error": "File not found"}, status_code=400)
+    _cfg.update({"backends": {"local": {"mmproj_path": path}}})
+    return JSONResponse({"ok": True, "path": path})
+
+
+@app.get("/api/vision/status")
+async def vision_status():
+    """Return current vision model status and capabilities."""
+    backend_name = _cfg.get("active_backend", "ollama")
+    model_id = _cfg.get("active_model", "")
+    mmproj = _cfg.get("backends", {}).get("local", {}).get("mmproj_path", "")
+    from playground.llm_backends import is_vl_model
+
+    status = {
+        "backend": backend_name,
+        "model": model_id,
+        "has_mmproj": bool(mmproj and Path(mmproj).is_file()),
+        "mmproj_path": mmproj,
+        "is_vl_model": is_vl_model(model_id) if model_id else False,
+        "vision_ready": False,
+        "fallback": "none",
+    }
+
+    # Check if vision is ready
+    if backend_name == "local":
+        status["vision_ready"] = status["is_vl_model"] and status["has_mmproj"]
+    elif backend_name in ("ollama", "openai", "anthropic", "google", "openrouter"):
+        # These backends handle vision natively for VL models
+        status["vision_ready"] = status["is_vl_model"]
+    # Check BLIP fallback availability
+    try:
+        from transformers import BlipProcessor
+        status["fallback"] = "blip"
+        if not status["vision_ready"]:
+            status["vision_ready"] = True
+            status["vision_mode"] = "blip_caption"
+    except ImportError:
+        status["fallback"] = "none"
+
+    return JSONResponse(status)
+
+
+@app.post("/api/vision/describe")
+async def vision_describe(request: Request):
+    """Describe an image using the active vision model or BLIP fallback."""
+    body = await request.json()
+    image_b64 = body.get("image_b64", "")
+    if not image_b64:
+        return JSONResponse({"error": "image_b64 required"}, status_code=400)
+
+    backend_name = _cfg.get("active_backend", "ollama")
+    model_id = _cfg.get("active_model", "")
+    from playground.llm_backends import is_vl_model
+
+    # Try native VL model first
+    if is_vl_model(model_id) if model_id else False:
+        try:
+            backend = create_backend(backend_name, _cfg.to_dict())
+            prompt = body.get("prompt", "Describe this image in detail.")
+            messages = [{"role": "user", "content": prompt}]
+            tokens = []
+            async for token in backend.generate(
+                messages=messages,
+                system_prompt="You are a helpful assistant that describes images accurately.",
+                model=model_id,
+                images=[image_b64],
+            ):
+                tokens.append(token)
+            return JSONResponse({"description": "".join(tokens), "method": "vl_model"})
+        except Exception as e:
+            pass  # Fall through to BLIP
+
+    # BLIP fallback
+    try:
+        description = await asyncio.to_thread(_blip_describe, image_b64)
+        return JSONResponse({"description": description, "method": "blip"})
+    except ImportError:
+        return JSONResponse({"error": "No vision model available. Set a VL model + mmproj, "
+                           "or install transformers for BLIP fallback: pip install transformers torch"},
+                          status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Vision failed: {e}"}, status_code=500)
+
+
+# ── BLIP fallback singleton ──────────────────────────────────────────
+_blip_model = None
+_blip_processor = None
+
+
+def _blip_describe(image_b64: str) -> str:
+    """Use BLIP to caption an image (CPU-friendly fallback)."""
+    global _blip_model, _blip_processor
+    import base64
+    import io
+    from PIL import Image
+
+    if _blip_model is None:
+        from transformers import BlipProcessor, BlipForConditionalGeneration
+        _blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        _blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+
+    image_bytes = base64.b64decode(image_b64)
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    inputs = _blip_processor(image, return_tensors="pt")
+    out = _blip_model.generate(**inputs, max_new_tokens=150)
+    return _blip_processor.decode(out[0], skip_special_tokens=True)
+
+
 @app.post("/api/models/hf/download")
 async def download_hf(request: Request):
     """Download a GGUF from HuggingFace."""
@@ -1784,6 +1928,28 @@ async def chat_ws(ws: WebSocket):
             backend_name = msg.get("backend") or _cfg.get("active_backend", "ollama")
             model_id = msg.get("model") or _cfg.get("active_model", "")
             preset_name = msg.get("preset") or _cfg.get("active_preset", "companion")
+
+            # Vision model from dropdown (mmproj path)
+            vision_mmproj = msg.get("vision_model", "") or _cfg.get("backends", {}).get("local", {}).get("mmproj_path", "")
+            if vision_mmproj and backend_name == "local":
+                _cfg.update({"backends": {"local": {"mmproj_path": vision_mmproj}}})
+
+            # BLIP fallback: if user attached an image but the model can't handle
+            # images natively, use BLIP to caption it and prepend to user text
+            if image_b64 and model_id:
+                from playground.llm_backends import is_vl_model
+                model_can_see = is_vl_model(model_id)
+                if backend_name == "local" and not vision_mmproj:
+                    model_can_see = False
+                if not model_can_see:
+                    try:
+                        blip_caption = await asyncio.to_thread(_blip_describe, image_b64)
+                        user_text = f"[User attached an image. BLIP caption: {blip_caption}]\n\n{user_text}"
+                        await ws.send_json({"type": "vision_fallback", "method": "blip",
+                                          "caption": blip_caption})
+                        image_b64 = ""  # Don't pass image to non-VL model
+                    except Exception:
+                        pass  # If BLIP unavailable, just send text without image
 
             # ── Active agent/character overrides global settings ───────────
             active_char_id = _cfg.get("active_character_id", "")

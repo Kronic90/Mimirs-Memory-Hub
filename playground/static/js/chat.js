@@ -493,6 +493,7 @@ const Chat = (() => {
             backend: App.state.backend,
             model: App.state.model,
             preset: App.state.preset,
+            vision_model: App.state.visionModel || document.getElementById('vision-model-select')?.value || '',
         };
         if (pendingImageB64) wsPayload.image = pendingImageB64;
         App.sendWS(wsPayload);
@@ -588,6 +589,10 @@ const Chat = (() => {
 
             case 'cleared':
                 App.toast('Conversation cleared', 'info');
+                break;
+
+            case 'vision_fallback':
+                App.toast('Image captioned via BLIP: ' + (msg.caption || '').slice(0, 80), 'info');
                 break;
 
             case 'show_image':

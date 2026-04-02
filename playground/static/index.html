@@ -121,6 +121,9 @@
                         <select id="model-select" class="header-select">
                             <option value="">Select model…</option>
                         </select>
+                        <select id="vision-model-select" class="header-select" title="Vision model (mmproj)" style="max-width:160px;">
+                            <option value="">No vision model</option>
+                        </select>
                     </div>
                     <div class="chat-header-right">
                         <button id="btn-history" class="btn-icon" title="Saved chats" onclick="App.navigate('conversations')">
@@ -279,10 +282,14 @@
                                     <input type="text" id="local-mmproj-path" class="input"
                                         placeholder="Path to .mmproj / clip model (e.g. D:\Models\llava-clip.gguf)">
                                     <button id="btn-save-mmproj" class="btn btn-secondary">Save</button>
+                                    <button id="btn-scan-mmproj" class="btn btn-secondary" title="Auto-scan for mmproj files">🔍 Scan</button>
                                 </div>
+                                <div id="mmproj-scan-results" style="margin-top:8px;"></div>
                                 <p class="text-muted" style="font-size:0.78rem;margin-top:6px;">
                                     VL models are detected automatically by filename keywords (llava, moondream, minicpm-v, …).  
                                     Set the matching mmproj file above to enable image input for those models.
+                                    The vision model dropdown in the chat header also auto-detects mmproj files.
+                                    If no VL model is set, <strong>BLIP</strong> auto-captioning is available as a fallback.
                                 </p>
                             </div>
                         </div>
@@ -792,6 +799,14 @@
                                     <option value="shell_exec">Shell Command</option>
                                     <option value="run_code">Run Code</option>
                                     <option value="json_parse">JSON Parse</option>
+                                    <option value="screenshot">Screenshot</option>
+                                    <option value="clipboard">Clipboard</option>
+                                    <option value="open_app">Open App</option>
+                                    <option value="system_info">System Info</option>
+                                    <option value="diff_files">Diff Files</option>
+                                    <option value="pdf_read">PDF Read</option>
+                                    <option value="csv_query">CSV Query</option>
+                                    <option value="regex_replace">Regex Replace</option>
                                 </select>
                             </div>
                             <button id="btn-test-tool" class="btn btn-secondary">Run Test</button>

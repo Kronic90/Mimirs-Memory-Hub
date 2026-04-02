@@ -161,6 +161,41 @@ const App = (() => {
         }
     }
 
+    // ── Load vision model (mmproj) dropdown ──────────────────────
+    async function loadVisionModels() {
+        const select = document.getElementById('vision-model-select');
+        if (!select) return;
+        const currentMmproj = state.settings?.backends?.local?.mmproj_path || '';
+        select.innerHTML = '<option value="">No vision model</option>';
+
+        // Add BLIP fallback option
+        select.innerHTML += '<option value="__blip__">🔄 BLIP (auto-caption)</option>';
+
+        try {
+            // Try cache first, then scan
+            let mmprojs = await api('/models/mmproj/cache');
+            if (!mmprojs || mmprojs.length === 0) {
+                mmprojs = await api('/models/mmproj/scan');
+            }
+            if (mmprojs && mmprojs.length > 0) {
+                mmprojs.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.path;
+                    opt.textContent = m.filename + ' (' + formatBytes(m.size) + ')';
+                    select.appendChild(opt);
+                });
+            }
+            // Select current mmproj if set
+            if (currentMmproj) {
+                select.value = currentMmproj;
+            }
+        } catch {
+            // Vision dropdown is optional, don't error
+        }
+        // Show/hide depending on backend
+        select.style.display = (state.backend === 'local') ? '' : '';
+    }
+
     // ── API cost warning helper ───────────────────────────────────
     // Always visible on the API tab — it's informational for all users
 
@@ -215,10 +250,22 @@ const App = (() => {
             state.model = '';  // Clear model when switching backends
             await apiPut('/settings', { active_backend: state.backend, active_model: '' });
             loadModels();
+            loadVisionModels();
         });
         document.getElementById('model-select').addEventListener('change', (e) => {
             state.model = e.target.value;
             apiPut('/settings', { active_model: state.model });
+        });
+        document.getElementById('vision-model-select').addEventListener('change', async (e) => {
+            const path = e.target.value;
+            if (path === '__blip__') {
+                state.visionModel = '__blip__';
+                // Clear mmproj, BLIP will be used as fallback
+                await apiPost('/models/mmproj/set', { path: '' });
+            } else {
+                state.visionModel = path;
+                await apiPost('/models/mmproj/set', { path });
+            }
         });
         document.getElementById('agent-select').addEventListener('change', async (e) => {
             const agentId = e.target.value;
@@ -245,6 +292,7 @@ const App = (() => {
         // Load settings & models
         await loadSettings();
         await loadModels();
+        await loadVisionModels();
 
         // Handle hash routing
         const hash = window.location.hash.replace('#', '') || 'chat';
@@ -256,5 +304,5 @@ const App = (() => {
 
     document.addEventListener('DOMContentLoaded', init);
 
-    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown };
+    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown, loadVisionModels };
 })();

@@ -33,6 +33,14 @@ def run_tool(tool_name: str, params: dict, permissions: dict) -> dict:
         "datetime": _tool_datetime,
         "weather": _tool_weather,
         "json_parse": _tool_json_parse,
+        "screenshot": _tool_screenshot,
+        "clipboard": _tool_clipboard,
+        "open_app": _tool_open_app,
+        "system_info": _tool_system_info,
+        "diff_files": _tool_diff_files,
+        "pdf_read": _tool_pdf_read,
+        "csv_query": _tool_csv_query,
+        "regex_replace": _tool_regex_replace,
     }
     runner = runners.get(tool_name)
     if not runner:
@@ -529,3 +537,309 @@ def _tool_json_parse(params: dict, permissions: dict) -> dict:
         else:
             return {"error": f"Cannot navigate into {type(current).__name__} at '{part}'"}
     return {"path": path, "value": current}
+
+
+# ── Screenshot tool ───────────────────────────────────────────────────
+
+def _tool_screenshot(params: dict, permissions: dict) -> dict:
+    """Take a screenshot of the screen (or a region) and return as base64 PNG."""
+    if not permissions.get("code_execution"):
+        return {"error": "Code execution not enabled. Enable it in Tools settings."}
+    try:
+        from PIL import ImageGrab
+    except ImportError:
+        return {"error": "Pillow not installed. Run: pip install Pillow"}
+    import base64
+    import io
+    region = params.get("region")  # optional [left, top, right, bottom]
+    try:
+        if region and isinstance(region, list) and len(region) == 4:
+            img = ImageGrab.grab(bbox=tuple(region))
+        else:
+            img = ImageGrab.grab()
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return {"image_base64": b64, "width": img.width, "height": img.height,
+                "format": "png", "size_bytes": buf.tell()}
+    except Exception as e:
+        return {"error": f"Screenshot failed: {e}"}
+
+
+# ── Clipboard tool ────────────────────────────────────────────────────
+
+def _tool_clipboard(params: dict, permissions: dict) -> dict:
+    """Read or write the system clipboard."""
+    if not permissions.get("code_execution"):
+        return {"error": "Code execution not enabled. Enable it in Tools settings."}
+    action = params.get("action", "read")
+    if action == "read":
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return {"content": result.stdout.rstrip("\r\n"), "ok": True}
+        except Exception as e:
+            return {"error": f"Clipboard read failed: {e}"}
+    elif action == "write":
+        text = params.get("text", "")
+        if not text:
+            return {"error": "text parameter required for write action"}
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"Set-Clipboard -Value {json.dumps(text)}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return {"ok": True, "wrote_chars": len(text)}
+        except Exception as e:
+            return {"error": f"Clipboard write failed: {e}"}
+    else:
+        return {"error": f"Unknown action: {action}. Use 'read' or 'write'."}
+
+
+# ── Open Application tool ────────────────────────────────────────────
+
+def _tool_open_app(params: dict, permissions: dict) -> dict:
+    """Open an application or file with the system default handler."""
+    if not permissions.get("code_execution"):
+        return {"error": "Code execution not enabled. Enable it in Tools settings."}
+    target = params.get("target", "")
+    if not target:
+        return {"error": "target parameter required (app name, exe path, or file path)"}
+    # Block dangerous targets
+    target_lower = target.lower()
+    blocked = ["cmd /c", "powershell -", "del ", "rm ", "format ", "rd ", "rmdir "]
+    for b in blocked:
+        if b in target_lower:
+            return {"error": f"Blocked: '{b}' pattern in target"}
+    try:
+        if sys.platform == "win32":
+            os.startfile(target)
+        else:
+            opener = "xdg-open" if sys.platform == "linux" else "open"
+            subprocess.Popen([opener, target])
+        return {"ok": True, "opened": target}
+    except Exception as e:
+        return {"error": f"Failed to open: {e}"}
+
+
+# ── System Info tool ──────────────────────────────────────────────────
+
+def _tool_system_info(params: dict, permissions: dict) -> dict:
+    """Get system information (OS, CPU, RAM, disk, etc.)."""
+    import platform
+    info: dict = {
+        "os": platform.system(),
+        "os_version": platform.version(),
+        "os_release": platform.release(),
+        "architecture": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+        "hostname": platform.node(),
+    }
+    # Memory info (cross-platform)
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage("/") if sys.platform != "win32" else shutil.disk_usage("C:\\")
+        info["disk_c"] = {
+            "total_gb": round(total / (1024**3), 1),
+            "used_gb": round(used / (1024**3), 1),
+            "free_gb": round(free / (1024**3), 1),
+        }
+    except Exception:
+        pass
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["wmic", "OS", "get", "TotalVisibleMemorySize,FreePhysicalMemory", "/value"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in result.stdout.strip().split("\n"):
+                line = line.strip()
+                if line.startswith("TotalVisibleMemorySize="):
+                    info["ram_total_gb"] = round(int(line.split("=")[1]) / (1024**2), 1)
+                elif line.startswith("FreePhysicalMemory="):
+                    info["ram_free_gb"] = round(int(line.split("=")[1]) / (1024**2), 1)
+    except Exception:
+        pass
+    return info
+
+
+# ── Diff Files tool ──────────────────────────────────────────────────
+
+def _tool_diff_files(params: dict, permissions: dict) -> dict:
+    """Compare two files or two text strings and return a unified diff."""
+    if not permissions.get("file_access"):
+        return {"error": "File access not enabled. Enable it in Tools settings."}
+    import difflib
+    # Support file paths or inline text
+    file_a = params.get("file_a", "")
+    file_b = params.get("file_b", "")
+    text_a = params.get("text_a", "")
+    text_b = params.get("text_b", "")
+    label_a = "a"
+    label_b = "b"
+    if file_a and file_b:
+        err = _check_path_allowed(file_a, permissions)
+        if err:
+            return {"error": err}
+        err = _check_path_allowed(file_b, permissions)
+        if err:
+            return {"error": err}
+        pa, pb = Path(file_a), Path(file_b)
+        if not pa.is_file():
+            return {"error": f"File not found: {file_a}"}
+        if not pb.is_file():
+            return {"error": f"File not found: {file_b}"}
+        text_a = pa.read_text(encoding="utf-8", errors="replace")
+        text_b = pb.read_text(encoding="utf-8", errors="replace")
+        label_a = str(pa.name)
+        label_b = str(pb.name)
+    elif not text_a and not text_b:
+        return {"error": "Provide file_a+file_b or text_a+text_b parameters"}
+    lines_a = text_a.splitlines(keepends=True)
+    lines_b = text_b.splitlines(keepends=True)
+    diff = list(difflib.unified_diff(lines_a, lines_b, fromfile=label_a, tofile=label_b, lineterm=""))
+    if not diff:
+        return {"identical": True, "diff": ""}
+    return {"identical": False, "diff": "\n".join(diff)[:10000]}
+
+
+# ── PDF Read tool ─────────────────────────────────────────────────────
+
+def _tool_pdf_read(params: dict, permissions: dict) -> dict:
+    """Read text content from a PDF file."""
+    if not permissions.get("file_access"):
+        return {"error": "File access not enabled. Enable it in Tools settings."}
+    filepath = params.get("path", "")
+    if not filepath:
+        return {"error": "path parameter required"}
+    err = _check_path_allowed(filepath, permissions)
+    if err:
+        return {"error": err}
+    p = Path(filepath)
+    if not p.is_file():
+        return {"error": f"File not found: {filepath}"}
+    if not p.suffix.lower() == ".pdf":
+        return {"error": "Not a PDF file"}
+    # Try multiple PDF libraries
+    try:
+        import fitz  # PyMuPDF — fast and reliable
+        doc = fitz.open(filepath)
+        pages = []
+        max_pages = int(params.get("max_pages", 50))
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            pages.append(page.get_text())
+        doc.close()
+        text = "\n\n---\n\n".join(pages)
+        return {"path": filepath, "pages": min(len(pages), max_pages),
+                "total_pages": len(doc) if hasattr(doc, '__len__') else len(pages),
+                "content": text[:20000], "truncated": len(text) > 20000}
+    except ImportError:
+        pass
+    # Fallback: pypdf
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(filepath)
+        pages = []
+        max_pages = int(params.get("max_pages", 50))
+        for i, page in enumerate(reader.pages):
+            if i >= max_pages:
+                break
+            pages.append(page.extract_text() or "")
+        text = "\n\n---\n\n".join(pages)
+        return {"path": filepath, "pages": len(pages),
+                "total_pages": len(reader.pages),
+                "content": text[:20000], "truncated": len(text) > 20000}
+    except ImportError:
+        return {"error": "No PDF library found. Install: pip install PyMuPDF  or  pip install pypdf"}
+
+
+# ── CSV Query tool ────────────────────────────────────────────────────
+
+def _tool_csv_query(params: dict, permissions: dict) -> dict:
+    """Read and query CSV/TSV files — filter rows, get stats, or preview data."""
+    if not permissions.get("file_access"):
+        return {"error": "File access not enabled. Enable it in Tools settings."}
+    filepath = params.get("path", "")
+    if not filepath:
+        return {"error": "path parameter required"}
+    err = _check_path_allowed(filepath, permissions)
+    if err:
+        return {"error": err}
+    p = Path(filepath)
+    if not p.is_file():
+        return {"error": f"File not found: {filepath}"}
+    import csv
+    delimiter = params.get("delimiter", "," if p.suffix.lower() == ".csv" else "\t")
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            reader = csv.DictReader(f, delimiter=delimiter)
+            rows = []
+            for i, row in enumerate(reader):
+                if i >= 1000:  # limit rows read
+                    break
+                rows.append(dict(row))
+        if not rows:
+            return {"path": filepath, "rows": 0, "columns": [], "data": []}
+        columns = list(rows[0].keys())
+        # Apply filter if provided
+        filter_col = params.get("filter_column", "")
+        filter_val = params.get("filter_value", "")
+        if filter_col and filter_val:
+            rows = [r for r in rows if filter_val.lower() in str(r.get(filter_col, "")).lower()]
+        # Sort if requested
+        sort_by = params.get("sort_by", "")
+        if sort_by and sort_by in columns:
+            rows.sort(key=lambda r: r.get(sort_by, ""))
+        # Limit output
+        max_rows = int(params.get("max_rows", 50))
+        return {
+            "path": filepath, "total_rows": len(rows),
+            "columns": columns,
+            "data": rows[:max_rows],
+            "truncated": len(rows) > max_rows,
+        }
+    except Exception as e:
+        return {"error": f"CSV read failed: {e}"}
+
+
+# ── Regex Replace tool ────────────────────────────────────────────────
+
+def _tool_regex_replace(params: dict, permissions: dict) -> dict:
+    """Apply regex find-and-replace on text or a file."""
+    import re
+    pattern = params.get("pattern", "")
+    replacement = params.get("replacement", "")
+    if not pattern:
+        return {"error": "pattern parameter required"}
+    try:
+        regex = re.compile(pattern)
+    except re.error as e:
+        return {"error": f"Invalid regex: {e}"}
+    # If file path given, read+replace+write
+    filepath = params.get("path", "")
+    if filepath:
+        if not permissions.get("file_access"):
+            return {"error": "File access not enabled."}
+        err = _check_path_allowed(filepath, permissions)
+        if err:
+            return {"error": err}
+        p = Path(filepath)
+        if not p.is_file():
+            return {"error": f"File not found: {filepath}"}
+        text = p.read_text(encoding="utf-8", errors="replace")
+        result, count = regex.subn(replacement, text)
+        if count > 0:
+            p.write_text(result, encoding="utf-8")
+        return {"path": filepath, "replacements": count, "ok": True}
+    # Inline text mode
+    text = params.get("text", "")
+    if not text:
+        return {"error": "path or text parameter required"}
+    result, count = regex.subn(replacement, text)
+    return {"result": result[:10000], "replacements": count, "truncated": len(result) > 10000}
