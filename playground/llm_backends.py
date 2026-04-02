@@ -400,8 +400,8 @@ class LocalGGUFBackend(LLMBackend):
             import pathlib
             if pathlib.Path(mmproj).is_file():
                 kwargs["clip_model_path"] = mmproj
-                # Use llava-1-5 chat format for LLaVA-style VL models
-                kwargs["chat_format"] = "llava-1-5"
+                # Let llama-cpp-python auto-detect the right chat format
+                # based on the model's metadata (chatml, llama-3, etc.)
 
         LocalGGUFBackend._llm = Llama(**kwargs)
         LocalGGUFBackend._loaded_path = model_path
