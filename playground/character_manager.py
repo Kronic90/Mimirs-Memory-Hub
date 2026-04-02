@@ -60,6 +60,8 @@ class CharacterManager:
             "voice_prompt": kwargs.get("voice_prompt", ""),
             "preset_type": kwargs.get("preset_type", "companion"),
             "model": kwargs.get("model", ""),
+            "backend": kwargs.get("backend", ""),
+            "tts_voice": kwargs.get("tts_voice", ""),
             "alternate_greetings": kwargs.get("alternate_greetings", []),
             "_created": int(__import__("time").time()),
             "_source": "manual",

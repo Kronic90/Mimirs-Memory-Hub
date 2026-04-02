@@ -629,6 +629,33 @@ async def local_models():
     return JSONResponse(model_manager.list_local_models(models_dir))
 
 
+@app.get("/api/models/for-backend/{backend_name}")
+async def models_for_backend(backend_name: str):
+    """List models available for a specific backend (used by agent editor)."""
+    backends_cfg = _cfg.to_dict().get("backends", {})
+    try:
+        if backend_name == "local":
+            models_dir = str(_cfg.profile_dir.parent.parent / "models")
+            downloaded = model_manager.list_local_models(models_dir)
+            # Also include scan cache
+            cached = _cfg.get("scan_cache", [])
+            seen = {m["path"] for m in downloaded}
+            for c in cached:
+                if c.get("path") not in seen and Path(c.get("path", "")).is_file():
+                    downloaded.append(c)
+                    seen.add(c["path"])
+            models = [{"id": m.get("path", ""), "name": m.get("filename", m.get("name", ""))}
+                      for m in downloaded]
+            return JSONResponse({"backend": backend_name, "models": models})
+        else:
+            backend = create_backend(backend_name, _cfg.to_dict())
+            models = await backend.list_models()
+            return JSONResponse({"backend": backend_name, "models": models})
+    except Exception as e:
+        return JSONResponse({"backend": backend_name, "models": [],
+                             "error": str(e)}, status_code=200)
+
+
 @app.get("/api/models/scan")
 async def scan_models():
     """Scan local drives for GGUF files."""
@@ -1739,6 +1766,37 @@ async def tts_voices():
     return JSONResponse({"voices": EDGE_VOICES})
 
 
+@app.post("/api/tts/preview")
+async def tts_preview(request: Request):
+    """Generate a short TTS preview for a given voice. Returns base64 audio."""
+    body = await request.json()
+    voice_id = body.get("voice", "en-US-JennyNeural")
+    text = body.get("text", "Hello! This is a preview of my voice. How do I sound?")
+    # Limit text length for previews
+    text = text[:200]
+    try:
+        import edge_tts, io as _io
+        async def _produce() -> bytes:
+            comm = edge_tts.Communicate(text, voice_id)
+            buf = _io.BytesIO()
+            async for chunk in comm.stream():
+                if chunk["type"] == "audio":
+                    buf.write(chunk["data"])
+            return buf.getvalue()
+        audio = await _produce()
+        if not audio:
+            return JSONResponse({"error": "No audio generated"}, status_code=500)
+        import base64 as _b64
+        return JSONResponse({
+            "audio_b64": _b64.b64encode(audio).decode(),
+            "format": "mp3",
+        })
+    except ImportError:
+        return JSONResponse({"error": "edge-tts not installed"}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/stt/status")
 async def stt_status():
     """Check STT readiness and dependency status."""
@@ -1931,12 +1989,18 @@ async def chat_ws(ws: WebSocket):
 
             # Vision model from dropdown (mmproj path)
             vision_mmproj = msg.get("vision_model", "") or _cfg.get("backends", {}).get("local", {}).get("mmproj_path", "")
+            if vision_mmproj == "__blip__":
+                vision_mmproj = ""  # BLIP is a fallback, not a real mmproj
             if vision_mmproj and backend_name == "local":
                 _cfg.update({"backends": {"local": {"mmproj_path": vision_mmproj}}})
 
             # BLIP fallback: if user attached an image but the model can't handle
-            # images natively, use BLIP to caption it and prepend to user text
-            if image_b64 and model_id:
+            # images natively, use BLIP to caption it and prepend to user text.
+            # API backends (openai, anthropic, google, openrouter, vllm, custom,
+            # openai_compat) pass images natively — skip BLIP for them.
+            _API_BACKENDS = {"openai", "anthropic", "google", "openrouter",
+                             "vllm", "custom", "openai_compat"}
+            if image_b64 and model_id and backend_name not in _API_BACKENDS:
                 from playground.llm_backends import is_vl_model
                 model_can_see = is_vl_model(model_id)
                 if backend_name == "local" and not vision_mmproj:
@@ -2511,12 +2575,20 @@ async def chat_ws(ws: WebSocket):
                 tts = _ensure_tts()
                 if tts.enabled and clean_response.strip():
                     voice_prompt = active_char.get("voice_prompt", "") if active_char else ""
+                    # Per-agent Edge TTS voice override
+                    agent_tts_voice = active_char.get("tts_voice", "") if active_char else ""
+                    saved_voice = getattr(tts, 'voice', None)
+                    if agent_tts_voice and saved_voice:
+                        tts.voice = agent_tts_voice
 
-                    async def _send_tts(resp_text: str, vp: str, _ws: WebSocket):
+                    async def _send_tts(resp_text: str, vp: str, _ws: WebSocket, _restore_voice=saved_voice, _tts=tts):
                         try:
                             audio = await asyncio.get_event_loop().run_in_executor(
-                                None, tts.generate_audio, resp_text, vp
+                                None, _tts.generate_audio, resp_text, vp
                             )
+                            # Restore global voice after generation
+                            if _restore_voice and hasattr(_tts, 'voice'):
+                                _tts.voice = _restore_voice
                             if audio:
                                 import base64 as _b64
                                 # Edge TTS returns MP3, Maya returns WAV
@@ -2653,9 +2725,14 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
 
                     system_prompt = "\n\n".join(parts)
 
-                    # Get backend for this agent (or default)
-                    backend_name = agent.get("backend", _cfg.get("active_backend", "ollama"))
-                    model_id = agent.get("model", _cfg.get("active_model", ""))
+                    # Get backend/model for this agent.
+                    # Priority: participant override → character data → global default
+                    backend_name = (agent.get("backend")
+                                    or (char.get("backend") if char else "")
+                                    or _cfg.get("active_backend", "ollama"))
+                    model_id = (agent.get("model")
+                                or (char.get("model") if char else "")
+                                or _cfg.get("active_model", ""))
 
                     backend = create_backend(backend_name, _cfg.to_dict())
                     llm_params = _cfg.get("llm_params", {})

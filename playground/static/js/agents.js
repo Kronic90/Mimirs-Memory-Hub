@@ -98,6 +98,8 @@ const AgentsPage = (() => {
     function buildEditorHTML(agent) {
         const isActive = agent.id === activeId;
         const pt = agent.preset_type || 'companion';
+        const ab = agent.backend || '';
+        const tv = agent.tts_voice || '';
         return `
 <div class="agent-editor-form">
   <div class="agent-editor-header">
@@ -121,8 +123,31 @@ const AgentsPage = (() => {
       </select>
     </div>
     <div class="form-group" style="flex:1">
-      <label>Model Override <span class="label-hint">— leave empty to use global</span></label>
-      <input type="text" id="ae-model" class="input input-sm" value="${esc(agent.model)}" placeholder="(use global model)">
+      <label>Backend <span class="label-hint">— leave empty to use global</span></label>
+      <select id="ae-backend" class="input input-sm">
+        <option value="" ${!ab?'selected':''}>🌐 Use Global Default</option>
+        <option value="ollama" ${ab==='ollama'?'selected':''}>🦙 Ollama</option>
+        <option value="local" ${ab==='local'?'selected':''}>💾 Local GGUF</option>
+        <option value="openai" ${ab==='openai'?'selected':''}>🤖 OpenAI</option>
+        <option value="anthropic" ${ab==='anthropic'?'selected':''}>🧠 Anthropic</option>
+        <option value="google" ${ab==='google'?'selected':''}>🔮 Google</option>
+        <option value="openrouter" ${ab==='openrouter'?'selected':''}>🔀 OpenRouter</option>
+        <option value="vllm" ${ab==='vllm'?'selected':''}>⚡ vLLM</option>
+        <option value="custom" ${ab==='custom'?'selected':''}>⚙️ Custom</option>
+        <option value="openai_compat" ${ab==='openai_compat'?'selected':''}>🔌 OpenAI Compatible</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group" style="flex:1">
+      <label>Model <span class="label-hint">— select from available models</span></label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select id="ae-model" class="input input-sm" style="flex:1;">
+          <option value="">Loading models…</option>
+        </select>
+        <button id="btn-ae-refresh-models" class="btn btn-secondary btn-sm" title="Refresh model list" style="padding:4px 8px;min-width:auto;">🔄</button>
+      </div>
     </div>
   </div>
 
@@ -142,6 +167,18 @@ const AgentsPage = (() => {
     <label>System Prompt</label>
     <textarea id="ae-system-prompt" class="input textarea" rows="4"
       placeholder="Custom instructions prepended to every turn…">${esc(agent.system_prompt)}</textarea>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group" style="flex:1">
+      <label>TTS Voice <span class="label-hint">— Edge TTS speaker</span></label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select id="ae-tts-voice" class="input input-sm" style="flex:1;">
+          <option value="">Use global voice</option>
+        </select>
+        <button id="btn-ae-test-voice" class="btn btn-secondary btn-sm" title="Preview this voice" style="padding:4px 8px;min-width:auto;">🔊</button>
+      </div>
+    </div>
   </div>
 
   <div class="form-group">
@@ -167,12 +204,118 @@ const AgentsPage = (() => {
     }
 
     function bindEditorEvents(agentId) {
+        const agent = agents.find(a => a.id === agentId) || {};
         document.getElementById('btn-agent-save').addEventListener('click', () => save(agentId));
         document.getElementById('btn-agent-delete').addEventListener('click', () => del(agentId));
         document.getElementById('btn-agent-activate').addEventListener('click', () => {
             if (agentId === activeId) deactivate();
             else activate(agentId);
         });
+
+        // ── Backend change → reload models ───────────────────────────
+        const backendSel = document.getElementById('ae-backend');
+        backendSel.addEventListener('change', () => loadModelsForAgent(agent));
+        document.getElementById('btn-ae-refresh-models').addEventListener('click', () => loadModelsForAgent(agent));
+
+        // ── Load TTS voices ──────────────────────────────────────────
+        loadTTSVoices(agent);
+        document.getElementById('btn-ae-test-voice').addEventListener('click', () => testVoice());
+
+        // ── Load models for current backend ──────────────────────────
+        loadModelsForAgent(agent);
+    }
+
+    // ── Load models for the selected backend ─────────────────────────
+    async function loadModelsForAgent(agent) {
+        const select = document.getElementById('ae-model');
+        const backendSel = document.getElementById('ae-backend');
+        const backendName = backendSel.value || '';
+        const queryBackend = backendName || App.state.backend || 'ollama';
+
+        select.innerHTML = '<option value="">Loading…</option>';
+        try {
+            const data = await App.api('/models/for-backend/' + encodeURIComponent(queryBackend));
+            select.innerHTML = '<option value="">(use global model)</option>';
+            if (data.models && data.models.length > 0) {
+                data.models.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.id;
+                    opt.textContent = m.name || m.id;
+                    select.appendChild(opt);
+                });
+            }
+            // Select the agent's current model if it exists
+            if (agent.model) {
+                let found = false;
+                for (const opt of select.options) {
+                    if (opt.value === agent.model) { found = true; break; }
+                }
+                if (!found && agent.model) {
+                    // Model not in list — add it manually
+                    const opt = document.createElement('option');
+                    opt.value = agent.model;
+                    opt.textContent = agent.model.split(/[\\/]/).pop() || agent.model;
+                    select.appendChild(opt);
+                }
+                select.value = agent.model;
+            }
+        } catch {
+            select.innerHTML = '<option value="">(use global model)</option>';
+        }
+    }
+
+    // ── Load TTS voices ──────────────────────────────────────────────
+    async function loadTTSVoices(agent) {
+        const select = document.getElementById('ae-tts-voice');
+        if (!select) return;
+        try {
+            const data = await App.api('/tts/voices');
+            select.innerHTML = '<option value="">Use global voice</option>';
+            if (data.voices) {
+                for (const [label, id] of Object.entries(data.voices)) {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = label;
+                    select.appendChild(opt);
+                }
+            }
+            if (agent.tts_voice) {
+                select.value = agent.tts_voice;
+            }
+        } catch {
+            select.innerHTML = '<option value="">Voices unavailable</option>';
+        }
+    }
+
+    // ── Test voice preview ───────────────────────────────────────────
+    let _previewAudio = null;
+    async function testVoice() {
+        const voiceId = document.getElementById('ae-tts-voice').value;
+        if (!voiceId) {
+            App.toast('Select a voice first', 'info');
+            return;
+        }
+        const btn = document.getElementById('btn-ae-test-voice');
+        const origText = btn.textContent;
+        btn.textContent = '⏳';
+        btn.disabled = true;
+        try {
+            const agentName = document.getElementById('ae-name').value || 'Agent';
+            const res = await App.apiPost('/tts/preview', {
+                voice: voiceId,
+                text: `Hello! My name is ${agentName}. This is how I sound when I speak to you.`,
+            });
+            if (res.audio_b64) {
+                if (_previewAudio) { _previewAudio.pause(); _previewAudio = null; }
+                _previewAudio = new Audio('data:audio/mp3;base64,' + res.audio_b64);
+                _previewAudio.play();
+            }
+        } catch (e) {
+            App.toast('Preview failed: ' + (e.message || e), 'error');
+        } finally {
+            btn.textContent = origText;
+            btn.disabled = false;
+        }
     }
 
     // ── Save ──────────────────────────────────────────────────────────────
@@ -186,6 +329,8 @@ const AgentsPage = (() => {
             greeting:      document.getElementById('ae-greeting').value,
             preset_type:   document.getElementById('ae-preset-type').value,
             model:         document.getElementById('ae-model').value.trim(),
+            backend:       document.getElementById('ae-backend').value,
+            tts_voice:     document.getElementById('ae-tts-voice').value,
         };
         if (!updates.name) { App.toast('Name cannot be empty', 'error'); return; }
         try {

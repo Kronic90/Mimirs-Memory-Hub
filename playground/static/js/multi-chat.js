@@ -426,9 +426,12 @@ const MultiChatPage = (() => {
         }
 
         try {
+            const firstAgent = { type: 'agent', name: chars[0].name, character_id: chars[0].id };
+            if (chars[0].model) firstAgent.model = chars[0].model;
+            if (chars[0].backend) firstAgent.backend = chars[0].backend;
             const participants = [
                 { type: 'user', name: 'You' },
-                { type: 'agent', name: chars[0].name, character_id: chars[0].id },
+                firstAgent,
             ];
 
             const data = await App.api('/multi-conversations', {
@@ -569,7 +572,11 @@ const MultiChatPage = (() => {
         });
 
         async function addAgentToConv(char) {
-            currentConv.participants.push({ type: 'agent', name: char.name, character_id: char.id });
+            const participant = { type: 'agent', name: char.name, character_id: char.id };
+            // Include per-agent model/backend if set on the character
+            if (char.model) participant.model = char.model;
+            if (char.backend) participant.backend = char.backend;
+            currentConv.participants.push(participant);
             currentAgents = currentConv.participants.filter(p => p.type !== 'user');
             getAgentColor(char.name);
 
