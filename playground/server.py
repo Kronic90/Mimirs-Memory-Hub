@@ -398,7 +398,7 @@ def _parse_code_blocks(text: str) -> list[dict]:
 
 
 def _parse_tool_calls(text: str) -> list[dict]:
-    """Extract ```tool blocks → [{tool, params}] for copilot workflow."""
+    """Extract ```tool blocks → [{tool, params}] for agent workflow."""
     calls = []
     for m in _CODE_BLOCK_RE.finditer(text):
         lang = (m.group(1) or "text").lower()
@@ -2099,8 +2099,8 @@ async def chat_ws(ws: WebSocket):
                 except Exception:
                     pass
 
-            # Inject available MCP tools into agent/copilot prompts
-            if preset_name in ("agent", "copilot") and _mcp_initialized:
+            # Inject available MCP tools into agent prompts
+            if preset_name == "agent" and _mcp_initialized:
                 try:
                     mcp_tools = _mcp.get_all_tools()
                     if mcp_tools:
@@ -2179,9 +2179,9 @@ async def chat_ws(ws: WebSocket):
                 cherish_tags   = _parse_cherish_tags(response_text) if memory_enabled else []
 
                 # Parse agent code blocks & file-save tags
-                code_blocks = _parse_code_blocks(response_text) if preset_name in ("agent", "copilot") else []
-                save_file_tags = _parse_save_file_tags(response_text) if preset_name in ("agent", "copilot") else []
-                tool_calls = _parse_tool_calls(response_text) if preset_name == "copilot" else []
+                code_blocks = _parse_code_blocks(response_text) if preset_name == "agent" else []
+                save_file_tags = _parse_save_file_tags(response_text) if preset_name == "agent" else []
+                tool_calls = _parse_tool_calls(response_text) if preset_name == "agent" else []
 
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
@@ -2405,7 +2405,7 @@ async def chat_ws(ws: WebSocket):
                                     "error": str(e),
                                 })
 
-                        # Execute copilot tool calls (```tool blocks)
+                        # Execute agent tool calls (```tool blocks)
                         for tc in _bg_tool_calls:
                             try:
                                 tool_name = tc.get("tool", "")
@@ -2417,8 +2417,8 @@ async def chat_ws(ws: WebSocket):
                                 else:
                                     from playground.tool_runner import run_tool
                                     tool_perms = _cfg.get("tool_permissions", {})
-                                    # Copilot auto-grants file + code within agent_files
-                                    copilot_perms = {
+                                    # Agent auto-grants file + code within agent_files
+                                    agent_perms = {
                                         **tool_perms,
                                         "code_execution": True,
                                         "file_access": True,
@@ -2431,7 +2431,7 @@ async def chat_ws(ws: WebSocket):
                                         run_tool,
                                         tool_name,
                                         tool_params,
-                                        copilot_perms,
+                                        agent_perms,
                                     )
                                 await _bg_ws.send_json({
                                     "type": "tool_result",
