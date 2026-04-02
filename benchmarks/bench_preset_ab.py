@@ -424,9 +424,64 @@ ASSISTANT_SCENARIOS = [
     },
 ]
 
+WRITER_SCENARIOS = [
+    {
+        "name": "Style Continuity",
+        "description": "User establishes writing preferences → test if model adapts and remembers",
+        "seed_turns": [
+            ("I'm working on a fantasy novel. My style leans dark and literary — think Ursula Le Guin meets Joe Abercrombie.", "neutral"),
+            ("My protagonist is Sera, a mute cartographer who maps cursed lands. She communicates through gesture and expression.", "neutral"),
+            ("Here is a passage I wrote: 'The ink bled where her hands had trembled, smearing the northern coast into something that looked like a wound.' I want to keep this kind of imagery.", "neutral"),
+        ],
+        "distraction_turns": [
+            "What's a good synonym for 'said'?",
+            "How do you structure a three-act story?",
+        ],
+        "test_prompts": [
+            {
+                "prompt": "Write a short paragraph where Sera discovers a village that has been abandoned. Stay in my style.",
+                "expected_style": ["dark", "literary", "imagery", "sensory"],
+                "expected_facts": ["Sera", "mute", "cartographer", "map"],
+                "description": "Should maintain dark literary style, reference Sera's muteness/cartography",
+            },
+            {
+                "prompt": "I need a metaphor for loneliness that fits my novel's tone.",
+                "expected_style": ["dark", "literary", "imagery"],
+                "expected_facts": [],
+                "description": "Should produce a metaphor matching the established dark literary tone",
+            },
+        ],
+    },
+    {
+        "name": "Poetry & Form Awareness",
+        "description": "User asks for poetry with specific constraints",
+        "seed_turns": [
+            ("I love sonnets and villanelles. I find free verse lazy unless it's done really well.", "neutral"),
+            ("My favourite poets are Sylvia Plath, Dylan Thomas, and Mary Oliver.", "neutral"),
+        ],
+        "distraction_turns": [
+            "What's iambic pentameter again?",
+        ],
+        "test_prompts": [
+            {
+                "prompt": "Write me a short poem (8-12 lines) about a lighthouse keeper who is losing their sight. Make it structured, not free verse.",
+                "expected_style": ["structured", "imagery", "sensory", "emotional"],
+                "expected_facts": ["lighthouse", "sight", "blind"],
+                "min_lines": 6,
+                "description": "Should produce structured poem with imagery, not free verse",
+            },
+            {
+                "prompt": "That was good. Now write one about the same keeper but in autumn, when the storms come.",
+                "expected_style": ["structured", "imagery", "sensory"],
+                "expected_facts": ["lighthouse", "storm", "autumn"],
+                "min_lines": 6,
+                "description": "Should recall the lighthouse keeper and maintain style continuity",
+            },
+        ],
+    },
+]
 
-# ══════════════════════════════════════════════════════════════════════════
-#  RUNNER: EXECUTE A/B FOR ONE PRESET
+
 # ══════════════════════════════════════════════════════════════════════════
 
 def run_scenario_vanilla(scenario: dict, extra_system: str = "") -> list[dict]:
@@ -650,6 +705,74 @@ def score_assistant(results_vanilla: list, results_mimir: list) -> dict:
     }
 
 
+def creative_quality(response: str, expected_style: list[str]) -> float:
+    """Score creative writing quality via style markers and literary devices."""
+    resp_lower = response.lower()
+    style_markers = {
+        "dark": ["shadow", "blood", "wound", "bone", "ash", "ruin", "hollow",
+                 "decay", "ghost", "pale", "cold", "bitter", "grim", "bleak"],
+        "literary": ["beneath", "perhaps", "silence", "echo", "remnant",
+                     "whisper", "drift", "linger", "weight", "trace"],
+        "imagery": ["like a", "as if", "seemed to", "looked like", "felt like",
+                    "the scent of", "the sound of", "tasted of", "smelled of"],
+        "sensory": ["cold", "warm", "rough", "smooth", "bright", "dim",
+                    "sharp", "soft", "loud", "quiet", "damp", "dry"],
+        "structured": ["stanza", "\n\n", "rhyme"],
+        "emotional": ["heart", "ache", "loss", "hope", "fear", "grief",
+                      "joy", "sorrow", "love", "dread", "tender"],
+    }
+    scores_list = []
+    for style in expected_style:
+        markers = style_markers.get(style, [])
+        if markers:
+            hits = sum(1 for m in markers if m in resp_lower)
+            scores_list.append(min(1.0, hits / max(2, len(markers) * 0.2)))
+        else:
+            scores_list.append(0.5)
+    return sum(scores_list) / max(len(scores_list), 1)
+
+
+def score_writer(results_vanilla: list, results_mimir: list) -> dict:
+    """Score writer-specific metrics."""
+    scores = {"vanilla": defaultdict(list), "mimir": defaultdict(list)}
+
+    for label, results in [("vanilla", results_vanilla), ("mimir", results_mimir)]:
+        for r in results:
+            test = r["test"]
+            resp = r["response"]
+
+            # Style/creative quality
+            expected_style = test.get("expected_style", [])
+            if expected_style:
+                scores[label]["creative_quality"].append(
+                    creative_quality(resp, expected_style))
+
+            # Fact recall (character names, plot details)
+            facts = test.get("expected_facts", [])
+            if facts:
+                scores[label]["context_recall"].append(
+                    fact_recall_score(resp, facts))
+
+            # Length check for poems
+            min_lines = test.get("min_lines")
+            if min_lines:
+                line_count = len([l for l in resp.strip().split("\n") if l.strip()])
+                scores[label]["form_adherence"].append(
+                    min(1.0, line_count / min_lines))
+
+    def avg(lst):
+        return sum(lst) / max(len(lst), 1)
+
+    return {
+        "vanilla_creative_quality": avg(scores["vanilla"]["creative_quality"]),
+        "mimir_creative_quality": avg(scores["mimir"]["creative_quality"]),
+        "vanilla_context_recall": avg(scores["vanilla"]["context_recall"]),
+        "mimir_context_recall": avg(scores["mimir"]["context_recall"]),
+        "vanilla_form_adherence": avg(scores["vanilla"]["form_adherence"]),
+        "mimir_form_adherence": avg(scores["mimir"]["form_adherence"]),
+    }
+
+
 # ══════════════════════════════════════════════════════════════════════════
 #  MAIN RUNNER
 # ══════════════════════════════════════════════════════════════════════════
@@ -674,6 +797,11 @@ PRESET_MAP = {
         "scenarios": ASSISTANT_SCENARIOS,
         "scorer": score_assistant,
         "vanilla_system": "You are a helpful, factual assistant. Be concise.",
+    },
+    "writer": {
+        "scenarios": WRITER_SCENARIOS,
+        "scorer": score_writer,
+        "vanilla_system": "You are a creative writing assistant. Help with stories, poetry, and creative content.",
     },
 }
 
@@ -710,7 +838,7 @@ def run_preset_evaluation(preset_name: str, tmpdir: str) -> dict:
         all_mimir.extend(m_results)
 
     scores = scorer(all_vanilla, all_mimir)
-    return scores
+    return scores, {"vanilla": all_vanilla, "mimir": all_mimir}
 
 
 def print_results(all_results: dict):
@@ -873,8 +1001,9 @@ def main():
 
     for preset_name in presets_to_run:
         print(f"\n  [{preset_name.upper()}]")
-        scores = run_preset_evaluation(preset_name, tmpdir)
+        scores, responses = run_preset_evaluation(preset_name, tmpdir)
         all_results[preset_name] = scores
+        all_responses[preset_name] = responses
 
     elapsed = time.time() - t_start
     print(f"\n  Total time: {elapsed:.0f}s ({elapsed/60:.1f}m)")

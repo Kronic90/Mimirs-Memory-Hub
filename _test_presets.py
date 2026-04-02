@@ -1,6 +1,6 @@
 """Preset evaluation script for Mimir's Memory Hub.
 
-Tests that each preset (companion, agent, character, assistant, custom) produces
+Tests that each preset (companion, agent, character, writer, assistant, custom) produces
 behaviour appropriate for its role by checking system-prompt construction, memory
 tag generation, and response tone across a small set of role-specific scenarios.
 
@@ -76,6 +76,19 @@ def test_character_full_roleplay():
     print("[PASS] Character preset is fully immersive")
 
 
+def test_writer_creative():
+    """Writer preset must enable creativity with emotional memory."""
+    from playground.presets import PRESETS
+    p = PRESETS["writer"]
+    assert p["emotion_weight"] >= 0.4, f"Writer emotion_weight too low: {p['emotion_weight']}"
+    assert p["chemistry"] is True, "Writer should enable chemistry for creative energy"
+    assert p["task_priority"] is False
+    suffix = p["system_prompt_suffix"].lower()
+    assert "creative" in suffix or "writing" in suffix, "Writer prompt lacks creative language"
+    assert "style" in suffix or "imagery" in suffix, "Writer prompt lacks style guidance"
+    print("[PASS] Writer preset is creatively tuned")
+
+
 def test_assistant_neutral():
     """Assistant preset must be factual, low emotion."""
     from playground.presets import PRESETS
@@ -83,6 +96,8 @@ def test_assistant_neutral():
     assert p["emotion_weight"] <= 0.2
     assert p["task_priority"] is True
     assert p["chemistry"] is False
+    suffix = p["system_prompt_suffix"].lower()
+    assert "concise" in suffix, "Assistant prompt should emphasise conciseness"
     print("[PASS] Assistant preset is neutral/factual")
 
 
@@ -103,7 +118,7 @@ def test_memory_format_differentiation():
     emotional_keywords = ["emotion", "cherish", "anchor", "social impression"]
     task_keywords = ["task", "goal", "solution", "lesson"]
 
-    for name in ("companion", "character"):
+    for name in ("companion", "character", "writer"):
         suffix = PRESETS[name]["system_prompt_suffix"].lower()
         found = [k for k in emotional_keywords if k in suffix]
         assert len(found) >= 2, f"{name} missing emotional memory keywords (found: {found})"
@@ -121,12 +136,14 @@ def test_ui_has_no_copilot_option():
     with open("playground/static/index.html", "r", encoding="utf-8") as f:
         html = f.read()
     assert "copilot" not in html.lower().split("<!--")[0], "index.html still has copilot option"
+    assert "writer" in html.lower(), "index.html missing writer preset option"
 
     with open("playground/static/js/agents.js", "r", encoding="utf-8") as f:
         js = f.read()
     assert "copilot" not in js.lower(), "agents.js still has copilot option"
+    assert "writer" in js.lower(), "agents.js missing writer preset option"
 
-    print("[PASS] UI dropdowns have no copilot option")
+    print("[PASS] UI dropdowns have no copilot, has writer")
 
 
 # ── Live API tests (optional, requires running server) ───────────────────────
@@ -162,6 +179,7 @@ def main():
         test_agent_has_tools,
         test_companion_emotional,
         test_character_full_roleplay,
+        test_writer_creative,
         test_assistant_neutral,
         test_agent_task_focused,
         test_memory_format_differentiation,

@@ -505,8 +505,8 @@ class MemoryManager:
                             f"  Solution: {s.solution[:120]}")
                     extra_parts.append("")
 
-        # Character: add extra emotional depth
-        if preset_label == "character":
+        # Character / Writer: add extra emotional depth
+        if preset_label in ("character", "writer"):
             # Surface cherished memories via reflect_on_cherished
             try:
                 cherished = self._mimir.reflect_on_cherished()
