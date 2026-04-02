@@ -734,6 +734,47 @@
                         </div>
                         <button id="btn-save-tools" class="btn btn-primary" style="margin-top:16px;">Save Tool Permissions</button>
                     </div>
+
+                    <!-- MCP Servers -->
+                    <div class="settings-section">
+                        <h3>🔌 MCP Servers</h3>
+                        <p class="text-muted" style="margin-bottom:12px;">
+                            Connect external tool servers via <a href="https://modelcontextprotocol.io" target="_blank" style="color:var(--accent);">Model Context Protocol</a>.
+                            Agents can use tools from any connected MCP server.
+                        </p>
+                        <div id="mcp-server-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+                        <div class="form-row" style="gap:8px;align-items:flex-end;">
+                            <div class="form-group" style="flex:1;">
+                                <label>Server Name</label>
+                                <input type="text" id="mcp-server-name" class="input" placeholder="my-tools">
+                            </div>
+                            <div class="form-group" style="flex:1;">
+                                <label>Transport</label>
+                                <select id="mcp-transport" class="input">
+                                    <option value="stdio">stdio (local process)</option>
+                                    <option value="sse">SSE (remote HTTP)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="mcp-stdio-fields">
+                            <div class="form-group">
+                                <label>Command</label>
+                                <input type="text" id="mcp-command" class="input" placeholder="npx -y @modelcontextprotocol/server-filesystem">
+                            </div>
+                            <div class="form-group">
+                                <label>Arguments (comma-separated)</label>
+                                <input type="text" id="mcp-args" class="input" placeholder="/path/to/allowed/dir">
+                            </div>
+                        </div>
+                        <div id="mcp-sse-fields" style="display:none;">
+                            <div class="form-group">
+                                <label>Server URL</label>
+                                <input type="text" id="mcp-url" class="input" placeholder="http://localhost:3001">
+                            </div>
+                        </div>
+                        <button id="btn-add-mcp" class="btn btn-primary" style="margin-top:8px;">Add MCP Server</button>
+                    </div>
+
                     <div class="settings-section">
                         <h3>🧪 Test a Tool</h3>
                         <div class="form-row">
@@ -743,9 +784,14 @@
                                     <option value="weather">Weather</option>
                                     <option value="web_search">Web Search</option>
                                     <option value="fetch_page">Fetch Page</option>
+                                    <option value="http_request">HTTP Request</option>
                                     <option value="read_file">Read File</option>
                                     <option value="list_directory">List Directory</option>
+                                    <option value="search_files">Search Files</option>
+                                    <option value="grep_files">Grep Files</option>
+                                    <option value="shell_exec">Shell Command</option>
                                     <option value="run_code">Run Code</option>
+                                    <option value="json_parse">JSON Parse</option>
                                 </select>
                             </div>
                             <button id="btn-test-tool" class="btn btn-secondary">Run Test</button>

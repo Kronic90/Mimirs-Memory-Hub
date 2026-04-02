@@ -27,9 +27,12 @@ def run_tool(tool_name: str, params: dict, permissions: dict) -> dict:
         "grep_files": _tool_grep_files,
         "web_search": _tool_web_search,
         "fetch_page": _tool_fetch_page,
+        "http_request": _tool_http_request,
+        "shell_exec": _tool_shell_exec,
         "run_code": _tool_run_code,
         "datetime": _tool_datetime,
         "weather": _tool_weather,
+        "json_parse": _tool_json_parse,
     }
     runner = runners.get(tool_name)
     if not runner:
@@ -258,26 +261,56 @@ def _tool_fetch_page(params: dict, permissions: dict) -> dict:
     if err:
         return {"error": err}
     try:
-        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
-            resp = client.get(url, headers={"User-Agent": "MimirsWell/1.0"})
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            resp = client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; MimirsWell/1.0)"})
             resp.raise_for_status()
             text = resp.text
-            # Strip HTML, return text content (max 5000 chars)
-            clean = ""
-            in_tag = False
-            for ch in text:
-                if ch == "<":
-                    in_tag = True
-                elif ch == ">":
-                    in_tag = False
-                elif not in_tag:
-                    clean += ch
+            # Try proper HTML parsing first
+            try:
+                from html.parser import HTMLParser
+                class _TextExtractor(HTMLParser):
+                    def __init__(self):
+                        super().__init__()
+                        self.parts = []
+                        self._skip = False
+                        self._skip_tags = {'script', 'style', 'noscript', 'svg', 'head'}
+                    def handle_starttag(self, tag, attrs):
+                        if tag in self._skip_tags:
+                            self._skip = True
+                        if tag in ('p', 'br', 'div', 'h1', 'h2', 'h3', 'h4', 'li', 'tr'):
+                            self.parts.append('\n')
+                    def handle_endtag(self, tag):
+                        if tag in self._skip_tags:
+                            self._skip = False
+                    def handle_data(self, data):
+                        if not self._skip:
+                            self.parts.append(data)
+                parser = _TextExtractor()
+                parser.feed(text)
+                clean = ''.join(parser.parts)
+            except Exception:
+                # Fallback: strip tags manually
+                clean = ""
+                in_tag = False
+                for ch in text:
+                    if ch == "<": in_tag = True
+                    elif ch == ">": in_tag = False
+                    elif not in_tag: clean += ch
             # Collapse whitespace
             import re
-            clean = re.sub(r"\s+", " ", clean).strip()
-            return {"url": url, "content": clean[:5000], "truncated": len(clean) > 5000}
+            clean = re.sub(r"[ \t]+", " ", clean)
+            clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+            max_len = int(params.get("max_length", 8000))
+            return {"url": url, "title": _extract_title(text), "content": clean[:max_len], "truncated": len(clean) > max_len}
     except Exception as e:
         return {"error": f"Fetch failed: {e}"}
+
+
+def _extract_title(html: str) -> str:
+    """Extract <title> from HTML."""
+    import re
+    m = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+    return m.group(1).strip() if m else ""
 
 
 # ── Code execution ───────────────────────────────────────────────────
@@ -373,3 +406,126 @@ def _tool_weather(params: dict, permissions: dict) -> dict:
             }
     except Exception as e:
         return {"error": f"Weather lookup failed: {e}"}
+
+
+# ── HTTP request tool ─────────────────────────────────────────────────
+
+def _tool_http_request(params: dict, permissions: dict) -> dict:
+    """Make arbitrary HTTP requests (GET, POST, PUT, DELETE, PATCH)."""
+    if not permissions.get("web_search"):
+        return {"error": "Web access not enabled. Enable it in Tools settings."}
+    url = params.get("url", "")
+    method = params.get("method", "GET").upper()
+    if not url:
+        return {"error": "url parameter required"}
+    if method not in ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"):
+        return {"error": f"Unsupported method: {method}"}
+    err = _check_site_allowed(url, permissions)
+    if err:
+        return {"error": err}
+    headers = params.get("headers", {})
+    body = params.get("body")
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            req_kwargs = {"headers": {**headers, "User-Agent": "MimirsWell/1.0"}}
+            if body and method in ("POST", "PUT", "PATCH"):
+                if isinstance(body, dict):
+                    req_kwargs["json"] = body
+                else:
+                    req_kwargs["content"] = str(body)
+            resp = client.request(method, url, **req_kwargs)
+            # Try to parse as JSON
+            try:
+                resp_body = resp.json()
+            except Exception:
+                resp_body = resp.text[:8000]
+            return {
+                "status_code": resp.status_code,
+                "headers": dict(resp.headers),
+                "body": resp_body,
+                "url": str(resp.url),
+            }
+    except Exception as e:
+        return {"error": f"Request failed: {e}"}
+
+
+# ── Shell execution tool ──────────────────────────────────────────────
+
+def _tool_shell_exec(params: dict, permissions: dict) -> dict:
+    """Execute a shell command (requires code_execution permission)."""
+    if not permissions.get("code_execution"):
+        return {"error": "Code execution not enabled. Enable it in Tools settings."}
+    command = params.get("command", "")
+    if not command:
+        return {"error": "command parameter required"}
+    if len(command) > 2000:
+        return {"error": "Command too long (>2000 chars)"}
+    # Block dangerous commands
+    cmd_lower = command.lower().strip()
+    blocked_prefixes = ["rm -rf /", "format ", "del /s /q c:\\", "rd /s /q c:\\",
+                        "mkfs", "dd if=", ":(){ :|:& };:"]
+    for bp in blocked_prefixes:
+        if cmd_lower.startswith(bp):
+            return {"error": f"Blocked: dangerous command pattern '{bp}'"}
+    cwd = params.get("cwd")
+    if cwd:
+        err = _check_path_allowed(cwd, permissions)
+        if err:
+            return {"error": err}
+    timeout_s = min(int(params.get("timeout", 30)), 60)
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            cwd=cwd or None,
+        )
+        return {
+            "stdout": result.stdout[:8000],
+            "stderr": result.stderr[:4000],
+            "exit_code": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {"error": f"Command timed out ({timeout_s}s limit)"}
+    except Exception as e:
+        return {"error": f"Execution failed: {e}"}
+
+
+# ── JSON parse/query tool ─────────────────────────────────────────────
+
+def _tool_json_parse(params: dict, permissions: dict) -> dict:
+    """Parse JSON text and optionally extract a value by dot-path."""
+    text = params.get("text", "")
+    path = params.get("path", "")
+    if not text:
+        return {"error": "text parameter required"}
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON: {e}"}
+    if not path:
+        # Return structure summary if large
+        s = json.dumps(data, indent=2)
+        if len(s) > 8000:
+            return {"parsed": True, "type": type(data).__name__,
+                    "preview": s[:8000], "truncated": True}
+        return {"data": data}
+    # Navigate dot-path (supports array indices like "items.0.name")
+    parts = path.split(".")
+    current = data
+    for part in parts:
+        if isinstance(current, dict):
+            if part not in current:
+                return {"error": f"Key not found: '{part}' in path '{path}'"}
+            current = current[part]
+        elif isinstance(current, list):
+            try:
+                idx = int(part)
+                current = current[idx]
+            except (ValueError, IndexError):
+                return {"error": f"Invalid array index: '{part}' in path '{path}'"}
+        else:
+            return {"error": f"Cannot navigate into {type(current).__name__} at '{part}'"}
+    return {"path": path, "value": current}

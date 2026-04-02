@@ -47,6 +47,7 @@ _DEFAULT: dict[str, Any] = {
         "device": "auto",
     },
     "scan_directories": [],
+    "mcp_servers": {},
 }
 
 _CFG_DIR = Path(__file__).resolve().parent.parent / "playground_data"

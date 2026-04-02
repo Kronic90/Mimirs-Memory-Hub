@@ -16,6 +16,7 @@ const MultiChatPage = (() => {
 
     // All messages stored for tab/column rebuilding
     let allMessages = [];               // [{speaker, content, id}]
+    let pendingAgents = 0;              // Track how many agents are still responding
 
     // Unique color palette for agents
     const AGENT_COLORS = [
@@ -55,7 +56,17 @@ const MultiChatPage = (() => {
 
         currentWs.onclose = () => {
             console.log('Multi-chat WS closed');
+            const closedConvId = currentConv?.id;
             currentWs = null;
+            // Auto-reconnect if conversation is still active
+            if (closedConvId && currentConv?.id === closedConvId) {
+                setTimeout(() => {
+                    if (currentConv?.id === closedConvId && !currentWs) {
+                        console.log('Multi-chat WS reconnecting...');
+                        connectWebSocket(closedConvId);
+                    }
+                }, 2000);
+            }
         };
     }
 
@@ -66,6 +77,7 @@ const MultiChatPage = (() => {
         }
         currentWs.send(JSON.stringify({ type: 'message', content }));
         isStreaming = true;
+        pendingAgents = 0; // Reset — server will send agent responses
     }
 
     // ── Message Routing (view-mode aware) ────────────────────────
@@ -83,6 +95,11 @@ const MultiChatPage = (() => {
         }
         else if (type === 'agent_done') {
             finalizeAgent(msg.speaker);
+            // Don't re-enable input yet — wait for round_done
+        }
+        else if (type === 'round_done') {
+            isStreaming = false;
+            enableInput();
         }
         else if (type === 'error') {
             App.toast(`${msg.speaker || 'Error'}: ${msg.message}`, 'error');
@@ -198,8 +215,8 @@ const MultiChatPage = (() => {
         }
 
         if (content) allMessages.push({ id: Date.now(), speaker, content });
-        isStreaming = false;
-        enableInput();
+        // Don't set isStreaming=false or enableInput here;
+        // wait for round_done from server
     }
 
     // ── Message Element Factory ───────────────────────────────────
@@ -509,14 +526,49 @@ const MultiChatPage = (() => {
         addAgentBtn.addEventListener('click', async () => {
             const chars = await loadCharacters();
             if (!chars.length) { App.toast('No characters — create one first', 'info'); return; }
+            if (!currentConv) return;
 
-            const names = chars.map(c => c.name).join('\n');
-            const selected = prompt(`Select character to add:\n${names}`);
-            if (!selected || !currentConv) return;
+            // Build a proper picker dialog instead of prompt()
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+            const dialog = document.createElement('div');
+            dialog.style.cssText = 'background:var(--bg-secondary,#1e1e2e);border-radius:12px;padding:24px;min-width:320px;max-width:480px;max-height:70vh;overflow-y:auto;color:var(--text-primary,#cdd6f4);';
+            dialog.innerHTML = `
+                <h3 style="margin:0 0 16px;">Add Agent to Conversation</h3>
+                <div style="display:flex;flex-direction:column;gap:8px;" id="agent-picker-list"></div>
+                <div style="margin-top:16px;text-align:right;">
+                    <button id="agent-picker-cancel" class="btn btn-secondary" style="padding:6px 16px;">Cancel</button>
+                </div>
+            `;
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
 
-            const char = chars.find(c => c.name === selected);
-            if (!char) { App.toast('Character not found', 'error'); return; }
+            const list = dialog.querySelector('#agent-picker-list');
+            // Filter out agents already in the conversation
+            const existingIds = new Set(currentConv.participants.filter(p => p.character_id).map(p => p.character_id));
+            const available = chars.filter(c => !existingIds.has(c.id));
 
+            if (!available.length) {
+                list.innerHTML = '<p style="opacity:0.6;">All characters are already in this conversation.</p>';
+            } else {
+                available.forEach(c => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn';
+                    btn.style.cssText = 'text-align:left;padding:10px 14px;background:var(--bg-primary,#181825);border:1px solid var(--border,#45475a);border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:2px;';
+                    btn.innerHTML = `<strong>${escapeHtml(c.name)}</strong>${c.description ? `<span style="font-size:0.85em;opacity:0.7;">${escapeHtml(c.description.slice(0,80))}</span>` : ''}`;
+                    btn.addEventListener('click', () => {
+                        document.body.removeChild(overlay);
+                        addAgentToConv(c);
+                    });
+                    list.appendChild(btn);
+                });
+            }
+
+            dialog.querySelector('#agent-picker-cancel').addEventListener('click', () => document.body.removeChild(overlay));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) document.body.removeChild(overlay); });
+        });
+
+        async function addAgentToConv(char) {
             currentConv.participants.push({ type: 'agent', name: char.name, character_id: char.id });
             currentAgents = currentConv.participants.filter(p => p.type !== 'user');
             getAgentColor(char.name);
@@ -534,7 +586,7 @@ const MultiChatPage = (() => {
             } catch (e) {
                 App.toast('Save failed: ' + e.message, 'error');
             }
-        });
+        }
 
         // View mode toggle
         document.querySelectorAll('.view-btn').forEach(btn => {

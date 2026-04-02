@@ -29,6 +29,7 @@ from playground.character_manager import CharacterManager
 from playground.conversation_manager import ConversationManager
 from playground.tts_backend import create_tts, EDGE_VOICES
 from playground.stt_backend import WhisperSTTBackend
+from playground.mcp_client import MCPManager
 
 # ── App ───────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ _NEGATIVE_MOODS = {
 _RAGE_QUIT_THRESHOLD = 5
 _characters = CharacterManager()
 _conversations = ConversationManager()
+_mcp = MCPManager()
 
 # History for visualizations (persisted to disk)
 _mood_history: list[dict] = []
@@ -100,6 +102,24 @@ def _save_viz_history():
 
 
 _load_viz_history()
+
+
+# Initialize MCP servers from config (async, run in background on first request)
+_mcp_initialized = False
+
+@app.on_event("startup")
+async def _startup_mcp():
+    global _mcp_initialized
+    try:
+        mcp_servers = _cfg.get("mcp_servers", {})
+        if mcp_servers:
+            await _mcp.load_from_config(mcp_servers)
+        _mcp_initialized = True
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("MCP startup error: %s", e)
+        _mcp_initialized = True
+
 
 # ── Remember-tag parsing ──────────────────────────────────────────────
 
@@ -788,6 +808,11 @@ async def execute_tool(request: Request):
     tool_name = body.get("tool", "")
     params = body.get("params", {})
     perms = _cfg.get("tool_permissions", {})
+
+    # Route MCP tools to the MCP manager
+    if tool_name.startswith("mcp_"):
+        result = await _mcp.call_tool(tool_name, params)
+        return JSONResponse(result)
 
     from playground.tool_runner import run_tool
     result = await asyncio.to_thread(run_tool, tool_name, params, perms)
@@ -1844,6 +1869,28 @@ async def chat_ws(ws: WebSocket):
                 except Exception:
                     pass
 
+            # Inject available MCP tools into agent/copilot prompts
+            if preset_name in ("agent", "copilot") and _mcp_initialized:
+                try:
+                    mcp_tools = _mcp.get_all_tools()
+                    if mcp_tools:
+                        tool_lines = []
+                        for t in mcp_tools:
+                            desc = t.get("description", "No description")
+                            schema = t.get("input_schema", {})
+                            props = schema.get("properties", {})
+                            param_str = ", ".join(f'"{k}"' for k in props) if props else "none"
+                            tool_lines.append(f"- **{t['name']}**: {desc} (params: {param_str})")
+                        parts.append(
+                            "## MCP External Tools\n"
+                            "The following external tools are available via MCP servers:\n"
+                            + "\n".join(tool_lines) + "\n"
+                            "Use them the same way as built-in tools:\n"
+                            "```tool\n{\"tool\": \"mcp_servername_toolname\", \"params\": {...}}\n```"
+                        )
+                except Exception:
+                    pass
+
             system_prompt = "\n\n".join(parts) if parts else ""
 
             # Add user message
@@ -2131,27 +2178,34 @@ async def chat_ws(ws: WebSocket):
                         # Execute copilot tool calls (```tool blocks)
                         for tc in _bg_tool_calls:
                             try:
-                                from playground.tool_runner import run_tool
-                                tool_perms = _cfg.get("tool_permissions", {})
-                                # Copilot auto-grants file + code within agent_files
-                                copilot_perms = {
-                                    **tool_perms,
-                                    "code_execution": True,
-                                    "file_access": True,
-                                    "web_search": tool_perms.get("web_search", False),
-                                    "allowed_paths": list(set(
-                                        tool_perms.get("allowed_paths", []) + [str(agent_dir)]
-                                    )),
-                                }
-                                result = await asyncio.to_thread(
-                                    run_tool,
-                                    tc.get("tool", ""),
-                                    tc.get("params", {}),
-                                    copilot_perms,
-                                )
+                                tool_name = tc.get("tool", "")
+                                tool_params = tc.get("params", {})
+
+                                # Route MCP tools to MCP manager
+                                if tool_name.startswith("mcp_"):
+                                    result = await _mcp.call_tool(tool_name, tool_params)
+                                else:
+                                    from playground.tool_runner import run_tool
+                                    tool_perms = _cfg.get("tool_permissions", {})
+                                    # Copilot auto-grants file + code within agent_files
+                                    copilot_perms = {
+                                        **tool_perms,
+                                        "code_execution": True,
+                                        "file_access": True,
+                                        "web_search": tool_perms.get("web_search", False),
+                                        "allowed_paths": list(set(
+                                            tool_perms.get("allowed_paths", []) + [str(agent_dir)]
+                                        )),
+                                    }
+                                    result = await asyncio.to_thread(
+                                        run_tool,
+                                        tool_name,
+                                        tool_params,
+                                        copilot_perms,
+                                    )
                                 await _bg_ws.send_json({
                                     "type": "tool_result",
-                                    "tool": tc.get("tool", ""),
+                                    "tool": tool_name,
                                     "result": result,
                                 })
                             except Exception as e:
@@ -2358,7 +2412,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
 
     # Convert saved messages to chat format
     chat_history = [
-        {"role": msg.get("speaker", "user").lower() if msg.get("speaker") != "You" else "user",
+        {"role": "user" if msg.get("speaker") == "You" else "assistant",
          "content": msg.get("content", "")}
         for msg in messages
     ]
@@ -2478,6 +2532,9 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             "message": str(e),
                         })
 
+                # Signal that all agents have finished this round
+                await ws.send_json({"type": "round_done"})
+
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -2485,6 +2542,103 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
             await ws.send_json({"type": "error", "message": str(e)})
         except:
             pass
+
+
+# -- MCP Server Management -----------------------------------------
+
+@app.get("/api/mcp/servers")
+async def mcp_list_servers():
+    """List configured MCP servers and their status."""
+    configured = _cfg.get("mcp_servers", {})
+    status = _mcp.status()
+    status_map = {s["name"]: s for s in status}
+    servers = []
+    for name, cfg in configured.items():
+        st = status_map.get(name, {})
+        servers.append({
+            "name": name,
+            "transport": cfg.get("transport", "stdio"),
+            "enabled": cfg.get("enabled", True),
+            "connected": st.get("connected", False),
+            "tools": st.get("tool_names", []),
+            "tool_count": st.get("tools", 0),
+            "config": {k: v for k, v in cfg.items() if k not in ("api_key", "headers")},
+        })
+    return JSONResponse({"servers": servers})
+
+
+@app.post("/api/mcp/servers")
+async def mcp_add_server(request: Request):
+    """Add or update an MCP server configuration."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    config = {
+        "transport": body.get("transport", "stdio"),
+        "enabled": body.get("enabled", True),
+    }
+    if config["transport"] == "stdio":
+        config["command"] = body.get("command", "")
+        config["args"] = body.get("args", [])
+        config["env"] = body.get("env", {})
+    elif config["transport"] == "sse":
+        config["url"] = body.get("url", "")
+        config["headers"] = body.get("headers", {})
+
+    servers = _cfg.get("mcp_servers", {})
+    servers[name] = config
+    _cfg.set("mcp_servers", servers)
+
+    # Connect the new server
+    await _mcp.load_from_config(servers)
+    return JSONResponse({"ok": True, "name": name})
+
+
+@app.delete("/api/mcp/servers/{name}")
+async def mcp_remove_server(name: str):
+    """Remove an MCP server."""
+    servers = _cfg.get("mcp_servers", {})
+    if name in servers:
+        del servers[name]
+        _cfg.set("mcp_servers", servers)
+        await _mcp.load_from_config(servers)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/mcp/servers/{name}/reconnect")
+async def mcp_reconnect_server(name: str):
+    """Reconnect a specific MCP server."""
+    servers = _cfg.get("mcp_servers", {})
+    if name not in servers:
+        return JSONResponse({"error": "Server not found"}, status_code=404)
+    # Force reconnect by removing and re-adding
+    if name in _mcp.servers:
+        await _mcp.servers[name].disconnect()
+    server = __import__('playground.mcp_client', fromlist=['MCPServer']).MCPServer(name, servers[name])
+    ok = await server.connect()
+    if ok:
+        _mcp._servers[name] = server
+    return JSONResponse({"ok": ok, "connected": ok, "tools": len(server.tools) if ok else 0})
+
+
+@app.get("/api/mcp/tools")
+async def mcp_list_tools():
+    """List all available MCP tools across connected servers."""
+    tools = _mcp.get_all_tools()
+    return JSONResponse({"tools": tools})
+
+
+@app.post("/api/mcp/call")
+async def mcp_call_tool(request: Request):
+    """Call an MCP tool directly (for testing)."""
+    body = await request.json()
+    tool_name = body.get("tool", "")
+    arguments = body.get("arguments", {})
+    if not tool_name:
+        return JSONResponse({"error": "tool name required"}, status_code=400)
+    result = await _mcp.call_tool(tool_name, arguments)
+    return JSONResponse(result)
 
 
 # -- Visualization APIs ---------------------------------------------
