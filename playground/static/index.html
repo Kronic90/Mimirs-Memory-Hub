@@ -6,6 +6,7 @@
     <title>Mimir's Memory Hub</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('mimir-theme') || 'dark');</script>
 </head>
 <body>
     <div id="app">
@@ -110,6 +111,7 @@
                         <select id="backend-select" class="header-select">
                             <option value="local">Local GGUF</option>
                             <option value="ollama">Ollama</option>
+                            <option value="transformers">Transformers (GPU)</option>
                             <option value="openai">OpenAI</option>
                             <option value="anthropic">Anthropic</option>
                             <option value="google">Google Gemini</option>
@@ -121,6 +123,7 @@
                         <select id="model-select" class="header-select">
                             <option value="">Select model…</option>
                         </select>
+                        <input type="text" id="transformers-model-input" class="header-select" placeholder="e.g. google/gemma-3-4b-it" style="display:none;max-width:240px;" title="HuggingFace repo ID or local path">
                         <select id="vision-model-select" class="header-select" title="Vision model (mmproj)" style="max-width:160px;">
                             <option value="">No vision model</option>
                         </select>
@@ -357,6 +360,8 @@
                                 <input type="password" id="key-custom-key" class="input" placeholder="Optional">
                             </div>
                             <button id="btn-save-keys" class="btn btn-primary">Save API Keys</button>
+                            <button id="btn-test-connection" class="btn btn-secondary" style="margin-left:8px;">🔌 Test Connection</button>
+                            <span id="connection-test-result" style="margin-left:8px;font-size:0.85rem;"></span>
                         </div>
                     </div>
                 </div>
@@ -877,8 +882,8 @@
                                 <line x1="12" y1="3" x2="12" y2="15"/>
                             </svg>
                             <p>Drop files here or click to browse</p>
-                            <p class="text-muted" style="font-size:12px;">Accepts .txt, .md, .json</p>
-                            <input type="file" id="import-file-input" multiple accept=".txt,.md,.json" style="display:none;">
+                            <p class="text-muted" style="font-size:12px;">Accepts .txt, .md, .json, .csv</p>
+                            <input type="file" id="import-file-input" multiple accept=".txt,.md,.json,.csv" style="display:none;">
                         </div>
                     </div>
                     <div class="settings-section">
@@ -910,6 +915,13 @@
                                 <input type="number" id="import-importance" class="input input-sm" min="1" max="10" value="5">
                             </div>
                         </div>
+                        <div class="form-group" style="margin-top:8px;">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="import-enrich" checked>
+                                <span>Enrich with AI</span>
+                                <span class="text-muted" style="font-size:12px;">— auto-detect emotion &amp; importance per memory</span>
+                            </label>
+                        </div>
                         <button id="btn-import" class="btn btn-primary">Import Memories</button>
                     </div>
                     <div id="import-status" class="import-status" style="display:none;"></div>
@@ -928,6 +940,16 @@
                     <p class="text-muted">Configure your playground</p>
                 </div>
                 <div class="settings-form">
+                    <div class="settings-section">
+                        <h3>Appearance</h3>
+                        <div class="form-group">
+                            <label>Theme</label>
+                            <select id="set-theme" class="input" style="width:auto;">
+                                <option value="dark">Dark</option>
+                                <option value="light">Light</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="settings-section">
                         <h3>Default Persona <span class="label-hint">— used when no agent is active</span></h3>
                         <div class="form-group">
@@ -1099,10 +1121,18 @@
                     </div>
                 </div>
 
-                <div class="conversations-filter" style="margin-bottom:12px;display:flex;gap:8px;">
+                <div class="conversations-filter" style="margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                     <button class="btn btn-sm conv-filter-btn active" data-filter="all">All</button>
                     <button class="btn btn-sm conv-filter-btn" data-filter="chat">Chats</button>
                     <button class="btn btn-sm conv-filter-btn" data-filter="multi">Multi-Agent</button>
+                    <div style="flex:1;"></div>
+                    <input type="text" id="conv-search" class="input input-sm" placeholder="Search conversations…" style="max-width:220px;">
+                    <select id="conv-sort" class="input input-sm" style="width:auto;">
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
+                        <option value="a-z">A → Z</option>
+                        <option value="z-a">Z → A</option>
+                    </select>
                 </div>
 
                 <div class="conversations-list" id="conversations-list">

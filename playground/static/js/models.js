@@ -524,6 +524,26 @@ const ModelsPage = (() => {
         }
     }
 
+    // ── Test Connection ──────────────────────────────────────────
+    async function testConnection() {
+        const resultEl = document.getElementById('connection-test-result');
+        resultEl.textContent = 'Testing…';
+        resultEl.style.color = 'var(--text-muted)';
+        try {
+            const data = await App.api('/test-connection');
+            if (data.ok) {
+                resultEl.textContent = '✅ ' + data.message;
+                resultEl.style.color = '#22c55e';
+            } else {
+                resultEl.textContent = '❌ ' + data.message;
+                resultEl.style.color = 'var(--error)';
+            }
+        } catch (e) {
+            resultEl.textContent = '❌ ' + e.message;
+            resultEl.style.color = 'var(--error)';
+        }
+    }
+
     // ── Escape HTML ──────────────────────────────────────────────
     function esc(str) {
         const el = document.createElement('span');
@@ -545,6 +565,7 @@ const ModelsPage = (() => {
                 if (e.key === 'Enter') searchHF();
             });
             document.getElementById('btn-save-keys').addEventListener('click', saveAPIKeys);
+            document.getElementById('btn-test-connection').addEventListener('click', testConnection);
             document.getElementById('btn-scan-pc').addEventListener('click', scanPC);
             document.getElementById('btn-add-scan-dir').addEventListener('click', addScanDir);
             document.getElementById('scan-dir-input').addEventListener('keydown', (e) => {

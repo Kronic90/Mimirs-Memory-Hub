@@ -47,6 +47,11 @@ const SettingsPage = (() => {
 
             document.getElementById('set-profile').value = s.active_profile || 'default';
 
+            // Theme
+            const theme = s.theme || localStorage.getItem('mimir-theme') || 'dark';
+            document.getElementById('set-theme').value = theme;
+            applyTheme(theme);
+
             // Check TTS/STT status
             checkVoiceStatus();
         } catch {
@@ -108,6 +113,11 @@ const SettingsPage = (() => {
         }
     }
 
+    function applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('mimir-theme', theme);
+    }
+
     function updateTTSModeUI() {
         const mode = document.getElementById('set-tts-mode').value;
         const voiceGrp = document.getElementById('tts-voice-group');
@@ -121,6 +131,7 @@ const SettingsPage = (() => {
     // ── Save settings ────────────────────────────────────────────
     async function save() {
         const patch = {
+            theme: document.getElementById('set-theme').value,
             persona_name: document.getElementById('set-persona-name').value,
             persona_description: document.getElementById('set-persona-desc').value,
             system_prompt: document.getElementById('set-system-prompt').value,
@@ -164,6 +175,8 @@ const SettingsPage = (() => {
             document.getElementById('btn-save-settings').addEventListener('click', save);
             const modeSelect = document.getElementById('set-tts-mode');
             if (modeSelect) modeSelect.addEventListener('change', updateTTSModeUI);
+            const themeSelect = document.getElementById('set-theme');
+            if (themeSelect) themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
             initialized = true;
         }
         load();

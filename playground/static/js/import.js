@@ -12,18 +12,22 @@ const ImportPage = (() => {
         if (format === 'json') {
             try {
                 const data = JSON.parse(text);
-                const arr = Array.isArray(data) ? data : [data];
+                // Handle many common JSON formats from different AI systems
+                const arr = _extractArray(data);
                 arr.forEach(item => {
                     if (typeof item === 'string') {
-                        entries.push({ content: item.trim() });
-                    } else if (item && item.content) {
-                        entries.push({
-                            content: item.content,
-                            emotion: item.emotion || undefined,
-                            importance: item.importance || undefined,
-                            timestamp: item.timestamp || item.date || undefined,
-                            why_saved: item.why_saved || item.source || undefined,
-                        });
+                        if (item.trim().length > 3) entries.push({ content: item.trim() });
+                    } else if (item && typeof item === 'object') {
+                        const content = _extractText(item);
+                        if (content && content.length > 3) {
+                            entries.push({
+                                content: content,
+                                emotion: item.emotion || item.sentiment || undefined,
+                                importance: item.importance || item.priority || item.score || undefined,
+                                timestamp: item.timestamp || item.date || item.created_at || item.time || item.created || undefined,
+                                why_saved: item.why_saved || item.source || item.reason || item.category || item.type || undefined,
+                            });
+                        }
                     }
                 });
             } catch {
@@ -48,6 +52,47 @@ const ImportPage = (() => {
             });
         }
         return entries;
+    }
+
+    /** Extract the iterable array from various JSON structures */
+    function _extractArray(data) {
+        if (Array.isArray(data)) return data;
+        // ChatGPT export: {mapping: {id: {message: ...}}}
+        if (data.mapping) {
+            return Object.values(data.mapping)
+                .filter(m => m.message && m.message.content)
+                .map(m => {
+                    const parts = m.message.content.parts || [];
+                    return { content: parts.join('\n'), role: m.message.author?.role };
+                })
+                .filter(m => m.role !== 'system');
+        }
+        // Look for common wrapper keys
+        for (const key of ['memories', 'entries', 'messages', 'data', 'results', 'items', 'records', 'conversations', 'history', 'core_memory', 'recall_memory', 'archival_memory']) {
+            if (Array.isArray(data[key])) return data[key];
+        }
+        // Single object with content
+        if (_extractText(data)) return [data];
+        return [];
+    }
+
+    /** Extract text content from an object, trying many common field names */
+    function _extractText(item) {
+        // Direct text fields (most common across AI memory systems)
+        for (const key of ['content', 'text', 'body', 'memory', 'entry', 'message', 'summary', 'note', 'description', 'value', 'input', 'output', 'response', 'query', 'human', 'assistant', 'user']) {
+            if (typeof item[key] === 'string' && item[key].trim()) return item[key].trim();
+        }
+        // Nested: item.message.content (ChatGPT style)
+        if (item.message && typeof item.message === 'object') {
+            if (typeof item.message.content === 'string') return item.message.content.trim();
+            if (Array.isArray(item.message.content?.parts)) return item.message.content.parts.join('\n').trim();
+        }
+        // Conversation turn: combine role + content
+        if (item.role && (item.content || item.text)) {
+            const txt = (item.content || item.text || '').trim();
+            return item.role === 'user' ? `User: ${txt}` : txt;
+        }
+        return null;
     }
 
     function detectFormat(filename) {
@@ -143,9 +188,11 @@ const ImportPage = (() => {
             return;
         }
 
+        const enrich = document.getElementById('import-enrich')?.checked || false;
+
         const status = document.getElementById('import-status');
         status.style.display = 'block';
-        status.textContent = `Importing ${pendingEntries.length} memories into Mimir…`;
+        status.textContent = `Importing ${pendingEntries.length} memories into Mimir${enrich ? ' (with AI enrichment)' : ''}…`;
         status.style.borderLeft = '3px solid var(--info)';
 
         const btn = document.getElementById('btn-import-confirm');
@@ -158,7 +205,7 @@ const ImportPage = (() => {
             let total = 0;
             for (let i = 0; i < pendingEntries.length; i += batchSize) {
                 const batch = pendingEntries.slice(i, i + batchSize);
-                const result = await App.apiPost('/memory/import', { entries: batch });
+                const result = await App.apiPost('/memory/import', { entries: batch, enrich: enrich });
                 total += result.imported || 0;
                 status.textContent = `Imported ${total} / ${pendingEntries.length} memories…`;
             }

@@ -47,9 +47,38 @@ const ConversationsPage = (() => {
 
     function renderList() {
         const list = document.getElementById('conversations-list');
-        const filtered = currentFilter === 'all'
+        const searchTerm = (document.getElementById('conv-search')?.value || '').toLowerCase();
+        const sortMode = document.getElementById('conv-sort')?.value || 'newest';
+
+        let filtered = currentFilter === 'all'
             ? allConversations
             : allConversations.filter(c => c.type === currentFilter);
+
+        // Search filter
+        if (searchTerm) {
+            filtered = filtered.filter(c => {
+                const title = (c.title || '').toLowerCase();
+                const agent = (c.agent || '').toLowerCase();
+                const preset = (c.preset || '').toLowerCase();
+                return title.includes(searchTerm) || agent.includes(searchTerm) || preset.includes(searchTerm);
+            });
+        }
+
+        // Sort
+        filtered = [...filtered];
+        switch (sortMode) {
+            case 'oldest':
+                filtered.sort((a, b) => (a.last_modified || a.created || '').localeCompare(b.last_modified || b.created || ''));
+                break;
+            case 'a-z':
+                filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+                break;
+            case 'z-a':
+                filtered.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+                break;
+            default: // newest
+                filtered.sort((a, b) => (b.last_modified || b.created || '').localeCompare(a.last_modified || a.created || ''));
+        }
 
         if (filtered.length === 0) {
             list.innerHTML = '<div class="empty-state" style="padding:40px;text-align:center;color:var(--text-muted);">No saved conversations yet. Start chatting and they\'ll appear here automatically.</div>';
@@ -169,6 +198,12 @@ const ConversationsPage = (() => {
         document.getElementById('btn-new-multi-chat').addEventListener('click', () => {
             App.navigate('multi-chat');
         });
+
+        // Search & sort
+        const searchInput = document.getElementById('conv-search');
+        if (searchInput) searchInput.addEventListener('input', () => renderList());
+        const sortSelect = document.getElementById('conv-sort');
+        if (sortSelect) sortSelect.addEventListener('change', () => renderList());
     }
 
     return { init, loadConversations };

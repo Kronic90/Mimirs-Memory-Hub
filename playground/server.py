@@ -591,10 +591,32 @@ async def get_models():
     backend = create_backend(backend_name, _cfg.to_dict())
     try:
         models = await backend.list_models()
+        # For transformers backend, always include active model
+        if backend_name == "transformers":
+            active = _cfg.get("active_model", "")
+            if active and not any(m.get("id") == active for m in models):
+                models.insert(0, {"id": active, "name": active.split("/")[-1]})
         return JSONResponse({"backend": backend_name, "models": models})
     except Exception as e:
         return JSONResponse({"backend": backend_name, "models": [],
                              "error": str(e)}, status_code=200)
+
+
+@app.get("/api/test-connection")
+async def test_connection():
+    """Test connectivity to the active backend."""
+    backend_name = _cfg.get("active_backend", "ollama")
+    if backend_name == "local":
+        return JSONResponse({"ok": True, "backend": "local", "message": "Local backend ready"})
+    backend = create_backend(backend_name, _cfg.to_dict())
+    try:
+        models = await backend.list_models()
+        count = len(models) if models else 0
+        return JSONResponse({"ok": True, "backend": backend_name,
+                             "message": f"Connected — {count} model(s) available"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "backend": backend_name,
+                             "message": str(e)})
 
 
 @app.get("/api/models/ollama/available")
@@ -928,14 +950,33 @@ async def memory_import(request: Request):
     body = await request.json()
     mem = _ensure_memory()
     entries = body.get("entries", [])
+    enrich = body.get("enrich", False)
     imported = []
+
     for entry in entries:
+        content = entry.get("content", "")
+        emotion = entry.get("emotion", "neutral")
+        importance = entry.get("importance", 5)
+        why_saved = entry.get("why_saved", "imported from external system")
+
+        # AI enrichment: use heuristic analysis to fill in emotion/importance/why_saved
+        if enrich and content:
+            from playground.memory_manager import detect_emotions, estimate_importance
+            detected = detect_emotions(content)
+            if detected:
+                emotion = detected[0]
+            importance = estimate_importance(content, "")
+            if why_saved == "imported from external system":
+                # Generate a more descriptive why_saved from the content
+                preview = content[:100].replace("\n", " ")
+                why_saved = f"imported memory — {preview}"
+
         result = mem.import_memory(
-            content=entry.get("content", ""),
-            emotion=entry.get("emotion", "neutral"),
-            importance=entry.get("importance", 5),
+            content=content,
+            emotion=emotion,
+            importance=importance,
             source="import",
-            why_saved=entry.get("why_saved", "imported from external system"),
+            why_saved=why_saved,
             timestamp=entry.get("timestamp", ""),
         )
         imported.append(result)
@@ -2236,6 +2277,7 @@ async def chat_ws(ws: WebSocket):
                     "mood": "",
                     "emotion": "",
                     "character": active_char.get("name", "") if active_char else "",
+                    "tokens": len(full_response),
                 })
 
                 # Send show_image messages for any <showimage> the model wrote
@@ -2430,6 +2472,13 @@ async def chat_ws(ws: WebSocket):
                             try:
                                 tool_name = tc.get("tool", "")
                                 tool_params = tc.get("params", {})
+
+                                # Notify UI that a tool is starting
+                                await _bg_ws.send_json({
+                                    "type": "tool_start",
+                                    "tool": tool_name,
+                                    "params": tool_params,
+                                })
 
                                 # Route MCP tools to MCP manager
                                 if tool_name.startswith("mcp_"):

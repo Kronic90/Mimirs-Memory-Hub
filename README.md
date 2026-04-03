@@ -165,7 +165,7 @@ Mimir includes 8 interactive visualization modes, all accessible from the **Visu
 
 The default view. Shows all memories as nodes in a force-directed graph, connected by Yggdrasil edges. Node colors indicate source type (episodic, social, Huginn insight, Völva dream, flashbulb, cherished, anchor). Click any node to see the full memory content, emotion, importance, and when it was formed.
 
-<!-- ![Neural Memory Graph](docs/screenshots/graph.png) -->
+![Neural Memory Graph](docs/screenshots/graph.png)
 
 ### 🗻 3D Neural Constellation
 
@@ -482,6 +482,36 @@ Mimir exposes a full REST API for all features. Key endpoints:
 | `/api/memory/sleep` | POST | Run consolidation cycle |
 | `/api/memory/mood` | GET | Current mood state |
 | `/api/memory/chemistry` | GET | Neurochemistry levels |
+
+---
+
+## Recommended Model
+
+If you're not sure which model to use, we recommend **Qwen 3** — it works excellently with all of Mimir's presets (Companion, Agent, Writer, Assistant, Character) and handles tool calls, creative writing, and conversations naturally.
+
+- **Ollama**: `ollama pull qwen3:8b` (or any size variant)
+- **Local GGUF**: Download a GGUF quantization from [HuggingFace](https://huggingface.co/models?search=qwen3+gguf)
+
+Any model that supports chat completion will work. Larger models (12B+) produce richer emotional memory and more nuanced recall.
+
+---
+
+## Credits & Acknowledgements
+
+Mimir's Memory Hub builds on several open-source projects and models:
+
+| Component | Used For | License |
+|---|---|---|
+| [Qwen 3](https://huggingface.co/Qwen) | Recommended default LLM | Apache 2.0 |
+| [BLIP](https://huggingface.co/Salesforce/blip-image-captioning-base) | Vision fallback — automatic image captioning for non-VL models | BSD-3-Clause |
+| [Edge TTS](https://github.com/rany2/edge-tts) | Text-to-speech (Microsoft Edge voices) | GPL-3.0 |
+| [OpenAI Whisper](https://github.com/openai/whisper) | Speech-to-text transcription | MIT |
+| [llama.cpp](https://github.com/ggerganov/llama.cpp) | Local GGUF model inference via llama-cpp-python | MIT |
+| [SearXNG](https://github.com/searxng/searxng) | Optional self-hosted search provider | AGPL-3.0 |
+| [sentence-transformers](https://www.sbert.net/) | Semantic embedding for memory recall | Apache 2.0 |
+| [FastAPI](https://fastapi.tiangolo.com/) | Backend web framework | MIT |
+| [Three.js](https://threejs.org/) | 3D Neural Constellation visualization | MIT |
+| [D3.js](https://d3js.org/) | Force-directed memory graph | ISC |
 
 ---
 

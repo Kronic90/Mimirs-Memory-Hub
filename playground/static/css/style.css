@@ -97,7 +97,7 @@ a:hover { text-decoration: underline; }
 }
 .logo-img {
     width: 100%;
-    max-width: 200px;
+    max-width: 220px;
     height: auto;
     object-fit: contain;
     filter: brightness(1.6) contrast(1.1);
@@ -2437,8 +2437,6 @@ details[open] .think-chevron { transform: rotate(90deg); }
     border-radius: 4px;
     color: #ef4444;
 }
-    cursor: pointer;
-}
 
 .settings-value {
     font-size: 13px;
@@ -2494,7 +2492,6 @@ details[open] .think-chevron { transform: rotate(90deg); }
 
 .viz-detail-close:hover {
     color: var(--text);
-}
 }
 
 /* ── Insight results ────────────────────────────────────────────── */
@@ -3139,4 +3136,126 @@ details[open] .think-chevron { transform: rotate(90deg); }
 .attic-rediscover,
 .attic-card .btn-sm {
     margin-top: 4px;
+}
+
+/* ── Tool activity indicators ────────────────────────────────── */
+.tool-activity {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-size: 0.8rem;
+    animation: fadeInUp 0.3s ease;
+}
+.tool-activity-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+}
+.tool-activity-body {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow: hidden;
+}
+.tool-error {
+    color: var(--error);
+}
+.tool-activity-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Token badge ─────────────────────────────────────────────── */
+.token-badge {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    text-align: right;
+}
+
+/* ================================================================
+   Light theme
+   ================================================================ */
+[data-theme="light"] {
+    --bg-base:      #f8f9fa;
+    --bg-sidebar:   #ffffff;
+    --bg-card:      #ffffff;
+    --bg-elevated:  #f1f3f5;
+    --bg-hover:     #e9ecef;
+    --bg-input:     #ffffff;
+    --bg-input-focus: #f8f9fa;
+
+    --border:       #dee2e6;
+    --border-hover: #ced4da;
+    --border-focus: #7c3aed;
+
+    --text:         #212529;
+    --text-secondary: #495057;
+    --text-muted:   #adb5bd;
+
+    --accent:       #7c3aed;
+    --accent-hover: #6d28d9;
+    --accent-glow:  rgba(124, 58, 237, 0.15);
+    --accent-subtle: rgba(124, 58, 237, 0.06);
+}
+
+[data-theme="light"] .logo-img {
+    filter: brightness(0.9) contrast(1.15);
+}
+
+[data-theme="light"] .sidebar {
+    border-right: 1px solid var(--border);
+}
+
+[data-theme="light"] .chat-bubble.assistant {
+    background: var(--bg-elevated);
+}
+
+[data-theme="light"] .chat-bubble.user {
+    background: var(--accent);
+    color: #fff;
+}
+
+[data-theme="light"] pre,
+[data-theme="light"] code {
+    background: #f1f3f5;
+    color: #212529;
+}
+
+[data-theme="light"] .nav-item.active {
+    background: var(--accent-subtle);
+}
+
+[data-theme="light"] .status-badge {
+    border: 1px solid var(--border);
+}
+
+[data-theme="light"] .settings-section {
+    border-color: var(--border);
+}
+
+[data-theme="light"] .modal-overlay .modal {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+}
+
+[data-theme="light"] .card,
+[data-theme="light"] .memory-card,
+[data-theme="light"] .attic-card {
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }

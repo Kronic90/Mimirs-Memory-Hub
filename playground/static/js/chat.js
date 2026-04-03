@@ -558,6 +558,13 @@ const Chat = (() => {
             case 'done':
                 App.state.streaming = false;
                 document.getElementById('btn-send').disabled = false;
+                // Show token count on last assistant bubble
+                if (currentAssistantEl && msg.tokens) {
+                    const badge = document.createElement('div');
+                    badge.className = 'token-badge';
+                    badge.textContent = msg.tokens + ' tokens';
+                    currentAssistantEl.parentNode.appendChild(badge);
+                }
                 currentAssistantEl = null;
                 if (msg.memory_saved && msg.memory_saved > 0) {
                     const count = msg.memory_saved;
@@ -669,6 +676,14 @@ const Chat = (() => {
                 showTaskPip('💾 File saved: ' + (msg.filename || ''));
                 break;
 
+            case 'tool_start':
+                showToolStart(msg);
+                break;
+
+            case 'tool_result':
+                showToolResult(msg);
+                break;
+
             case 'wake_up':
                 showWakeUpNotification(msg);
                 break;
@@ -751,6 +766,52 @@ const Chat = (() => {
 
     function esc(s) {
         return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // ── Tool activity indicators ──────────────────────────────────
+    const _toolIcons = {
+        web_search: '🔍', read_file: '📄', write_file: '💾', run_code: '⚙️',
+        list_files: '📂', delete_file: '🗑️', create_directory: '📁',
+        remember: '🧠', recall: '🔎', task_create: '📋', task_complete: '✅',
+    };
+
+    function showToolStart(msg) {
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        const icon = _toolIcons[msg.tool] || '🔧';
+        div.className = 'tool-activity';
+        div.id = 'tool-activity-' + (msg.tool || '').replace(/\W/g, '_');
+        div.innerHTML =
+            `<div class="tool-activity-header">` +
+            `<span class="tool-activity-spinner"></span>` +
+            `<span>${icon} <strong>${esc(msg.tool)}</strong></span>` +
+            `</div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function showToolResult(msg) {
+        const container = document.getElementById('chat-messages');
+        const id = 'tool-activity-' + (msg.tool || '').replace(/\W/g, '_');
+        let div = document.getElementById(id);
+        if (!div) {
+            div = document.createElement('div');
+            div.className = 'tool-activity';
+            container.appendChild(div);
+        }
+        div.id = '';
+        const icon = _toolIcons[msg.tool] || '🔧';
+        const result = msg.result || {};
+        const hasError = !!result.error;
+        const summary = hasError
+            ? `<span class="tool-error">Error: ${esc(result.error)}</span>`
+            : (result.output || result.content || result.result || result.url || JSON.stringify(result)).substring(0, 300);
+        div.innerHTML =
+            `<div class="tool-activity-header">` +
+            `<span>${icon} <strong>${esc(msg.tool)}</strong> — ${hasError ? '❌' : '✅'}</span>` +
+            `</div>` +
+            `<div class="tool-activity-body">${esc(String(summary))}</div>`;
+        container.scrollTop = container.scrollHeight;
     }
 
     // ── TTS audio playback ────────────────────────────────────────

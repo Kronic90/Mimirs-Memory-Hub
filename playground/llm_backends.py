@@ -489,15 +489,152 @@ class LocalGGUFBackend(LLMBackend):
         return []
 
 
+# ── Transformers Backend (SafeTensors / HF GPU) ─────────────────────────
+
+class TransformersBackend(LLMBackend):
+    """Run HuggingFace Transformers models (SafeTensors) on GPU."""
+    name = "transformers"
+
+    _model = None
+    _tokenizer = None
+    _loaded_repo: str = ""
+
+    def __init__(self, dtype: str = "auto", device_map: str = "auto"):
+        self.dtype = dtype
+        self.device_map = device_map
+
+    def _ensure_model(self, repo_or_path: str):
+        """Load model if not already loaded, or swap if path changed."""
+        if (TransformersBackend._loaded_repo == repo_or_path
+                and TransformersBackend._model is not None):
+            return TransformersBackend._model, TransformersBackend._tokenizer
+
+        # Release old model
+        if TransformersBackend._model is not None:
+            del TransformersBackend._model
+            del TransformersBackend._tokenizer
+            TransformersBackend._model = None
+            TransformersBackend._tokenizer = None
+            TransformersBackend._loaded_repo = ""
+
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError:
+            raise RuntimeError(
+                "transformers and torch are required for SafeTensors models.\n"
+                "Run: pip install transformers torch accelerate"
+            )
+
+        dtype_map = {
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32,
+            "auto": "auto",
+        }
+        torch_dtype = dtype_map.get(self.dtype, "auto")
+
+        TransformersBackend._tokenizer = AutoTokenizer.from_pretrained(
+            repo_or_path, trust_remote_code=True
+        )
+        TransformersBackend._model = AutoModelForCausalLM.from_pretrained(
+            repo_or_path,
+            torch_dtype=torch_dtype,
+            device_map=self.device_map,
+            trust_remote_code=True,
+        )
+        TransformersBackend._loaded_repo = repo_or_path
+        return TransformersBackend._model, TransformersBackend._tokenizer
+
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        system_prompt: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+        model: str = "",
+        images: list[str] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        if not model:
+            raise ValueError("No model specified. Enter a HuggingFace repo ID or local path.")
+
+        model_obj, tokenizer = await asyncio.to_thread(self._ensure_model, model)
+
+        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [
+            dict(m) for m in messages
+        ]
+
+        import queue
+        q: queue.Queue = queue.Queue()
+        _DONE = object()
+
+        def _produce():
+            try:
+                import torch
+                from transformers import TextIteratorStreamer
+                streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+
+                input_text = tokenizer.apply_chat_template(
+                    all_messages, tokenize=False, add_generation_prompt=True
+                )
+                inputs = tokenizer(input_text, return_tensors="pt").to(model_obj.device)
+
+                import threading
+                gen_kwargs = {
+                    **inputs,
+                    "max_new_tokens": max_tokens,
+                    "temperature": max(temperature, 0.01),
+                    "do_sample": temperature > 0,
+                    "streamer": streamer,
+                }
+                thread = threading.Thread(target=model_obj.generate, kwargs=gen_kwargs)
+                thread.start()
+                for text in streamer:
+                    if text:
+                        q.put(text)
+                thread.join()
+            except Exception as e:
+                q.put(e)
+            finally:
+                q.put(_DONE)
+
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, _produce)
+
+        while True:
+            item = await asyncio.to_thread(q.get)
+            if item is _DONE:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+    async def list_models(self) -> list[dict]:
+        if TransformersBackend._loaded_repo:
+            return [{"id": TransformersBackend._loaded_repo,
+                     "name": TransformersBackend._loaded_repo.split("/")[-1]}]
+        return []
+
+
 # ── Factory ───────────────────────────────────────────────────────────
 
 # Singleton local backend to preserve model cache across requests
 _local_backend: LocalGGUFBackend | None = None
+_transformers_backend: TransformersBackend | None = None
 
 
 def create_backend(name: str, cfg: dict) -> LLMBackend:
     """Instantiate a backend from config dict."""
-    global _local_backend
+    global _local_backend, _transformers_backend
     backends_cfg = cfg.get("backends", {})
     if name == "local":
         lc = backends_cfg.get("local", {})
@@ -550,5 +687,13 @@ def create_backend(name: str, cfg: dict) -> LLMBackend:
             api_key=oc.get("api_key", ""),
             base_url=oc.get("base_url", "http://localhost:5000/v1"),
         )
+    elif name == "transformers":
+        tc = backends_cfg.get("transformers", {})
+        if _transformers_backend is None:
+            _transformers_backend = TransformersBackend(
+                dtype=tc.get("dtype", "auto"),
+                device_map=tc.get("device_map", "auto"),
+            )
+        return _transformers_backend
     else:
         return OllamaBackend()

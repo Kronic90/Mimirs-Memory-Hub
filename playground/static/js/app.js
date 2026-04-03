@@ -152,6 +152,8 @@ const App = (() => {
             } else {
                 if (data.backend === 'local') {
                     select.innerHTML = '<option value="">Go to Models → Local tab to scan</option>';
+                } else if (data.backend === 'transformers') {
+                    select.innerHTML = '<option value="">Type HF repo ID below…</option>';
                 } else {
                     select.innerHTML = '<option value="">No models found</option>';
                 }
@@ -249,12 +251,32 @@ const App = (() => {
             state.backend = e.target.value;
             state.model = '';  // Clear model when switching backends
             await apiPut('/settings', { active_backend: state.backend, active_model: '' });
+            // Show/hide transformers model input
+            const tfInput = document.getElementById('transformers-model-input');
+            const modelSelect = document.getElementById('model-select');
+            if (state.backend === 'transformers') {
+                tfInput.style.display = '';
+                modelSelect.style.display = 'none';
+            } else {
+                tfInput.style.display = 'none';
+                modelSelect.style.display = '';
+            }
             loadModels();
             loadVisionModels();
         });
         document.getElementById('model-select').addEventListener('change', (e) => {
             state.model = e.target.value;
             apiPut('/settings', { active_model: state.model });
+        });
+        document.getElementById('transformers-model-input').addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                const val = e.target.value.trim();
+                if (val) {
+                    state.model = val;
+                    await apiPut('/settings', { active_backend: 'transformers', active_model: val });
+                    toast('Model set to ' + val, 'success');
+                }
+            }
         });
         document.getElementById('vision-model-select').addEventListener('change', async (e) => {
             const path = e.target.value;
@@ -293,6 +315,15 @@ const App = (() => {
         await loadSettings();
         await loadModels();
         await loadVisionModels();
+
+        // Show/hide transformers input based on initial backend
+        const tfInput = document.getElementById('transformers-model-input');
+        const modelSelectEl = document.getElementById('model-select');
+        if (state.backend === 'transformers') {
+            tfInput.style.display = '';
+            tfInput.value = state.model || '';
+            modelSelectEl.style.display = 'none';
+        }
 
         // Handle hash routing
         const hash = window.location.hash.replace('#', '') || 'chat';
