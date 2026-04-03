@@ -377,48 +377,79 @@ CHARACTER_SCENARIOS = [
 
 ASSISTANT_SCENARIOS = [
     {
-        "name": "Factual Precision & Context Use",
-        "description": "User gives technical context → assistant should use it precisely",
+        "name": "Appointment & Schedule Tracking",
+        "description": "VA remembers appointments, deadlines, and proactively surfaces them",
         "seed_turns": [
-            ("Our production server runs Ubuntu 22.04 with PostgreSQL 15, Python 3.11, and nginx. The database is on port 5433 (not default) with the name 'appdb'.", "neutral"),
-            ("We use a microservices architecture with 4 services: auth-service (port 8001), user-service (8002), order-service (8003), and notification-service (8004).", "neutral"),
-            ("Our deploy script is at /opt/deploy/run.sh and our logs go to /var/log/appstack/.", "neutral"),
+            ("I have a dentist appointment next Thursday at 2pm.", "neutral"),
+            ("My project deadline for the Henderson report is April 15th.", "neutral"),
+            ("Oh and I need to call my insurance company — their number is 1-800-555-0199. My policy number is HM-442871.", "neutral"),
+            ("Every Monday I have a team standup at 9am. Don't let me forget.", "neutral"),
         ],
         "distraction_turns": [
-            "What's the difference between REST and GraphQL?",
-            "Explain containerization briefly.",
+            "What's a good recipe for chicken stir-fry?",
+            "How do noise-cancelling headphones work?",
         ],
         "test_prompts": [
             {
-                "prompt": "The order service is down. How should I check the logs and restart it?",
-                "expected_facts": ["/var/log/appstack", "order-service", "8003"],
-                "description": "Should use specific paths and port numbers from context",
+                "prompt": "What do I have coming up this week?",
+                "expected_facts": ["dentist", "Thursday", "2pm", "standup", "Monday", "9am"],
+                "description": "Should recall scheduled appointments and recurring meetings",
             },
             {
-                "prompt": "I need to connect to our database from the command line. What's the command?",
-                "expected_facts": ["5433", "appdb", "PostgreSQL"],
-                "description": "Should remember non-default port and db name",
+                "prompt": "I need to call about my policy. What's the number again?",
+                "expected_facts": ["1-800-555-0199", "HM-442871", "insurance"],
+                "description": "Should recall the insurance number and policy details",
+            },
+            {
+                "prompt": "When is the Henderson thing due?",
+                "expected_facts": ["April 15", "Henderson", "report"],
+                "max_words": 50,
+                "description": "Should give concise deadline answer",
             },
         ],
     },
     {
-        "name": "Conciseness vs Verbosity",
-        "description": "Assistant should be concise and factual, not chatty",
+        "name": "Email Drafting & Preferences",
+        "description": "VA remembers communication preferences and drafts accordingly",
+        "seed_turns": [
+            ("When I email my boss, keep it formal. His name is David Chen.", "neutral"),
+            ("For my friend Jake, keep it casual and short. He hates long emails.", "neutral"),
+            ("I prefer bullet points over paragraphs in my own emails.", "neutral"),
+        ],
+        "distraction_turns": [
+            "What's the capital of New Zealand?",
+        ],
+        "test_prompts": [
+            {
+                "prompt": "Draft an email to David about pushing our Friday meeting to Monday.",
+                "expected_facts": ["David", "Chen", "formal", "Friday", "Monday", "meeting"],
+                "expected_tools": [],
+                "description": "Should draft a formal email remembering David's full name",
+            },
+            {
+                "prompt": "Now write one to Jake saying I can't make poker night this Saturday.",
+                "expected_facts": ["Jake", "casual", "Saturday", "poker"],
+                "description": "Should draft a casual short email matching Jake preference",
+            },
+        ],
+    },
+    {
+        "name": "Tool Use for Practical Tasks",
+        "description": "VA should use tools when asked to manage files and information",
         "seed_turns": [],
         "distraction_turns": [],
         "test_prompts": [
             {
-                "prompt": "What is the HTTP status code for 'Not Found'?",
-                "max_words": 30,
-                "expected_facts": ["404"],
-                "description": "Should give a short, factual answer",
+                "prompt": "Create a project folder called 'Henderson Report' with subfolders for drafts, research, and final.",
+                "expected_tools": ["shell_exec", "write_file", "list_directory"],
+                "expected_steps": ["create", "folder", "Henderson", "drafts", "research", "final"],
+                "description": "Should use tools to create the folder structure",
             },
             {
-                "prompt": "List the SOLID principles.",
-                "max_words": 120,
-                "expected_facts": ["Single Responsibility", "Open", "Liskov",
-                                  "Interface Segregation", "Dependency Inversion"],
-                "description": "Should list them concisely",
+                "prompt": "I have a PDF of meeting notes at /docs/meeting_notes.pdf. Can you read it and summarise the action items?",
+                "expected_tools": ["pdf_read"],
+                "expected_steps": ["read", "pdf", "summarise", "action"],
+                "description": "Should use pdf_read tool",
             },
         ],
     },
@@ -426,56 +457,60 @@ ASSISTANT_SCENARIOS = [
 
 WRITER_SCENARIOS = [
     {
-        "name": "Style Continuity",
-        "description": "User establishes writing preferences → test if model adapts and remembers",
+        "name": "Story Project Tracking",
+        "description": "Writer remembers story details, characters, and chapter progress across turns",
         "seed_turns": [
-            ("I'm working on a fantasy novel. My style leans dark and literary — think Ursula Le Guin meets Joe Abercrombie.", "neutral"),
-            ("My protagonist is Sera, a mute cartographer who maps cursed lands. She communicates through gesture and expression.", "neutral"),
-            ("Here is a passage I wrote: 'The ink bled where her hands had trembled, smearing the northern coast into something that looked like a wound.' I want to keep this kind of imagery.", "neutral"),
+            ("I'm writing a sci-fi novel called 'The Last Signal'. It's set on a generation ship 200 years into a 400-year voyage. The ship is called the Meridian.", "neutral"),
+            ("My main character is Kira Vasquez, chief comms officer. She's 34, pragmatic, and hiding that she's been receiving transmissions from Earth — which was supposed to be dead.", "neutral"),
+            ("I've finished chapters 1-4. Chapter 1 is Kira's daily routine. Chapter 2 is the first signal. Chapter 3 is her investigating alone. Chapter 4 is her confiding in Dr. Osei, the ship's historian.", "neutral"),
+            ("The antagonist is Captain Holm. He believes Earth is dead and the signals are a trap from another ship. He's paranoid but not evil — he genuinely fears for the crew.", "neutral"),
         ],
         "distraction_turns": [
-            "What's a good synonym for 'said'?",
-            "How do you structure a three-act story?",
+            "What's a good way to show time passing in a novel?",
+            "How long would a generation ship realistically take to reach Alpha Centauri?",
         ],
         "test_prompts": [
             {
-                "prompt": "Write a short paragraph where Sera discovers a village that has been abandoned. Stay in my style.",
-                "expected_style": ["dark", "literary", "imagery", "sensory"],
-                "expected_facts": ["Sera", "mute", "cartographer", "map"],
-                "description": "Should maintain dark literary style, reference Sera's muteness/cartography",
+                "prompt": "I'm starting Chapter 5. Where did I leave off and what should happen next?",
+                "expected_facts": ["Chapter 4", "Dr. Osei", "Kira", "signal", "Earth", "Holm"],
+                "description": "Should recall chapter progress and suggest what comes next based on story state",
             },
             {
-                "prompt": "I need a metaphor for loneliness that fits my novel's tone.",
-                "expected_style": ["dark", "literary", "imagery"],
-                "expected_facts": [],
-                "description": "Should produce a metaphor matching the established dark literary tone",
+                "prompt": "Write a scene where Kira and Captain Holm argue about the signals. Stay consistent with their characters.",
+                "expected_style": ["imagery", "sensory", "emotional"],
+                "expected_facts": ["Kira", "Holm", "signal", "Earth", "trap", "Meridian"],
+                "description": "Should maintain both character voices — Kira pragmatic, Holm paranoid but principled",
+            },
+            {
+                "prompt": "I want to add a new character — a teenager who secretly heard one of the signals. Give me some ideas.",
+                "expected_facts": ["signal", "Meridian", "generation ship"],
+                "expected_style": ["imagery"],
+                "description": "Should brainstorm ideas consistent with established world",
             },
         ],
     },
     {
-        "name": "Poetry & Form Awareness",
-        "description": "User asks for poetry with specific constraints",
+        "name": "Style & Craft Awareness",
+        "description": "Writer remembers style preferences and applies them consistently",
         "seed_turns": [
-            ("I love sonnets and villanelles. I find free verse lazy unless it's done really well.", "neutral"),
-            ("My favourite poets are Sylvia Plath, Dylan Thomas, and Mary Oliver.", "neutral"),
+            ("My writing style is sparse and atmospheric — more Cormac McCarthy than Brandon Sanderson. Short sentences. Sensory details. Minimal dialogue tags.", "neutral"),
+            ("I write in close third person, present tense. Always.", "neutral"),
         ],
         "distraction_turns": [
-            "What's iambic pentameter again?",
+            "What are some good examples of unreliable narrators?",
         ],
         "test_prompts": [
             {
-                "prompt": "Write me a short poem (8-12 lines) about a lighthouse keeper who is losing their sight. Make it structured, not free verse.",
-                "expected_style": ["structured", "imagery", "sensory", "emotional"],
-                "expected_facts": ["lighthouse", "sight", "blind"],
-                "min_lines": 6,
-                "description": "Should produce structured poem with imagery, not free verse",
+                "prompt": "Write a paragraph where Kira walks through the empty observation deck at night. Show her mood through the environment, not internal monologue.",
+                "expected_style": ["dark", "literary", "imagery", "sensory"],
+                "expected_facts": ["Kira", "observation"],
+                "description": "Should use sparse atmospheric style, present tense, close third",
             },
             {
-                "prompt": "That was good. Now write one about the same keeper but in autumn, when the storms come.",
-                "expected_style": ["structured", "imagery", "sensory"],
-                "expected_facts": ["lighthouse", "storm", "autumn"],
-                "min_lines": 6,
-                "description": "Should recall the lighthouse keeper and maintain style continuity",
+                "prompt": "I wrote this line: 'She felt really sad about leaving the bridge.' Can you improve it in my style?",
+                "expected_style": ["literary", "imagery", "sensory"],
+                "expected_facts": [],
+                "description": "Should rewrite to be sparse and atmospheric, show-don't-tell",
             },
         ],
     },
@@ -685,12 +720,21 @@ def score_assistant(results_vanilla: list, results_mimir: list) -> dict:
             max_words = test.get("max_words")
             if max_words:
                 word_count = len(resp.split())
-                # Score: 1.0 if under budget, scales down linearly
                 scores[label]["conciseness"].append(
                     min(1.0, max_words / max(word_count, 1)))
 
-            # Information density
-            scores[label]["info_density"].append(information_density(resp))
+            # Tool selection (VA tool use scenarios)
+            tools = test.get("expected_tools", [])
+            if tools:
+                scores[label]["tool_use"].append(
+                    tool_selection_score(resp, tools))
+
+            # Step coverage
+            steps = test.get("expected_steps", [])
+            if steps:
+                resp_lower = resp.lower()
+                step_hits = sum(1 for s in steps if s.lower() in resp_lower)
+                scores[label]["step_coverage"].append(step_hits / len(steps))
 
     def avg(lst):
         return sum(lst) / max(len(lst), 1)
@@ -700,8 +744,8 @@ def score_assistant(results_vanilla: list, results_mimir: list) -> dict:
         "mimir_fact_recall": avg(scores["mimir"]["fact_recall"]),
         "vanilla_conciseness": avg(scores["vanilla"]["conciseness"]),
         "mimir_conciseness": avg(scores["mimir"]["conciseness"]),
-        "vanilla_info_density": avg(scores["vanilla"]["info_density"]),
-        "mimir_info_density": avg(scores["mimir"]["info_density"]),
+        "vanilla_tool_use": avg(scores["vanilla"]["tool_use"]),
+        "mimir_tool_use": avg(scores["mimir"]["tool_use"]),
     }
 
 
@@ -796,12 +840,12 @@ PRESET_MAP = {
     "assistant": {
         "scenarios": ASSISTANT_SCENARIOS,
         "scorer": score_assistant,
-        "vanilla_system": "You are a helpful, factual assistant. Be concise.",
+        "vanilla_system": "You are a helpful personal assistant. Help manage appointments, draft emails, and handle daily tasks.",
     },
     "writer": {
         "scenarios": WRITER_SCENARIOS,
         "scorer": score_writer,
-        "vanilla_system": "You are a creative writing assistant. Help with stories, poetry, and creative content.",
+        "vanilla_system": "You are a creative writing collaborator. Help with stories, characters, worldbuilding, and craft.",
     },
 }
 

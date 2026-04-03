@@ -2099,8 +2099,8 @@ async def chat_ws(ws: WebSocket):
                 except Exception:
                     pass
 
-            # Inject available MCP tools into agent prompts
-            if preset_name == "agent" and _mcp_initialized:
+            # Inject available MCP tools into agent/assistant prompts
+            if preset_name in ("agent", "assistant") and _mcp_initialized:
                 try:
                     mcp_tools = _mcp.get_all_tools()
                     if mcp_tools:
@@ -2179,9 +2179,9 @@ async def chat_ws(ws: WebSocket):
                 cherish_tags   = _parse_cherish_tags(response_text) if memory_enabled else []
 
                 # Parse agent code blocks & file-save tags
-                code_blocks = _parse_code_blocks(response_text) if preset_name == "agent" else []
-                save_file_tags = _parse_save_file_tags(response_text) if preset_name == "agent" else []
-                tool_calls = _parse_tool_calls(response_text) if preset_name == "agent" else []
+                code_blocks = _parse_code_blocks(response_text) if preset_name in ("agent", "assistant") else []
+                save_file_tags = _parse_save_file_tags(response_text) if preset_name in ("agent", "assistant") else []
+                tool_calls = _parse_tool_calls(response_text) if preset_name in ("agent", "assistant") else []
 
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})

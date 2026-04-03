@@ -77,28 +77,31 @@ def test_character_full_roleplay():
 
 
 def test_writer_creative():
-    """Writer preset must enable creativity with emotional memory."""
+    """Writer preset must enable creativity with project tracking."""
     from playground.presets import PRESETS
     p = PRESETS["writer"]
     assert p["emotion_weight"] >= 0.4, f"Writer emotion_weight too low: {p['emotion_weight']}"
     assert p["chemistry"] is True, "Writer should enable chemistry for creative energy"
-    assert p["task_priority"] is False
+    assert p["task_priority"] is True, "Writer should track chapters/projects"
     suffix = p["system_prompt_suffix"].lower()
     assert "creative" in suffix or "writing" in suffix, "Writer prompt lacks creative language"
-    assert "style" in suffix or "imagery" in suffix, "Writer prompt lacks style guidance"
-    print("[PASS] Writer preset is creatively tuned")
+    assert "chapter" in suffix or "project" in suffix, "Writer prompt should mention project tracking"
+    assert "character" in suffix, "Writer prompt should mention character tracking"
+    print("[PASS] Writer preset is creatively tuned with project tracking")
 
 
 def test_assistant_neutral():
-    """Assistant preset must be factual, low emotion."""
+    """Assistant preset must be a virtual PA with tool access."""
     from playground.presets import PRESETS
     p = PRESETS["assistant"]
     assert p["emotion_weight"] <= 0.2
     assert p["task_priority"] is True
     assert p["chemistry"] is False
     suffix = p["system_prompt_suffix"].lower()
-    assert "concise" in suffix, "Assistant prompt should emphasise conciseness"
-    print("[PASS] Assistant preset is neutral/factual")
+    assert "appointment" in suffix or "schedule" in suffix, "Assistant should mention scheduling"
+    assert "email" in suffix, "Assistant should mention email handling"
+    assert "read_file" in suffix or "pdf_read" in suffix, "Assistant should have tool docs"
+    print("[PASS] Assistant preset is a virtual PA with tools")
 
 
 def test_agent_task_focused():
