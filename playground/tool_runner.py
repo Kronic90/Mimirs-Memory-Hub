@@ -226,7 +226,16 @@ def _tool_web_search(params: dict, permissions: dict) -> dict:
     query = params.get("query", "")
     if not query:
         return {"error": "query parameter required"}
-    # Use DuckDuckGo HTML search (no API key needed)
+    num_results = int(params.get("num_results", 5))
+
+    # Check for custom search provider
+    from playground.config import Config
+    _cfg = Config()
+    provider = _cfg.get("search_provider", {})
+    if provider.get("enabled") and provider.get("url"):
+        return _search_custom_provider(query, num_results, provider)
+
+    # Fallback: DuckDuckGo HTML search (no API key needed)
     try:
         with httpx.Client(timeout=10.0, follow_redirects=True) as client:
             resp = client.get(
@@ -240,7 +249,7 @@ def _tool_web_search(params: dict, permissions: dict) -> dict:
             results = []
             # Simple extraction of result blocks
             parts = text.split('class="result__snippet"')
-            for part in parts[1:6]:  # top 5 results
+            for part in parts[1:num_results + 1]:
                 snippet_end = part.find("</a>")
                 if snippet_end > 0:
                     snippet = part[:snippet_end]
@@ -256,9 +265,53 @@ def _tool_web_search(params: dict, permissions: dict) -> dict:
                             clean += ch
                     if clean.strip():
                         results.append(clean.strip()[:300])
-            return {"query": query, "results": results}
+            return {"query": query, "provider": "duckduckgo", "results": results}
     except Exception as e:
         return {"error": f"Search failed: {e}"}
+
+
+def _search_custom_provider(query: str, num_results: int, provider: dict) -> dict:
+    """Hit a custom search API endpoint (SearXNG, etc.)."""
+    url = provider["url"].rstrip("/")
+    fmt = provider.get("format", "searxng")
+
+    try:
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            if fmt == "searxng":
+                resp = client.get(
+                    f"{url}/search",
+                    params={"q": query, "format": "json"},
+                    headers={"User-Agent": "MimirsWell/1.0"},
+                )
+            else:
+                # Generic JSON endpoint: GET {url}?q={query}
+                resp = client.get(
+                    url,
+                    params={"q": query, "format": "json"},
+                    headers={"User-Agent": "MimirsWell/1.0"},
+                )
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Parse results — SearXNG format: {"results": [{"title", "url", "content"}]}
+            raw = data.get("results", data) if isinstance(data, dict) else data
+            if not isinstance(raw, list):
+                raw = []
+            results = []
+            for item in raw[:num_results]:
+                if isinstance(item, dict):
+                    results.append({
+                        "title": item.get("title", ""),
+                        "url": item.get("url", item.get("href", "")),
+                        "snippet": (item.get("content", item.get("snippet", item.get("body", ""))))[:300],
+                    })
+                elif isinstance(item, str):
+                    results.append({"snippet": item[:300]})
+            return {"query": query, "provider": fmt, "results": results}
+    except httpx.HTTPStatusError as e:
+        return {"error": f"Search provider returned {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"error": f"Search provider failed: {e}"}
 
 
 def _tool_fetch_page(params: dict, permissions: dict) -> dict:

@@ -742,6 +742,42 @@
                         <button id="btn-save-tools" class="btn btn-primary" style="margin-top:16px;">Save Tool Permissions</button>
                     </div>
 
+                    <!-- Search Provider -->
+                    <div class="settings-section">
+                        <h3>🔍 Search Provider</h3>
+                        <p class="text-muted" style="margin-bottom:12px;">
+                            Configure a custom search API instead of DuckDuckGo. Works with
+                            <a href="https://github.com/searxng/searxng" target="_blank" style="color:var(--accent);">SearXNG</a>
+                            or any JSON search endpoint.
+                        </p>
+                        <div class="tool-perm-card">
+                            <div class="tool-perm-header">
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="search-provider-enabled">
+                                    <span>Use Custom Search Provider</span>
+                                </label>
+                            </div>
+                            <div id="search-provider-fields" style="margin-top:10px;">
+                                <div class="form-group">
+                                    <label>Provider URL</label>
+                                    <input type="text" id="search-provider-url" class="input" placeholder="http://localhost:8080">
+                                </div>
+                                <div class="form-group">
+                                    <label>Format</label>
+                                    <select id="search-provider-format" class="input" style="width:auto;">
+                                        <option value="searxng">SearXNG (JSON)</option>
+                                        <option value="custom">Custom JSON endpoint</option>
+                                    </select>
+                                </div>
+                                <p class="text-muted" style="font-size:0.8em;">
+                                    SearXNG: expects <code>GET {url}/search?q=...&format=json</code><br>
+                                    Custom: expects <code>GET {url}?q=...&format=json</code> returning <code>{"results": [{"title","url","content"}]}</code>
+                                </p>
+                            </div>
+                        </div>
+                        <button id="btn-save-search-provider" class="btn btn-primary" style="margin-top:12px;">Save Search Provider</button>
+                    </div>
+
                     <!-- MCP Servers -->
                     <div class="settings-section">
                         <h3>🔌 MCP Servers</h3>

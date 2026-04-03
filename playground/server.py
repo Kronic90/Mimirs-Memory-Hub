@@ -972,6 +972,26 @@ async def update_tool_permissions(request: Request):
     return JSONResponse({"ok": True, "permissions": perms})
 
 
+@app.get("/api/tools/search_provider")
+async def get_search_provider():
+    """Get custom search provider config."""
+    sp = _cfg.get("search_provider", {"enabled": False, "url": "", "format": "searxng"})
+    return JSONResponse(sp)
+
+
+@app.put("/api/tools/search_provider")
+async def update_search_provider(request: Request):
+    """Update custom search provider config."""
+    body = await request.json()
+    sp = {
+        "enabled": bool(body.get("enabled", False)),
+        "url": str(body.get("url", "")).strip(),
+        "format": str(body.get("format", "searxng")).strip(),
+    }
+    _cfg.update({"search_provider": sp})
+    return JSONResponse({"ok": True, "search_provider": sp})
+
+
 @app.post("/api/tools/execute")
 async def execute_tool(request: Request):
     """Execute a tool with sandboxing."""

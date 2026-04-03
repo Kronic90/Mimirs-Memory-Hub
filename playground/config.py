@@ -48,6 +48,11 @@ _DEFAULT: dict[str, Any] = {
     },
     "scan_directories": [],
     "mcp_servers": {},
+    "search_provider": {
+        "enabled": False,
+        "url": "",
+        "format": "searxng",
+    },
 }
 
 _CFG_DIR = Path(__file__).resolve().parent.parent / "playground_data"

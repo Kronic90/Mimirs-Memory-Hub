@@ -65,6 +65,7 @@ const ToolsPage = (() => {
         if (!initialized) {
             document.getElementById('btn-save-tools').addEventListener('click', savePermissions);
             document.getElementById('btn-test-tool').addEventListener('click', testTool);
+            document.getElementById('btn-save-search-provider')?.addEventListener('click', saveSearchProvider);
 
             // MCP transport toggle
             const transportSel = document.getElementById('mcp-transport');
@@ -81,7 +82,37 @@ const ToolsPage = (() => {
             initialized = true;
         }
         loadPermissions();
+        loadSearchProvider();
         loadMCPServers();
+    }
+
+    // ── Search Provider ───────────────────────────────────────────
+
+    async function loadSearchProvider() {
+        try {
+            const sp = await App.api('/tools/search_provider');
+            document.getElementById('search-provider-enabled').checked = !!sp.enabled;
+            document.getElementById('search-provider-url').value = sp.url || '';
+            document.getElementById('search-provider-format').value = sp.format || 'searxng';
+        } catch { /* defaults fine */ }
+    }
+
+    async function saveSearchProvider() {
+        const sp = {
+            enabled: document.getElementById('search-provider-enabled').checked,
+            url: document.getElementById('search-provider-url').value.trim(),
+            format: document.getElementById('search-provider-format').value,
+        };
+        if (sp.enabled && !sp.url) {
+            App.toast('Enter a provider URL', 'error');
+            return;
+        }
+        try {
+            await App.apiPut('/tools/search_provider', sp);
+            App.toast('Search provider saved', 'success');
+        } catch (e) {
+            App.toast('Failed to save: ' + (e.message || 'Unknown'), 'error');
+        }
     }
 
     // ── MCP Server Management ─────────────────────────────────────
