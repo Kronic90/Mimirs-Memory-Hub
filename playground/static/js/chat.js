@@ -523,6 +523,19 @@ const Chat = (() => {
     function handleMessage(msg) {
         switch (msg.type) {
             case 'token':
+                // Create assistant bubble if one doesn't exist yet
+                // (happens during wake-up greeting before user sends anything)
+                if (!currentAssistantEl) {
+                    const welcome = document.getElementById('chat-messages').querySelector('.welcome-message');
+                    if (welcome) welcome.remove();
+                    currentAssistantEl = createMessageEl('assistant', '');
+                    currentAssistantEl.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+                    currentTokens = [];
+                    currentRaw = '';
+                    _renderPending = false;
+                    App.state.streaming = true;
+                    document.getElementById('btn-send').disabled = true;
+                }
                 if (currentAssistantEl) {
                     currentTokens.push(msg.content);
                     currentRaw += msg.content;   // O(1) append instead of O(n) join

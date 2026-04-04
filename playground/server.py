@@ -1561,6 +1561,33 @@ def _estimate_tokens(text: str) -> int:
     return max(1, int(len(text.split()) * 1.3))
 
 
+def _ensure_alternation(messages: list[dict]) -> list[dict]:
+    """Merge consecutive same-role messages to guarantee user/assistant alternation.
+
+    Some LLM APIs (Anthropic, Ollama with certain models) reject message lists
+    that have two consecutive 'user' or 'assistant' messages.  This can happen
+    when a previous generation failed (leaving a dangling user message) or when
+    loading a saved conversation with corrupt ordering.
+    """
+    if not messages:
+        return messages
+    out: list[dict] = []
+    for m in messages:
+        role = m.get("role", "user")
+        # Skip system messages in the message list (handled separately)
+        if role == "system":
+            continue
+        if out and out[-1]["role"] == role:
+            # Merge into previous message of the same role
+            out[-1] = {
+                "role": role,
+                "content": out[-1]["content"] + "\n\n" + m.get("content", ""),
+            }
+        else:
+            out.append(dict(m))
+    return out
+
+
 def _trim_conversation(messages: list[dict], token_budget: int) -> list[dict]:
     """Return a trimmed message list that fits within *token_budget*.
 
@@ -1622,7 +1649,12 @@ def _trim_conversation(messages: list[dict], token_budget: int) -> list[dict]:
             "context window.]\n\n" + "\n".join(trimmed_parts)
         )
 
-    return [{"role": "system", "content": summary_text}] + recent
+    # Inject summary as a user message so APIs that reject role=system in
+    # the messages array (e.g. Anthropic) don't fail.  Wrap it clearly so
+    # the model knows it's a recap, not a real user turn.
+    result = [{"role": "user", "content": summary_text},
+              {"role": "assistant", "content": "Understood, I'll keep that context in mind."}] + recent
+    return _ensure_alternation(result)
 
 
 def _auto_save_conversation():
@@ -2001,6 +2033,8 @@ async def chat_ws(ws: WebSocket):
     await ws.accept()
 
     # Send wake-up notification if a consolidation cycle just ran
+    # and generate an AI greeting so the conversation starts on the
+    # assistant's turn (avoids double-user-message alternation issues).
     try:
         mem = _ensure_memory()
         wake_log = mem.get_wake_log()
@@ -2010,6 +2044,57 @@ async def chat_ws(ws: WebSocket):
                 "message": "Agent waking up — consolidating memories...",
                 "details": wake_log,
             })
+
+            # Generate an AI greeting after wake-up
+            try:
+                backend_name = _cfg.get("active_backend", "ollama")
+                model_id = _cfg.get("active_model", "")
+                active_char_id = _cfg.get("active_character_id", "")
+                active_char = _characters.get_character(active_char_id) if active_char_id else None
+                persona = (active_char.get("name", "") if active_char
+                           else _cfg.get("persona_name", "Mimir"))
+
+                wake_summary = "; ".join(wake_log[-3:])  # last few log entries
+                greet_prompt = (
+                    f"You just woke up after being away. Here is what happened "
+                    f"during your sleep cycle: {wake_summary}. "
+                    f"Greet the user warmly in 1-2 short sentences as {persona}. "
+                    f"You may mention what you did while asleep (consolidating "
+                    f"memories, dreaming, etc.) but keep it brief and natural."
+                )
+
+                greet_msgs = [{"role": "user", "content": greet_prompt}]
+                backend = create_backend(backend_name, _cfg.to_dict())
+                llm_params = _cfg.get("llm_params", {})
+                greeting_tokens: list[str] = []
+
+                async for token in backend.generate(
+                    messages=greet_msgs,
+                    system_prompt=f"You are {persona}. Respond in character.",
+                    temperature=llm_params.get("temperature", 0.7),
+                    max_tokens=150,
+                    model=model_id,
+                ):
+                    greeting_tokens.append(token)
+                    await ws.send_json({"type": "token", "content": token})
+
+                greeting_text = "".join(greeting_tokens)
+                if greeting_text.strip():
+                    # Seed conversation with the greeting so user's first
+                    # message will be the second entry (proper alternation).
+                    _conversation.clear()
+                    _conversation.append({"role": "assistant", "content": greeting_text.strip()})
+                    await ws.send_json({
+                        "type": "done",
+                        "memory_saved": 0,
+                        "mood": "",
+                        "emotion": "",
+                        "character": persona,
+                        "tokens": len(greeting_tokens),
+                        "is_greeting": True,
+                    })
+            except Exception as greet_err:
+                print(f"[Wake greeting] Could not generate greeting: {greet_err}")
     except Exception:
         pass
 
@@ -2195,7 +2280,9 @@ async def chat_ws(ws: WebSocket):
             # Reserve space for system prompt + response
             sys_est = len(system_prompt.split()) * 2 if system_prompt else 0
             budget = context_length - max_tokens - sys_est - 200  # safety margin
-            send_messages = _trim_conversation(list(_conversation), budget)
+            send_messages = _ensure_alternation(
+                _trim_conversation(list(_conversation), budget)
+            )
 
             # Stream response
             backend = create_backend(backend_name, _cfg.to_dict())
@@ -2691,6 +2778,10 @@ async def chat_ws(ws: WebSocket):
                     pass  # TTS disabled
 
             except Exception as e:
+                # Roll back the user message so we don't leave a dangling
+                # user entry that would cause alternation errors on retry.
+                if _conversation and _conversation[-1].get("role") == "user":
+                    _conversation.pop()
                 await ws.send_json({"type": "error", "message": str(e)})
 
     except WebSocketDisconnect:
@@ -2809,7 +2900,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
 
                     try:
                         async for token in backend.generate(
-                            messages=list(chat_history),
+                            messages=_ensure_alternation(list(chat_history)),
                             system_prompt=system_prompt,
                             temperature=llm_params.get("temperature", 0.7),
                             max_tokens=llm_params.get("max_tokens", 2048),
