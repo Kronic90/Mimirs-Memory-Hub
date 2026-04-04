@@ -540,6 +540,14 @@ class _NullChemistry:
     def from_dict(cls, d: dict) -> "_NullChemistry": return cls()
     @property
     def is_dampened(self) -> bool: return False
+    @property
+    def levels(self) -> dict:
+        return {"dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6,
+                "oxytocin": 0.4, "norepinephrine": 0.5}
+    @property
+    def baselines(self) -> dict:
+        return {"dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6,
+                "oxytocin": 0.4, "norepinephrine": 0.5}
 
     def get_modifiers(self) -> dict:
         return {

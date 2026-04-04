@@ -198,6 +198,8 @@ const MoodColors = (() => {
 const Chat = (() => {
     let currentAssistantEl = null;
     let currentTokens = [];
+    let currentRaw = '';          // running concatenation (avoids O(n) join per token)
+    let _renderPending = false;   // rAF throttle flag
     let pendingImageB64 = '';  // base64 of image attached to next message
 
     // ── Configure marked ─────────────────────────────────────────
@@ -484,6 +486,8 @@ const Chat = (() => {
         currentAssistantEl = createMessageEl('assistant', '');
         currentAssistantEl.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
         currentTokens = [];
+        currentRaw = '';
+        _renderPending = false;
         App.state.streaming = true;
         document.getElementById('btn-send').disabled = true;
 
@@ -521,43 +525,70 @@ const Chat = (() => {
             case 'token':
                 if (currentAssistantEl) {
                     currentTokens.push(msg.content);
-                    const raw = stripSpecialTags(currentTokens.join(''));
-                    const split = splitThinking(raw);
+                    currentRaw += msg.content;   // O(1) append instead of O(n) join
 
-                    if (split.thinking !== null) {
-                        // Reasoning model — manage think block
-                        let thinkEl = currentAssistantEl._thinkEl;
-                        if (!thinkEl) {
-                            // First think token — build and insert before contentEl
-                            thinkEl = buildThinkBlock(split.thinking, split.streaming);
-                            currentAssistantEl.parentNode.insertBefore(thinkEl, currentAssistantEl);
-                            currentAssistantEl._thinkEl = thinkEl;
-                        } else {
-                            // Update streaming think body
-                            thinkEl.querySelector('.think-body').textContent = split.thinking || '';
-                            if (!split.streaming && thinkEl.classList.contains('think-streaming')) {
-                                // Thinking done — update summary label
-                                thinkEl.classList.remove('think-streaming');
-                                thinkEl.querySelector('.think-summary').innerHTML =
-                                    '<span class="think-icon">🧠</span> Thought <span class="think-chevron">›</span>';
+                    // Throttle DOM updates to once per animation frame
+                    if (!_renderPending) {
+                        _renderPending = true;
+                        requestAnimationFrame(() => {
+                            _renderPending = false;
+                            if (!currentAssistantEl) return;
+
+                            const raw = stripSpecialTags(currentRaw);
+                            const split = splitThinking(raw);
+
+                            if (split.thinking !== null) {
+                                // Reasoning model — manage think block
+                                let thinkEl = currentAssistantEl._thinkEl;
+                                if (!thinkEl) {
+                                    thinkEl = buildThinkBlock(split.thinking, split.streaming);
+                                    currentAssistantEl.parentNode.insertBefore(thinkEl, currentAssistantEl);
+                                    currentAssistantEl._thinkEl = thinkEl;
+                                } else {
+                                    thinkEl.querySelector('.think-body').textContent = split.thinking || '';
+                                    if (!split.streaming && thinkEl.classList.contains('think-streaming')) {
+                                        thinkEl.classList.remove('think-streaming');
+                                        thinkEl.querySelector('.think-summary').innerHTML =
+                                            '<span class="think-icon">🧠</span> Thought <span class="think-chevron">›</span>';
+                                    }
+                                }
+                                currentAssistantEl.innerHTML = split.response
+                                    ? renderMarkdown(split.response)
+                                    : '';
+                            } else {
+                                currentAssistantEl.innerHTML = renderMarkdown(raw);
                             }
-                        }
-                        currentAssistantEl.innerHTML = split.response
-                            ? renderMarkdown(split.response)
-                            : '';
-                    } else {
-                        // Normal model — no think block
-                        currentAssistantEl.innerHTML = renderMarkdown(raw);
-                    }
 
-                    const container = document.getElementById('chat-messages');
-                    container.scrollTop = container.scrollHeight;
+                            const container = document.getElementById('chat-messages');
+                            container.scrollTop = container.scrollHeight;
+                        });
+                    }
                 }
                 break;
 
             case 'done':
                 App.state.streaming = false;
                 document.getElementById('btn-send').disabled = false;
+                // Final synchronous render so no tokens are lost
+                if (currentAssistantEl && currentRaw) {
+                    const raw = stripSpecialTags(currentRaw);
+                    const split = splitThinking(raw);
+                    if (split.thinking !== null) {
+                        let thinkEl = currentAssistantEl._thinkEl;
+                        if (thinkEl) {
+                            thinkEl.querySelector('.think-body').textContent = split.thinking || '';
+                            if (thinkEl.classList.contains('think-streaming')) {
+                                thinkEl.classList.remove('think-streaming');
+                                thinkEl.querySelector('.think-summary').innerHTML =
+                                    '<span class="think-icon">🧠</span> Thought <span class="think-chevron">›</span>';
+                            }
+                        }
+                        currentAssistantEl.innerHTML = split.response
+                            ? renderMarkdown(split.response) : '';
+                    } else {
+                        currentAssistantEl.innerHTML = renderMarkdown(raw);
+                    }
+                }
                 // Show token count on last assistant bubble
                 if (currentAssistantEl && msg.tokens) {
                     const badge = document.createElement('div');
