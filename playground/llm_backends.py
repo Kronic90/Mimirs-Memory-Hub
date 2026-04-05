@@ -477,6 +477,7 @@ class LocalGGUFBackend(LLMBackend):
         _DONE = object()
 
         def _produce():
+            _in_reasoning = False
             try:
                 for chunk in llm.create_chat_completion(
                     messages=all_messages,
@@ -486,11 +487,26 @@ class LocalGGUFBackend(LLMBackend):
                 ):
                     delta = chunk.get("choices", [{}])[0].get("delta", {})
                     token = delta.get("content", "")
+
+                    # Some llama-cpp builds surface reasoning in a separate field
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                    if reasoning:
+                        if not _in_reasoning:
+                            q.put("<think>")
+                            _in_reasoning = True
+                        q.put(reasoning)
+                        continue
+
                     if token:
+                        if _in_reasoning:
+                            q.put("</think>\n")
+                            _in_reasoning = False
                         q.put(token)
             except Exception as e:
                 q.put(e)
             finally:
+                if _in_reasoning:
+                    q.put("</think>\n")
                 q.put(_DONE)
 
         loop = asyncio.get_event_loop()
