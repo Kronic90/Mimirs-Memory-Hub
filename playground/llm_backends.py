@@ -86,14 +86,29 @@ class OllamaBackend(LLMBackend):
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
             async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as resp:
                 resp.raise_for_status()
+                _in_reasoning = False
                 async for line in resp.aiter_lines():
                     if not line:
                         continue
                     data = json.loads(line)
-                    token = data.get("message", {}).get("content", "")
+                    msg = data.get("message", {})
+                    # Reasoning models (GPT-OSS, QwQ, etc.) may emit
+                    # reasoning in a separate field instead of <think> tags.
+                    reasoning = msg.get("reasoning_content") or msg.get("reasoning", "")
+                    if reasoning:
+                        if not _in_reasoning:
+                            _in_reasoning = True
+                            yield "<think>"
+                        yield reasoning
+                    token = msg.get("content", "")
                     if token:
+                        if _in_reasoning:
+                            _in_reasoning = False
+                            yield "</think>"
                         yield token
                     if data.get("done"):
+                        if _in_reasoning:
+                            yield "</think>"
                         break
 
     async def list_models(self) -> list[dict]:
@@ -183,17 +198,30 @@ class OpenAIBackend(LLMBackend):
             async with client.stream("POST", f"{self.base_url}/chat/completions",
                                      json=payload, headers=headers) as resp:
                 resp.raise_for_status()
+                _in_reasoning = False
                 async for line in resp.aiter_lines():
                     line = line.strip()
                     if not line or not line.startswith("data: "):
                         continue
                     data_str = line[6:]
                     if data_str == "[DONE]":
+                        if _in_reasoning:
+                            yield "</think>"
                         break
                     data = json.loads(data_str)
                     delta = data.get("choices", [{}])[0].get("delta", {})
+                    # Reasoning models may put thinking in a separate field
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning", "")
+                    if reasoning:
+                        if not _in_reasoning:
+                            _in_reasoning = True
+                            yield "<think>"
+                        yield reasoning
                     token = delta.get("content", "")
                     if token:
+                        if _in_reasoning:
+                            _in_reasoning = False
+                            yield "</think>"
                         yield token
 
     async def list_models(self) -> list[dict]:
@@ -581,7 +609,9 @@ class TransformersBackend(LLMBackend):
             try:
                 import torch
                 from transformers import TextIteratorStreamer
-                streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+                # Use skip_special_tokens=False to preserve reasoning markers
+                # like <|channel|>, <think>, etc. that GPT-OSS models emit.
+                streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=False)
 
                 input_text = tokenizer.apply_chat_template(
                     all_messages, tokenize=False, add_generation_prompt=True
@@ -598,9 +628,24 @@ class TransformersBackend(LLMBackend):
                 }
                 thread = threading.Thread(target=model_obj.generate, kwargs=gen_kwargs)
                 thread.start()
+
+                # Collect tokens, stripping true special tokens but keeping
+                # reasoning markers (<think>, <|channel|>, etc.)
+                import re
+                # Tokens to strip: EOS, BOS, pad, and role markers but NOT
+                # think/channel markers which carry semantic content.
+                _STRIP_SPECIAL = re.compile(
+                    r'<\|(?:im_start|im_end|endoftext|begin_of_text|end_of_turn'
+                    r'|eot_id|start_header_id|end_header_id|pad|eos'
+                    r'|assistant|user|system)\|>',
+                    re.IGNORECASE,
+                )
                 for text in streamer:
                     if text:
-                        q.put(text)
+                        # Remove true special tokens but keep reasoning ones
+                        cleaned = _STRIP_SPECIAL.sub('', text)
+                        if cleaned:
+                            q.put(cleaned)
                 thread.join()
             except Exception as e:
                 q.put(e)

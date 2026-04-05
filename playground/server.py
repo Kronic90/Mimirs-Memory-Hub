@@ -645,6 +645,26 @@ async def hf_files(repo_id: str):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.get("/api/models/hf/search-safetensors")
+async def search_hf_safetensors(q: str = "", limit: int = 20):
+    """Search HuggingFace for SafeTensors (full-weight) models."""
+    try:
+        results = await model_manager.search_huggingface_safetensors(q, limit)
+        return JSONResponse(results)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/models/hf/repo-info")
+async def hf_repo_info(repo_id: str):
+    """Get SafeTensors repo info (file count, total size, config)."""
+    try:
+        info = await model_manager.get_repo_info(repo_id)
+        return JSONResponse(info)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.get("/api/models/local")
 async def local_models():
     models_dir = str(_cfg.profile_dir.parent.parent / "models")
@@ -2302,6 +2322,18 @@ async def chat_ws(ws: WebSocket):
 
                 response_text = "".join(full_response)
 
+                # ── Send done immediately so UI unblocks ──────────────────
+                # We send 'done' BEFORE heavyweight regex parsing so the
+                # frontend can render the final response without waiting.
+                await ws.send_json({
+                    "type": "done",
+                    "memory_saved": 0,  # updated via mood_update later
+                    "mood": "",
+                    "emotion": "",
+                    "character": active_char.get("name", "") if active_char else "",
+                    "tokens": len(full_response),
+                })
+
                 # ── Model-authored memory (organic) ───────────────────────
                 # Parse any <remember> tags the model wrote itself.
                 # Strip them from the stored/displayed response.
@@ -2334,8 +2366,8 @@ async def chat_ws(ws: WebSocket):
                 # Store the clean response (no <remember> tags) in history
                 _conversation.append({"role": "assistant", "content": clean_response})
 
-                # Auto-save conversation after each turn
-                _auto_save_conversation()
+                # Auto-save conversation (non-blocking)
+                await asyncio.to_thread(_auto_save_conversation)
 
                 # ── Think-model memory fallback ───────────────────────────
                 # If a think model wrote no <remember> tags, look for memory
@@ -2805,15 +2837,40 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
         return
 
     conv_meta = conv_data["meta"]
-    agents = [p for p in conv_meta.get("participants", []) if p.get("type") == "agent"]
     messages = conv_data.get("messages", [])
 
-    # Convert saved messages to chat format
-    chat_history = [
-        {"role": "user" if msg.get("speaker") == "You" else "assistant",
-         "content": msg.get("content", "")}
-        for msg in messages
-    ]
+    # Build full message history with speaker attribution
+    # Each entry: {"speaker": str, "content": str}
+    msg_history: list[dict] = list(messages)
+
+    def _reload_agents():
+        """Re-read participants from metadata (updated by REST API)."""
+        fresh = _conversations.get_conversation(conv_id)
+        if fresh:
+            conv_meta.update(fresh["meta"])
+        return [p for p in conv_meta.get("participants", []) if p.get("type") == "agent"]
+
+    def _build_agent_messages(msg_history: list[dict], current_agent_name: str) -> list[dict]:
+        """Build a message list tailored for a specific agent.
+
+        - User messages → role: user
+        - This agent's own responses → role: assistant
+        - Other agents' responses → role: user (prefixed with their name)
+        This gives each agent a clean alternating history where it only
+        sees its own prior responses as 'assistant'.
+        """
+        result: list[dict] = []
+        for m in msg_history:
+            speaker = m.get("speaker", "")
+            content = m.get("content", "")
+            if speaker == "You":
+                result.append({"role": "user", "content": content})
+            elif speaker == current_agent_name:
+                result.append({"role": "assistant", "content": content})
+            else:
+                # Other agent — present as user context so alternation is clean
+                result.append({"role": "user", "content": f"[{speaker}]: {content}"})
+        return _ensure_alternation(result)
 
     try:
         while True:
@@ -2821,48 +2878,55 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
             msg = json.loads(raw)
 
             if msg.get("type") == "settings":
-                # Live update conversation settings
                 new_settings = msg.get("data", {})
                 if "settings" not in conv_meta:
                     conv_meta["settings"] = {}
                 conv_meta["settings"].update(new_settings)
-                # Reset sequential index if turn order changed
                 if "turn_order" in new_settings:
                     conv_meta["_seq_index"] = 0
-                # Persist to disk
                 _conversations.update_conversation(conv_id, {"settings": conv_meta["settings"]})
                 await ws.send_json({"type": "settings_saved", "settings": conv_meta["settings"]})
                 continue
 
+            # Reload agents on every message so newly-added agents are seen
+            if msg.get("type") == "reload_participants":
+                agents = _reload_agents()
+                await ws.send_json({
+                    "type": "participants_reloaded",
+                    "agents": [{"name": a.get("name"), "character_id": a.get("character_id")} for a in agents],
+                })
+                continue
+
             if msg.get("type") == "message":
+                # Always reload agents from disk so new ones are picked up
+                agents = _reload_agents()
+
                 user_text = msg.get("content", "").strip()
-                chat_history.append({"role": "user", "content": user_text})
+                user_entry = {"speaker": "You", "content": user_text}
+                msg_history.append(user_entry)
                 await ws.send_json({
                     "type": "user_message",
                     "speaker": "You",
                     "content": user_text,
                 })
+                _conversations.add_message(conv_id, user_entry)
 
-                # Save to conversation
-                _conversations.add_message(conv_id, {
-                    "speaker": "You",
-                    "content": user_text,
-                })
-
-                # Get agents to respond (based on turn order setting)
-                turn_order = conv_meta.get("settings", {}).get("turn_order", conv_meta.get("turn_order", "user_addresses"))
+                # Determine which agents respond
+                turn_order = conv_meta.get("settings", {}).get(
+                    "turn_order", conv_meta.get("turn_order", "all_respond"))
                 max_per_round = int(conv_meta.get("settings", {}).get("max_per_round", 3))
-                responding_agents = agents  # default
+                responding_agents = list(agents)
 
                 if turn_order == "user_addresses":
+                    # Addressed agents go first, then everyone else responds
                     mentioned = [a for a in agents if a["name"].lower() in user_text.lower()]
-                    responding_agents = mentioned if mentioned else agents[:1]
+                    others = [a for a in agents if a not in mentioned]
+                    responding_agents = (mentioned + others)[:max_per_round]
                 elif turn_order == "sequential":
-                    # Round-robin: use seq_index tracked in conv_meta
                     if "_seq_index" not in conv_meta:
                         conv_meta["_seq_index"] = 0
-                    idx = conv_meta["_seq_index"] % len(agents)
-                    responding_agents = [agents[idx]]
+                    idx = conv_meta["_seq_index"] % len(agents) if agents else 0
+                    responding_agents = [agents[idx]] if agents else []
                     conv_meta["_seq_index"] = idx + 1
                 elif turn_order == "all_respond":
                     responding_agents = agents[:max_per_round]
@@ -2873,7 +2937,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     char = _characters.get_character(char_id) if char_id else None
                     agent_name = agent.get("name", "Agent")
 
-                    # Build system prompt from character
+                    # Build system prompt
                     parts = [f"You are {agent_name}."]
                     if char:
                         if char.get("description"):
@@ -2883,10 +2947,18 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         if char.get("system_prompt"):
                             parts.append(char["system_prompt"])
 
+                    # Tell agent about other participants
+                    other_names = [a["name"] for a in agents if a["name"] != agent_name]
+                    if other_names:
+                        parts.append(
+                            f"You are in a group conversation with the user and "
+                            f"these other participants: {', '.join(other_names)}. "
+                            f"Messages from other participants are prefixed with their name. "
+                            f"Respond naturally as in a group chat."
+                        )
+
                     system_prompt = "\n\n".join(parts)
 
-                    # Get backend/model for this agent.
-                    # Priority: participant override → character data → global default
                     backend_name = (agent.get("backend")
                                     or (char.get("backend") if char else "")
                                     or _cfg.get("active_backend", "ollama"))
@@ -2894,13 +2966,16 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                 or (char.get("model") if char else "")
                                 or _cfg.get("active_model", ""))
 
+                    # Build per-agent message view
+                    agent_messages = _build_agent_messages(msg_history, agent_name)
+
                     backend = create_backend(backend_name, _cfg.to_dict())
                     llm_params = _cfg.get("llm_params", {})
                     full_response = []
 
                     try:
                         async for token in backend.generate(
-                            messages=_ensure_alternation(list(chat_history)),
+                            messages=agent_messages,
                             system_prompt=system_prompt,
                             temperature=llm_params.get("temperature", 0.7),
                             max_tokens=llm_params.get("max_tokens", 2048),
@@ -2914,14 +2989,10 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             })
 
                         response_text = "".join(full_response)
-                        chat_history.append({"role": "assistant", "content": response_text})
+                        agent_entry = {"speaker": agent_name, "content": response_text}
+                        msg_history.append(agent_entry)
 
-                        # Save to conversation
-                        _conversations.add_message(conv_id, {
-                            "speaker": agent_name,
-                            "content": response_text,
-                        })
-
+                        _conversations.add_message(conv_id, agent_entry)
                         await ws.send_json({
                             "type": "agent_done",
                             "speaker": agent_name,

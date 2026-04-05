@@ -391,6 +391,111 @@ const ModelsPage = (() => {
         App.navigate('chat');
     }
 
+    // ── SafeTensors HuggingFace search ───────────────────────────
+
+    async function searchSafeTensors() {
+        const input = document.getElementById('st-search-input');
+        const query = input.value.trim();
+        const results = document.getElementById('st-results');
+
+        results.innerHTML = '<p class="text-muted">Searching…</p>';
+
+        try {
+            const models = await App.api('/models/hf/search-safetensors?q=' + encodeURIComponent(query));
+            results.innerHTML = '';
+
+            if (Array.isArray(models) && models.length > 0) {
+                models.forEach(m => {
+                    const card = document.createElement('div');
+                    card.className = 'model-card';
+                    const pipeTag = m.pipeline_tag ? `<span class="model-tag">${esc(m.pipeline_tag)}</span>` : '';
+                    card.innerHTML = `
+                        <div class="model-info">
+                            <div class="model-name">${esc(m.name)} ${pipeTag}</div>
+                            <div class="model-meta">
+                                ${esc(m.author)} · ⬇ ${(m.downloads || 0).toLocaleString()} · ♥ ${m.likes || 0}
+                            </div>
+                        </div>
+                        <div class="model-actions">
+                            <button class="btn btn-secondary" onclick="ModelsPage.viewSafeTensorsRepo('${esc(m.repo_id)}')">Details</button>
+                            <button class="btn btn-primary" onclick="ModelsPage.useSafeTensorsModel('${esc(m.repo_id)}')">Use</button>
+                        </div>`;
+                    results.appendChild(card);
+                });
+            } else {
+                results.innerHTML = '<p class="text-muted">No SafeTensors models found.</p>';
+            }
+        } catch (e) {
+            results.innerHTML = '<p class="text-muted" style="color:var(--error)">Search failed.</p>';
+        }
+    }
+
+    async function viewSafeTensorsRepo(repoId) {
+        const results = document.getElementById('st-results');
+        results.innerHTML = '<p class="text-muted">Loading repo info…</p>';
+
+        try {
+            const info = await App.api('/models/hf/repo-info?repo_id=' + encodeURIComponent(repoId));
+            results.innerHTML = '';
+
+            const backBtn = document.createElement('button');
+            backBtn.className = 'btn btn-secondary';
+            backBtn.style.marginBottom = '12px';
+            backBtn.textContent = '← Back to results';
+            backBtn.onclick = searchSafeTensors;
+            results.appendChild(backBtn);
+
+            const card = document.createElement('div');
+            card.className = 'model-card';
+            card.style.flexDirection = 'column';
+            card.style.gap = '12px';
+            card.innerHTML = `
+                <div class="model-info" style="width:100%;">
+                    <div class="model-name" style="font-size:1.1rem;">${esc(repoId)}</div>
+                    <div class="model-meta" style="margin-top:8px;">
+                        Pipeline: <strong>${esc(info.pipeline_tag || 'unknown')}</strong> ·
+                        SafeTensors files: <strong>${info.safetensors_files || 0}</strong> ·
+                        Total size: <strong>${App.formatBytes(info.total_size || 0)}</strong> ·
+                        ⬇ ${(info.downloads || 0).toLocaleString()}
+                    </div>
+                    <p class="text-muted" style="margin-top:8px;font-size:0.85rem;">
+                        SafeTensors models are loaded on-demand from HuggingFace's cache.
+                        The first load will download the model weights. Requires a GPU with sufficient VRAM.
+                    </p>
+                </div>
+                <div class="model-actions" style="width:100%;justify-content:flex-end;">
+                    <button class="btn btn-primary" onclick="ModelsPage.useSafeTensorsModel('${esc(repoId)}')">
+                        🚀 Use this model
+                    </button>
+                </div>`;
+            results.appendChild(card);
+        } catch (e) {
+            results.innerHTML = '<p class="text-muted" style="color:var(--error)">Could not load repo info.</p>';
+        }
+    }
+
+    function useSafeTensorsModel(repoId) {
+        App.state.model = repoId;
+        App.state.backend = 'transformers';
+        document.getElementById('backend-select').value = 'transformers';
+        const select = document.getElementById('model-select');
+        const name = repoId.split('/').pop();
+        let found = false;
+        for (const opt of select.options) {
+            if (opt.value === repoId) { found = true; break; }
+        }
+        if (!found) {
+            const opt = document.createElement('option');
+            opt.value = repoId;
+            opt.textContent = '🔬 ' + name;
+            select.appendChild(opt);
+        }
+        select.value = repoId;
+        App.apiPut('/settings', { active_model: repoId, active_backend: 'transformers' });
+        App.toast('SafeTensors model set: ' + name + ' (will download on first use)', 'success');
+        App.navigate('chat');
+    }
+
     // ── API Keys save ────────────────────────────────────────────
     async function saveAPIKeys() {
         console.log('=== Saving API Keys (using label-based lookup) ===');
@@ -571,6 +676,10 @@ const ModelsPage = (() => {
             document.getElementById('scan-dir-input').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') addScanDir();
             });
+            document.getElementById('btn-st-search').addEventListener('click', searchSafeTensors);
+            document.getElementById('st-search-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') searchSafeTensors();
+            });
 
             // mmproj / VL model path
             const mmProjInput = document.getElementById('local-mmproj-path');
@@ -638,5 +747,5 @@ const ModelsPage = (() => {
         loadOllamaModels();
     }
 
-    return { init, useModel, viewRepo, downloadHF, removeScanDir, useLocalModel };
+    return { init, useModel, viewRepo, downloadHF, removeScanDir, useLocalModel, searchSafeTensors, viewSafeTensorsRepo, useSafeTensorsModel };
 })();

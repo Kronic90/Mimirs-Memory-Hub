@@ -241,6 +241,7 @@
                 <div class="models-tabs">
                     <button class="tab active" data-tab="ollama">Ollama</button>
                     <button class="tab" data-tab="huggingface">HuggingFace</button>
+                    <button class="tab" data-tab="safetensors">SafeTensors</button>
                     <button class="tab" data-tab="local">Local GGUF</button>
                     <button class="tab" data-tab="api">API Keys</button>
                 </div>
@@ -261,6 +262,18 @@
                             <button id="btn-hf-search" class="btn btn-primary">Search</button>
                         </div>
                         <div class="models-list" id="hf-results"></div>
+                    </div>
+                    <!-- SafeTensors Tab -->
+                    <div class="tab-panel" id="tab-safetensors">
+                        <p class="text-muted" style="margin-bottom:12px;">
+                            Search HuggingFace for full-weight SafeTensors models. These run via the <strong>Transformers</strong> backend
+                            and require a GPU with enough VRAM. Ideal for running latest models as intended (no quantization).
+                        </p>
+                        <div class="hf-search">
+                            <input type="text" id="st-search-input" class="input" placeholder="Search SafeTensors models (e.g. Qwen3-8B, gemma-3)…">
+                            <button id="btn-st-search" class="btn btn-primary">Search</button>
+                        </div>
+                        <div class="models-list" id="st-results"></div>
                     </div>
                     <!-- Local Tab -->
                     <div class="tab-panel" id="tab-local">

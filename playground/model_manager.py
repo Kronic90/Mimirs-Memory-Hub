@@ -1,6 +1,7 @@
 """Model discovery and download management.
 
-Searches HuggingFace for GGUF models, scans local drives, and downloads models.
+Searches HuggingFace for GGUF and SafeTensors models, scans local drives,
+and downloads models.
 """
 from __future__ import annotations
 
@@ -42,6 +43,64 @@ async def search_huggingface(query: str = "", limit: int = 20) -> list[dict]:
             "last_modified": m.get("lastModified", ""),
         })
     return results
+
+
+# ── HuggingFace SafeTensors search ────────────────────────────────────
+
+async def search_huggingface_safetensors(query: str = "", limit: int = 20) -> list[dict]:
+    """Search HuggingFace for SafeTensors (full-weight) model repos."""
+    params = {
+        "search": query or "",
+        "filter": "safetensors",
+        "sort": "downloads",
+        "direction": "-1",
+        "limit": limit,
+    }
+    # Also filter to text-generation pipeline for chat models
+    if query:
+        params["search"] = query
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(f"{HF_API}/models", params=params)
+        resp.raise_for_status()
+        models = resp.json()
+
+    results = []
+    for m in models:
+        results.append({
+            "repo_id": m.get("id", ""),
+            "name": m.get("id", "").split("/")[-1],
+            "author": m.get("id", "").split("/")[0] if "/" in m.get("id", "") else "",
+            "downloads": m.get("downloads", 0),
+            "likes": m.get("likes", 0),
+            "tags": m.get("tags", []),
+            "last_modified": m.get("lastModified", ""),
+            "pipeline_tag": m.get("pipeline_tag", ""),
+        })
+    return results
+
+
+async def get_repo_info(repo_id: str) -> dict:
+    """Get full repo info including SafeTensors config (model size, dtype, etc.)."""
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(f"{HF_API}/models/{repo_id}")
+        resp.raise_for_status()
+        data = resp.json()
+
+    # Estimate model size from safetensors files
+    siblings = data.get("siblings", [])
+    st_files = [f for f in siblings if f.get("rfilename", "").endswith(".safetensors")]
+    total_size = sum(f.get("size", 0) for f in st_files)
+
+    return {
+        "repo_id": repo_id,
+        "name": repo_id.split("/")[-1],
+        "pipeline_tag": data.get("pipeline_tag", ""),
+        "tags": data.get("tags", []),
+        "downloads": data.get("downloads", 0),
+        "safetensors_files": len(st_files),
+        "total_size": total_size,
+        "config": data.get("config", {}),
+    }
 
 
 async def get_repo_files(repo_id: str) -> list[dict]:

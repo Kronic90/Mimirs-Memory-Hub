@@ -12,7 +12,7 @@ const MultiChatPage = (() => {
     let isStreaming = false;
     let currentViewMode = 'combined';   // 'combined' | 'tabs' | 'columns'
     let activeTab = 'all';              // agent name or 'all'
-    let currentSettings = { turn_order: 'user_addresses', max_per_round: 3 };
+    let currentSettings = { turn_order: 'all_respond', max_per_round: 3 };
 
     // All messages stored for tab/column rebuilding
     let allMessages = [];               // [{speaker, content, id}]
@@ -589,6 +589,10 @@ const MultiChatPage = (() => {
                     method: 'PUT',
                     body: JSON.stringify({ participants: currentConv.participants }),
                 });
+                // Tell the server to reload participants so new agent is active
+                if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+                    currentWs.send(JSON.stringify({ type: 'reload_participants' }));
+                }
                 App.toast(`Added ${char.name}`);
             } catch (e) {
                 App.toast('Save failed: ' + e.message, 'error');
