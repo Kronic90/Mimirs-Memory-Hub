@@ -1136,7 +1136,7 @@ class MemoryManager:
             return None
         mem = refs[index]
         if "importance" in changes:
-            mem._importance = max(1, min(10, int(changes["importance"])))
+            mem._believed_importance = max(1, min(10, int(changes["importance"])))
         if "emotion" in changes:
             new_emotion = str(changes["emotion"])
             reason = changes.get("reason", "user edit")

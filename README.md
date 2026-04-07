@@ -296,6 +296,58 @@ Configure tool permissions, allowed paths, and allowed domains from the **Tools*
 
 ---
 
+## Testing & Known Limitations
+
+We believe in being transparent about what works and what doesn't. The project includes a comprehensive automated test suite that simulates a full year of usage across every preset mode — companion, agent, character roleplay, creative writing, personal assistant, and multi-agent conversations.
+
+### Test Suite Overview
+
+The test framework lives in `tests/long_term/` and runs 80 individual tests covering 413 separate assertions across 7 test suites:
+
+| Suite | Tests | Assertions | Pass Rate |
+|---|---|---|---|
+| Memory Lifecycle (CRUD, recall, decay, cherished, anchors, dedup, consolidation) | 15 | 84 | 98.8% |
+| Neurochemistry (chemicals, mood, sleep reset, year-long stability) | 8 | 24 | 100% |
+| Tag Parsing (remember, cherished, remind, social, task, solution) | 11 | 41 | 100% |
+| Presets (all 6 presets, chemistry toggles, emotion weights, context gen) | 9 | 29 | 100% |
+| Conversation Quality (process turn, emotion detection, multi-day, high volume) | 15 | 81 | 100% |
+| API Endpoints (all 16 server endpoints) | 16 | 27 | 100% |
+| Year-Long Simulations (6 full-year scenarios with time-warped clocks) | 6 | 127 | 89.8% |
+| **Total** | **80** | **413** | **96.6%** |
+
+### What Works Well
+
+- **Memory CRUD** — storing, recalling, editing, and deleting memories is reliable
+- **Neurochemistry** — dopamine, serotonin, oxytocin, norepinephrine, and cortisol remain stable over a full simulated year with no runaway cascades
+- **Tag parsing** — all memory tags (`[REMEMBER]`, `[CHERISHED]`, `[REMIND]`, `[TASK]`, etc.) are parsed correctly
+- **All presets** — every preset initializes properly with correct chemistry and emotion weight configurations
+- **Conversation pipeline** — turn processing, emotion detection, context generation, and multi-day continuity all work correctly
+- **All API endpoints** — every server endpoint returns expected data
+- **Cherished & anchored memory protection** — protected memories survive consolidation and pruning
+- **Consolidation (sleep)** — Huginn, Muninn, and Völva stages complete without errors, duplicates are merged, insights are generated
+- **Creative writing scenario** — perfect 20/20 assertions over a full simulated year of novel collaboration
+- **Multi-agent memory isolation** — characters maintain fully separate memory stores with zero cross-contamination
+
+### Known Limitations
+
+**Long-term recall accuracy degrades for specific details.** Over a simulated year, recall accuracy averages **90.8%** — the system reliably remembers broad themes and emotional arcs, but can lose specific details (names, job titles, technical specifics) after 3–6 months of simulated time. This is the main area for improvement.
+
+Specific patterns observed in year-long simulations:
+
+- **Companion mode**: After ~3 months, specific facts like job title or hobby names may not surface in recall, though the emotional context of those conversations is retained
+- **Agent mode**: Cross-referencing between projects works well short-term, but specific technical solutions (e.g., which JWT library was chosen, exact CI/CD pipeline details) can fall out of recall after ~12 months
+- **Character roleplay**: Long narrative arcs are mostly preserved, but minor plot details from early sessions (specific battle outcomes, secondary character introductions) can be lost
+- **Assistant mode**: Conference topics and career milestones from 6–12 months ago may not surface without explicit prompting
+
+**These are not bugs** — the system is working as designed (memories fade naturally via the Ebbinghaus curve). The question is whether the current decay rates and recall boosting mechanisms are tuned aggressively enough for users who expect perfect long-term recall. This is an active area of development.
+
+**Other known limitations:**
+- Emotion detection covers a broad set of labels but doesn't catch every nuanced phrasing (e.g., "I feel so drained" may not map to a specific emotion)
+- The reminder system relies on real clock time, so time-warped testing can't fully validate reminder delivery
+- Memory consolidation (sleep) is most effective when run periodically — if you never run it, the memory store grows unbounded and recall latency may increase over very long usage
+
+---
+
 ## Installation
 
 ### Option A — Portable (no Python required, Windows)

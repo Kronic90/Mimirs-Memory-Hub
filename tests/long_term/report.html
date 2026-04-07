@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mimir Year-Long Test Report</title>
+<style>
+:root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --pass: #22c55e;
+    --fail: #ef4444;
+    --warn: #f59e0b;
+    --accent: #8b5cf6;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+}
+h1 { color: var(--accent); margin-bottom: 0.5rem; }
+h2 { color: var(--text); margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+.timestamp { color: var(--muted); font-size: 0.85rem; }
+.summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+}
+.card .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.card .value { font-size: 2rem; font-weight: 700; margin: 0.5rem 0; }
+.card .value.green { color: var(--pass); }
+.card .value.red { color: var(--fail); }
+.card .value.yellow { color: var(--warn); }
+.card .value.purple { color: var(--accent); }
+.status-banner {
+    background: #ef444422;
+    border: 2px solid #ef4444;
+    border-radius: 12px;
+    padding: 1rem 2rem;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #ef4444;
+    margin: 1.5rem 0;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+}
+th {
+    background: var(--surface);
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+}
+td {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+.num { text-align: center; }
+.icon { width: 30px; text-align: center; font-size: 1.1rem; }
+tr.pass .icon { color: var(--pass); }
+tr.fail .icon, tr.error .icon { color: var(--fail); }
+tr.empty .icon { color: var(--muted); }
+tr.suite-header {
+    background: var(--surface);
+}
+tr.suite-header td {
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid var(--accent);
+}
+.badge {
+    background: var(--accent)33;
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-left: 8px;
+}
+.detail-row td {
+    padding: 0.25rem 1rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+.assertions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 0.78rem;
+}
+.a-pass {
+    color: var(--pass);
+    background: #22c55e11;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.a-fail {
+    color: var(--fail);
+    background: #ef444411;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.error-detail {
+    color: var(--fail);
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    margin-top: 4px;
+    padding: 8px;
+    background: #ef444411;
+    border-radius: 6px;
+}
+canvas {
+    max-width: 100%;
+    margin: 1rem 0;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+.chart-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin: 1rem 0;
+}
+@media (max-width: 768px) {
+    .chart-container { grid-template-columns: 1fr; }
+    .summary { grid-template-columns: 1fr 1fr; }
+}
+footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+
+<h1>🧠 Mimir's Memory Hub — Year-Long Test Report</h1>
+<p class="timestamp">Generated: 2026-04-07T09:42:43.995909 &nbsp;|&nbsp;
+Runtime: 211.04s</p>
+
+<div class="status-banner">NEEDS ATTENTION</div>
+
+<div class="summary">
+    <div class="card">
+        <div class="label">Test Functions</div>
+        <div class="value purple">80</div>
+    </div>
+    <div class="card">
+        <div class="label">Assertions Passed</div>
+        <div class="value green">399</div>
+    </div>
+    <div class="card">
+        <div class="label">Assertions Failed</div>
+        <div class="value red">14</div>
+    </div>
+    <div class="card">
+        <div class="label">Pass Rate</div>
+        <div class="value yellow">96.6%</div>
+    </div>
+    <div class="card">
+        <div class="label">Recall Accuracy</div>
+        <div class="value purple">90.8%</div>
+    </div>
+    <div class="card">
+        <div class="label">Errors</div>
+        <div class="value green">0</div>
+    </div>
+</div>
+
+<h2>Detailed Results</h2>
+<table>
+<thead>
+<tr>
+    <th></th>
+    <th>Test</th>
+    <th>Pass</th>
+    <th>Fail</th>
+    <th>Recall</th>
+    <th>Time</th>
+</tr>
+</thead>
+<tbody>
+
+        <tr class="suite-header">
+            <td colspan="6"><strong>Memory Lifecycle</strong>
+                <span class="badge">83P / 1F / 0E
+                (25.16s)</span>
+            </td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Basic CRUD</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">23.849s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ store_memory: Memory stored successfully</div><div class="a-pass">✓ recall_memory: Recalled 1 results, found pineapple: True</div><div class="a-pass">✓ stats_valid: Total memories: 1</div><div class="a-pass">✓ update_memory: Updated importance to 10</div><div class="a-pass">✓ delete_memory: After delete: 0 memories</div></div></td>
+        </tr>
+        <tr class="fail">
+            <td class="icon">✗</td>
+            <td>Recall Accuracy</td>
+            <td class="num">9</td>
+            <td class="num">1</td>
+            <td class="num">90%</td>
+            <td class="num">0.127s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ accuracy_Rex: Found &#x27;Rex&#x27; at rank 0</div><div class="a-pass">✓ accuracy_July 15: Found &#x27;July 15&#x27; at rank 0</div><div class="a-pass">✓ accuracy_shellfish: Found &#x27;shellfish&#x27; at rank 0</div><div class="a-pass">✓ accuracy_Python: Found &#x27;Python&#x27; at rank 0</div><div class="a-pass">✓ accuracy_Jamie: Found &#x27;Jamie&#x27; at rank 0</div><div class="a-fail">✗ accuracy_Honda: Could not find &#x27;Honda&#x27; in top 5 results</div><div class="a-pass">✓ accuracy_Iceland: Found &#x27;Iceland&#x27; at rank 0</div><div class="a-pass">✓ accuracy_blue: Found &#x27;blue&#x27; at rank 0</div><div class="a-pass">✓ accuracy_basketball: Found &#x27;basketball&#x27; at rank 0</div><div class="a-pass">✓ accuracy_startup: Found &#x27;startup&#x27; at rank 1</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Vividness Decay</td>
+            <td class="num">4</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.02s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ initial_vividness: Initial vividness: 7.999999991108025</div><div class="a-pass">✓ 30day_vividness: 30-day vividness: 7.999999991108025</div><div class="a-pass">✓ 90day_vividness: 90-day vividness: 7.999999991108025</div><div class="a-pass">✓ vividness_decayed: Decay: 8.00 -&gt; 8.00</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Cherished Protection</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.181s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ cherish_toggle: Cherished toggled on</div><div class="a-pass">✓ cherished_survives_6mo: Found &#x27;proposed&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Anchor Stability</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.391s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ anchor_set: Anchored memory 0</div><div class="a-pass">✓ anchor_survives_emotions: Found &#x27;honesty&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Deduplication</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.037s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ dedup_check: Stored 2 memories from 3 near-dupes (expected ≤3)</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Emotion Detection</td>
+            <td class="num">12</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ detect_happy: Detected: [&#x27;happy&#x27;], expected &#x27;happy&#x27;</div><div class="a-pass">✓ detect_sad: Detected: [&#x27;sad&#x27;], expected &#x27;sad&#x27;</div><div class="a-pass">✓ detect_angry: Detected: [&#x27;angry&#x27;], expected &#x27;angry&#x27;</div><div class="a-pass">✓ detect_anxious: Detected: [&#x27;anxious&#x27;], expected &#x27;anxious&#x27;</div><div class="a-pass">✓ detect_grateful: Detected: [&#x27;grateful&#x27;], expected &#x27;grateful&#x27;</div><div class="a-pass">✓ detect_excited: Detected: [&#x27;excited&#x27;], expected &#x27;excited&#x27;</div><div class="a-pass">✓ detect_lonely: Detected: [&#x27;lonely&#x27;], expected &#x27;lonely&#x27;</div><div class="a-pass">✓ detect_proud: Detected: [&#x27;proud&#x27;], expected &#x27;proud&#x27;</div><div class="a-pass">✓ detect_warm: Detected: [&#x27;warm&#x27;], expected &#x27;warm&#x27;</div><div class="a-pass">✓ detect_curious: Detected: [&#x27;curious&#x27;], expected &#x27;curious&#x27;</div><div class="a-pass">✓ detect_peaceful: Detected: [&#x27;peaceful&#x27;], expected &#x27;peaceful&#x27;</div><div class="a-pass">✓ detect_hopeful: Detected: [&#x27;hopeful&#x27;], expected &#x27;hopeful&#x27;</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Emotion Normalization</td>
+            <td class="num">10</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ normalize_furious: normalize(&#x27;furious&#x27;) = &#x27;angry&#x27; (expected &#x27;angry&#x27;)</div><div class="a-pass">✓ normalize_anxious: normalize(&#x27;anxious&#x27;) = &#x27;anxious&#x27; (expected &#x27;anxious&#x27;)</div><div class="a-pass">✓ normalize_happy: normalize(&#x27;happy&#x27;) = &#x27;happy&#x27; (expected &#x27;happy&#x27;)</div><div class="a-pass">✓ normalize_sad: normalize(&#x27;sad&#x27;) = &#x27;sad&#x27; (expected &#x27;sad&#x27;)</div><div class="a-pass">✓ normalize_angry: normalize(&#x27;angry&#x27;) = &#x27;angry&#x27; (expected &#x27;angry&#x27;)</div><div class="a-pass">✓ normalize_grateful: normalize(&#x27;grateful&#x27;) = &#x27;grateful&#x27; (expected &#x27;grateful&#x27;)</div><div class="a-pass">✓ normalize_excited: normalize(&#x27;excited&#x27;) = &#x27;excited&#x27; (expected &#x27;excited&#x27;)</div><div class="a-pass">✓ normalize_scared: normalize(&#x27;scared&#x27;) = &#x27;anxious&#x27; (expected &#x27;anxious&#x27;)</div><div class="a-pass">✓ normalize_terrified: normalize(&#x27;terrified&#x27;) = &#x27;anxious&#x27; (expected &#x27;anxious&#x27;)</div><div class="a-pass">✓ normalize_proud: normalize(&#x27;proud&#x27;) = &#x27;proud&#x27; (expected &#x27;proud&#x27;)</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Social Impressions</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ social_sarah: Sarah impressions: 1</div><div class="a-pass">✓ social_mike: Mike impressions: 1</div><div class="a-pass">✓ social_mom: Mom impressions: 1</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Lessons Lifecycle</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ lesson_created: Lesson: {&#x27;id&#x27;: &#x27;f360731c-1258-4479-8925-f93c8aabbf08&#x27;, &#x27;topic&#x27;: &#x27;Debugging async code&#x27;, &#x27;context_trigger&#x27;: &#x27;encountering</div><div class="a-pass">✓ lessons_list: Active lessons: 1</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Reminders</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ reminders_pending: Pending reminders: 2</div><div class="a-pass">✓ reminder_fired: Due reminders after 25h: 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Task Management</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.026s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ tasks_created: Task1: {&#x27;task_id&#x27;: &#x27;89743ac62d13&#x27;, &#x27;description&#x27;: &#x27;Write documentation&#x27;, &#x27;priority&#x27;: 8, &#x27;status&#x27;: &#x27;active&#x27;}, Task2: {&#x27;ta</div><div class="a-pass">✓ task_completed: Completed {&#x27;task_id&#x27;: &#x27;89743ac62d13&#x27;, &#x27;description&#x27;: &#x27;Write documentation&#x27;, &#x27;priority&#x27;: 8, &#x27;status&#x27;: &#x27;active&#x27;}</div><div class="a-pass">✓ project_overview: Overview: {&#x27;project&#x27;: &#x27;&#x27;, &#x27;tasks_active&#x27;: 2, &#x27;tasks_completed&#x27;: 0, &#x27;tasks_failed&#x27;: 0, &#x27;actions_logged&#x27;: 0, &#x27;solutions_st</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Import/Export</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.03s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ export_works: Exported type: list</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Consolidation Cycle</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.271s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ consolidation_ran: Before: 2, After: 2</div><div class="a-pass">✓ consolidation_preserves_important: Found &#x27;Thompson&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Long-Term Recall (1wk→1yr)</td>
+            <td class="num">25</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.216s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ 1_week_Mustang: Found &#x27;Mustang&#x27; at rank 0</div><div class="a-pass">✓ 1_week_science fair: Found &#x27;science fair&#x27; at rank 0</div><div class="a-pass">✓ 1_week_Danny: Found &#x27;Danny&#x27; at rank 0</div><div class="a-pass">✓ 1_week_Matrix: Found &#x27;Matrix&#x27; at rank 0</div><div class="a-pass">✓ 1_week_heights: Found &#x27;heights&#x27; at rank 0</div><div class="a-pass">✓ 1_month_Mustang: Found &#x27;Mustang&#x27; at rank 0</div><div class="a-pass">✓ 1_month_science fair: Found &#x27;science fair&#x27; at rank 0</div><div class="a-pass">✓ 1_month_Danny: Found &#x27;Danny&#x27; at rank 0</div><div class="a-pass">✓ 1_month_Matrix: Found &#x27;Matrix&#x27; at rank 0</div><div class="a-pass">✓ 1_month_heights: Found &#x27;heights&#x27; at rank 0</div><div class="a-pass">✓ 3_months_Mustang: Found &#x27;Mustang&#x27; at rank 0</div><div class="a-pass">✓ 3_months_science fair: Found &#x27;science fair&#x27; at rank 0</div><div class="a-pass">✓ 3_months_Danny: Found &#x27;Danny&#x27; at rank 0</div><div class="a-pass">✓ 3_months_Matrix: Found &#x27;Matrix&#x27; at rank 0</div><div class="a-pass">✓ 3_months_heights: Found &#x27;heights&#x27; at rank 0</div><div class="a-pass">✓ 6_months_Mustang: Found &#x27;Mustang&#x27; at rank 0</div><div class="a-pass">✓ 6_months_science fair: Found &#x27;science fair&#x27; at rank 0</div><div class="a-pass">✓ 6_months_Danny: Found &#x27;Danny&#x27; at rank 0</div><div class="a-pass">✓ 6_months_Matrix: Found &#x27;Matrix&#x27; at rank 0</div><div class="a-pass">✓ 6_months_heights: Found &#x27;heights&#x27; at rank 0</div><div class="a-pass">✓ 1_year_Mustang: Found &#x27;Mustang&#x27; at rank 0</div><div class="a-pass">✓ 1_year_science fair: Found &#x27;science fair&#x27; at rank 0</div><div class="a-pass">✓ 1_year_Danny: Found &#x27;Danny&#x27; at rank 0</div><div class="a-pass">✓ 1_year_Matrix: Found &#x27;Matrix&#x27; at rank 0</div><div class="a-pass">✓ 1_year_heights: Found &#x27;heights&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="suite-header">
+            <td colspan="6"><strong>Neurochemistry</strong>
+                <span class="badge">24P / 0F / 0E
+                (1.71s)</span>
+            </td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Chemistry Initialization</td>
+            <td class="num">7</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ chemistry_exists: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ has_dopamine: dopamine: 0.5</div><div class="a-pass">✓ has_serotonin: serotonin: 0.6</div><div class="a-pass">✓ has_oxytocin: oxytocin: 0.4</div><div class="a-pass">✓ has_norepinephrine: norepinephrine: 0.5</div><div class="a-pass">✓ has_cortisol: cortisol: 0.3</div><div class="a-pass">✓ all_in_range: All levels in [0,1]: True</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Positive Events</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.105s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ positive_dopamine_boost: dopamine: 0.500 → 0.746</div><div class="a-pass">✓ positive_serotonin_boost: serotonin: 0.600 → 0.600</div><div class="a-pass">✓ after_positive_events: Chemistry levels: {&#x27;dopamine&#x27;: 0.7458500000000001, &#x27;cortisol&#x27;: 0.28692288, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.3769280000000</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Stress Events</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.198s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ cortisol_level: Cortisol after stress: 0.321</div><div class="a-pass">✓ dampening_active: Dampening active: False</div><div class="a-pass">✓ after_stress: Chemistry levels: {&#x27;dopamine&#x27;: 1.0, &#x27;cortisol&#x27;: 0.320767067136, &#x27;serotonin&#x27;: 0.5676667043839999, &#x27;oxytocin&#x27;: 0.909999999</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Sleep Reset</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.151s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ sleep_reset_ran: Pre-sleep: {&#x27;dopamine&#x27;: 0.8423417535999999, &#x27;cortisol&#x27;: 0.31306667711999997, &#x27;serotonin&#x27;: 0.54769051648, &#x27;oxytocin&#x27;: 0.4</div><div class="a-pass">✓ cortisol_decreased: Cortisol: 0.313 → 0.300</div><div class="a-pass">✓ after_sleep_reset: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Mood EMA Blending</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.183s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ mood_trajectory: Mood journey: neutral → happy → disappointed</div><div class="a-pass">✓ ema_final_mood_valid: Mood: disappointed</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Year-Long Stability</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.86s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ year_stability: Violations: 0 — None</div><div class="a-pass">✓ year_end_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.30000000000000004, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Rapid Mixed Emotions</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.2s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ after_rapid_cycling: Chemistry levels: {&#x27;dopamine&#x27;: 0.5003254999197188, &#x27;cortisol&#x27;: 0.29520084092543436, &#x27;serotonin&#x27;: 0.574690598008, &#x27;oxytoc</div><div class="a-pass">✓ rapid_cycling_mood: Final mood after cycling: bittersweet</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Idle Chemistry Drift</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ idle_chemistry: Day 0: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}
+Day 30: {&#x27;dopamine&#x27;:</div><div class="a-pass">✓ after_idle_period: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div></div></td>
+        </tr>
+        <tr class="suite-header">
+            <td colspan="6"><strong>Tag Parsing</strong>
+                <span class="badge">41P / 0F / 0E
+                (0.07s)</span>
+            </td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Remember Tag Basic</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ remember_count: Found 1 remember tags</div><div class="a-pass">✓ remember_emotion: Emotion: happy</div><div class="a-pass">✓ remember_importance: Importance: 8</div><div class="a-pass">✓ remember_why: Why: test</div><div class="a-pass">✓ remember_content: Content: User is happy</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Remember Tag Cherished</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ cherish_parsed: Tags: 1</div><div class="a-pass">✓ cherish_flag: Cherish: true</div><div class="a-pass">✓ anchor_flag: Anchor: true</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Multiple Remember Tags</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ multi_remember: Found 3 tags (expected 3)</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Remind Tag</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ remind_timebased: Time-based: [{&#x27;in&#x27;: &#x27;24h&#x27;, &#x27;content&#x27;: &#x27;Call the dentist&#x27;}]</div><div class="a-pass">✓ remind_content: Content: Call the dentist</div><div class="a-pass">✓ remind_datebased: Date-based: [{&#x27;date&#x27;: &#x27;2025-12-25&#x27;, &#x27;content&#x27;: &#x27;Christmas shopping&#x27;}]</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Social Tag</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ social_parsed: Found: 1</div><div class="a-pass">✓ social_entity: Entity: Sarah</div><div class="a-pass">✓ social_emotion: Emotion: warm</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Task Tag</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ task_start: Start: [{&#x27;action&#x27;: &#x27;start&#x27;, &#x27;priority&#x27;: &#x27;8&#x27;, &#x27;project&#x27;: &#x27;Work&#x27;, &#x27;content&#x27;: &#x27;Write report&#x27;}]</div><div class="a-pass">✓ task_action: Action: start</div><div class="a-pass">✓ task_project: Project: Work</div><div class="a-pass">✓ task_complete: Complete: [{&#x27;action&#x27;: &#x27;complete&#x27;, &#x27;id&#x27;: &#x27;123&#x27;, &#x27;content&#x27;: &#x27;Report done&#x27;}]</div><div class="a-pass">✓ task_fail: Fail: [{&#x27;action&#x27;: &#x27;fail&#x27;, &#x27;id&#x27;: &#x27;456&#x27;, &#x27;content&#x27;: &#x27;Could not finish&#x27;}]</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Solution Tag</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ solution_parsed: Found: 1</div><div class="a-pass">✓ solution_problem: Problem: slow queries</div><div class="a-pass">✓ solution_content: Content: Add database indexes on frequently filtered columns</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Tag Stripping</td>
+            <td class="num">4</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ strip_remember: Stripped: &#x27;Great news!  I&#x27;m so proud of you!&#x27;</div><div class="a-pass">✓ strip_remind: No remind tag in stripped text</div><div class="a-pass">✓ strip_preserves_text: Display text preserved</div><div class="a-pass">✓ strip_preserves_text2: Surrounding text preserved</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Mixed Tags</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.0s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ mixed_remember: </div><div class="a-pass">✓ mixed_social: </div><div class="a-pass">✓ mixed_remind: </div><div class="a-pass">✓ mixed_task: </div><div class="a-pass">✓ mixed_stripped: Stripped: &#x27;That&#x27;s exciting!&#x27;</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Malformed Tags</td>
+            <td class="num">7</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.0s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ malformed_0_no_crash: Parsed without crash: &lt;remember emotion=&quot;happy&quot;&gt;No closing tag</div><div class="a-pass">✓ malformed_1_no_crash: Parsed without crash: &lt;remember&gt;Just content&lt;/remember&gt;</div><div class="a-pass">✓ malformed_2_no_crash: Parsed without crash: &lt;remember emotion=&quot;test&quot; importance=&quot;5&quot; why=&quot;test&quot;</div><div class="a-pass">✓ malformed_3_no_crash: Parsed without crash: &lt;remember emotion=&quot;a&quot;&gt;&lt;remember emotion=&quot;b&quot;&gt;inner&lt;</div><div class="a-pass">✓ malformed_4_no_crash: Parsed without crash: &lt;remember emotion=&quot;happy&quot; importance=&quot;5&quot; why=&quot;test</div><div class="a-pass">✓ malformed_5_no_crash: Parsed without crash: &lt;remember emotion=&quot;happy&quot; importance=&quot;5&quot; why=&quot;test</div><div class="a-pass">✓ malformed_6_no_crash: Parsed without crash: &lt;remember emotion=&quot;happy&quot; importance=&quot;5&quot; why=&quot;test</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Process Turn with Tags</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.047s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ process_turn_result: Result keys: [&#x27;emotion&#x27;, &#x27;emotions&#x27;, &#x27;importance&#x27;, &#x27;mood_label&#x27;, &#x27;mood_pad&#x27;, &#x27;consolidated&#x27;]</div><div class="a-pass">✓ tag_creates_memory: Found &#x27;Biscuit&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="suite-header">
+            <td colspan="6"><strong>Presets</strong>
+                <span class="badge">29P / 0F / 0E
+                (0.35s)</span>
+            </td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>All Presets Exist</td>
+            <td class="num">6</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.006s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ preset_companion_exists: Preset &#x27;companion&#x27;: Companion</div><div class="a-pass">✓ preset_agent_exists: Preset &#x27;agent&#x27;: Agent</div><div class="a-pass">✓ preset_character_exists: Preset &#x27;character&#x27;: Character</div><div class="a-pass">✓ preset_writer_exists: Preset &#x27;writer&#x27;: Writer</div><div class="a-pass">✓ preset_assistant_exists: Preset &#x27;assistant&#x27;: Assistant</div><div class="a-pass">✓ preset_custom_exists: Preset &#x27;custom&#x27;: Custom</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Chemistry Settings</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ chem_companion: companion: chemistry=True (expected True)</div><div class="a-pass">✓ chem_agent: agent: chemistry=False (expected False)</div><div class="a-pass">✓ chem_character: character: chemistry=True (expected True)</div><div class="a-pass">✓ chem_writer: writer: chemistry=True (expected True)</div><div class="a-pass">✓ chem_assistant: assistant: chemistry=False (expected False)</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Emotion Weights</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ weight_companion: companion: emotion_weight=0.8 (expected 0.8)</div><div class="a-pass">✓ weight_agent: agent: emotion_weight=0.2 (expected 0.2)</div><div class="a-pass">✓ weight_character: character: emotion_weight=1.0 (expected 1.0)</div><div class="a-pass">✓ weight_writer: writer: emotion_weight=0.5 (expected 0.5)</div><div class="a-pass">✓ weight_assistant: assistant: emotion_weight=0.15 (expected 0.15)</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Context Generation</td>
+            <td class="num">5</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.152s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ context_companion: companion context length: 260 chars</div><div class="a-pass">✓ context_agent: agent context length: 260 chars</div><div class="a-pass">✓ context_character: character context length: 260 chars</div><div class="a-pass">✓ context_writer: writer context length: 260 chars</div><div class="a-pass">✓ context_assistant: assistant context length: 260 chars</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Companion Process Turn</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.028s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ companion_emotion: Detected emotion: happy</div><div class="a-pass">✓ companion_importance: Importance: 6</div><div class="a-pass">✓ companion_mood: Mood: thoughtful</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Agent Process Turn</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.022s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ agent_result: Agent result keys: [&#x27;emotion&#x27;, &#x27;emotions&#x27;, &#x27;importance&#x27;, &#x27;mood_label&#x27;, &#x27;mood_pad&#x27;, &#x27;consolidated&#x27;]</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Character High Emotion</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.109s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ character_mood_responsive: Character mood: neutral</div><div class="a-pass">✓ character_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.38095234375, &#x27;cortisol&#x27;: 0.45827859375, &#x27;serotonin&#x27;: 0.3920175, &#x27;oxytocin&#x27;: 0.4, &#x27;norep</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Writer Task Support</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.019s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ writer_tasks: Active tasks: 2</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Preset Fallback</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.0s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ fallback_valid: Fallback preset: Companion</div></div></td>
+        </tr>
+        <tr class="suite-header">
+            <td colspan="6"><strong>Conversation Quality</strong>
+                <span class="badge">81P / 0F / 0E
+                (3.63s)</span>
+            </td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Process Turn Valid Dict</td>
+            <td class="num">4</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.041s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ has_emotion: Key &#x27;emotion&#x27; present: True; keys=[&#x27;emotion&#x27;, &#x27;emotions&#x27;, &#x27;importance&#x27;, &#x27;mood_label&#x27;, &#x27;mood_pad&#x27;, &#x27;consolidated&#x27;]</div><div class="a-pass">✓ has_importance: Key &#x27;importance&#x27; present: True; keys=[&#x27;emotion&#x27;, &#x27;emotions&#x27;, &#x27;importance&#x27;, &#x27;mood_label&#x27;, &#x27;mood_pad&#x27;, &#x27;consolidated&#x27;]</div><div class="a-pass">✓ emotion_is_str: emotion type: str</div><div class="a-pass">✓ importance_is_int: importance type: int</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Process Turn Stores Memory</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.041s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ recall_color_after_process: Found &#x27;teal&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Sequential Conversation Flow</td>
+            <td class="num">4</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.088s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ recall_name: Found &#x27;Alex&#x27; at rank 0</div><div class="a-pass">✓ recall_job: Found &#x27;data scientist&#x27; at rank 1</div><div class="a-pass">✓ recall_tools: Found &#x27;Python&#x27; at rank 0</div><div class="a-pass">✓ recall_project: Found &#x27;recommendation&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Emotion Detection Accuracy</td>
+            <td class="num">14</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.006s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ detect_happy: Input: &#x27;I&#x27;m so happy today!&#x27; → Detected: [&#x27;happy&#x27;], expected: &#x27;happy&#x27;</div><div class="a-pass">✓ detect_sad: Input: &#x27;I feel really sad and lonely.&#x27; → Detected: [&#x27;sad&#x27;, &#x27;lonely&#x27;], expected: &#x27;sad&#x27;</div><div class="a-pass">✓ detect_angry: Input: &#x27;This makes me furious!&#x27; → Detected: [&#x27;angry&#x27;], expected: &#x27;angry&#x27;</div><div class="a-pass">✓ detect_anxious: Input: &#x27;I&#x27;m scared and anxious about the future.&#x27; → Detected: [&#x27;anxious&#x27;], expected: &#x27;anxious&#x27;</div><div class="a-pass">✓ detect_curious: Input: &#x27;How interesting! Tell me more.&#x27; → Detected: [&#x27;curious&#x27;], expected: &#x27;curious&#x27;</div><div class="a-pass">✓ detect_grateful: Input: &#x27;I&#x27;m so grateful for everything you&#x27;ve done.&#x27; → Detected: [&#x27;grateful&#x27;], expected: &#x27;grateful&#x27;</div><div class="a-pass">✓ detect_proud: Input: &#x27;I&#x27;m really proud of what I accomplished.&#x27; → Detected: [&#x27;proud&#x27;], expected: &#x27;proud&#x27;</div><div class="a-pass">✓ detect_excited: Input: &#x27;I am so excited and thrilled!&#x27; → Detected: [&#x27;excited&#x27;], expected: &#x27;excited&#x27;</div><div class="a-pass">✓ detect_anxious: Input: &#x27;I&#x27;m worried about the exam results.&#x27; → Detected: [&#x27;anxious&#x27;], expected: &#x27;anxious&#x27;</div><div class="a-pass">✓ detect_peaceful: Input: &#x27;I feel very peaceful right now.&#x27; → Detected: [&#x27;peaceful&#x27;], expected: &#x27;peaceful&#x27;</div><div class="a-pass">✓ detect_nostalgic: Input: &#x27;I miss the old days so much.&#x27; → Detected: [&#x27;nostalgic&#x27;], expected: &#x27;nostalgic&#x27;</div><div class="a-pass">✓ detect_hopeful: Input: &#x27;I&#x27;m hopeful about the future.&#x27; → Detected: [&#x27;hopeful&#x27;], expected: &#x27;hopeful&#x27;</div><div class="a-pass">✓ detect_lonely: Input: &#x27;I feel completely lonely and drained.&#x27; → Detected: [&#x27;lonely&#x27;], expected: &#x27;lonely&#x27;</div><div class="a-pass">✓ detect_warm: Input: &#x27;That is so warm and kind of you.&#x27; → Detected: [&#x27;warm&#x27;], expected: &#x27;warm&#x27;</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Emotion Normalization Coverage</td>
+            <td class="num">10</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ normalize_happy: normalize_emotion(&#x27;happy&#x27;) = &#x27;happy&#x27;, expected &#x27;happy&#x27;</div><div class="a-pass">✓ normalize_sad: normalize_emotion(&#x27;sad&#x27;) = &#x27;sad&#x27;, expected &#x27;sad&#x27;</div><div class="a-pass">✓ normalize_angry: normalize_emotion(&#x27;angry&#x27;) = &#x27;angry&#x27;, expected &#x27;angry&#x27;</div><div class="a-pass">✓ normalize_scared: normalize_emotion(&#x27;scared&#x27;) = &#x27;anxious&#x27;, expected &#x27;anxious&#x27;</div><div class="a-pass">✓ normalize_furious: normalize_emotion(&#x27;furious&#x27;) = &#x27;angry&#x27;, expected &#x27;angry&#x27;</div><div class="a-pass">✓ normalize_grateful: normalize_emotion(&#x27;grateful&#x27;) = &#x27;grateful&#x27;, expected &#x27;grateful&#x27;</div><div class="a-pass">✓ normalize_lonely: normalize_emotion(&#x27;lonely&#x27;) = &#x27;lonely&#x27;, expected &#x27;lonely&#x27;</div><div class="a-pass">✓ normalize_excited: normalize_emotion(&#x27;excited&#x27;) = &#x27;excited&#x27;, expected &#x27;excited&#x27;</div><div class="a-pass">✓ normalize_terrified: normalize_emotion(&#x27;terrified&#x27;) = &#x27;anxious&#x27;, expected &#x27;anxious&#x27;</div><div class="a-pass">✓ normalize_proud: normalize_emotion(&#x27;proud&#x27;) = &#x27;proud&#x27;, expected &#x27;proud&#x27;</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Context Generation Content</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.054s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ context_not_empty: Context length: 606</div><div class="a-pass">✓ context_has_content: Context preview: === THINGS ON MY MIND ===
+— User said: I love hiking in the mountains on weekends.
+I responded: Mountai</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Multi-Day Continuity</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.108s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ d5_recall_project: Found &#x27;Nebula&#x27; at rank 0</div><div class="a-pass">✓ d5_recall_purpose: Found &#x27;space&#x27; at rank 1</div><div class="a-pass">✓ d5_recall_tech: Found &#x27;Three&#x27; at rank 2</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Emotional Variety</td>
+            <td class="num">13</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.283s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ process_happy: Emotion &#x27;happy&#x27;: result emotion=&#x27;happy&#x27;</div><div class="a-pass">✓ process_happy: Emotion &#x27;happy&#x27;: result emotion=&#x27;grateful&#x27;</div><div class="a-pass">✓ process_sad: Emotion &#x27;sad&#x27;: result emotion=&#x27;sad&#x27;</div><div class="a-pass">✓ process_sad: Emotion &#x27;sad&#x27;: result emotion=&#x27;sad&#x27;</div><div class="a-pass">✓ process_anxious: Emotion &#x27;anxious&#x27;: result emotion=&#x27;anxious&#x27;</div><div class="a-pass">✓ process_excited: Emotion &#x27;excited&#x27;: result emotion=&#x27;excited&#x27;</div><div class="a-pass">✓ process_angry: Emotion &#x27;angry&#x27;: result emotion=&#x27;angry&#x27;</div><div class="a-pass">✓ process_curious: Emotion &#x27;curious&#x27;: result emotion=&#x27;curious&#x27;</div><div class="a-pass">✓ process_nostalgic: Emotion &#x27;nostalgic&#x27;: result emotion=&#x27;nostalgic&#x27;</div><div class="a-pass">✓ process_proud: Emotion &#x27;proud&#x27;: result emotion=&#x27;proud&#x27;</div><div class="a-pass">✓ recall_happy_memory: Found &#x27;promoted&#x27; at rank 0</div><div class="a-pass">✓ recall_excited_memory: Found &#x27;Japan&#x27; at rank 0</div><div class="a-pass">✓ recall_proud_memory: Found &#x27;marathon&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Topic Breadth</td>
+            <td class="num">12</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.246s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ topic_work_0: Topic &#x27;work&#x27; processed OK</div><div class="a-pass">✓ topic_work_1: Topic &#x27;work&#x27; processed OK</div><div class="a-pass">✓ topic_hobbies_2: Topic &#x27;hobbies&#x27; processed OK</div><div class="a-pass">✓ topic_hobbies_3: Topic &#x27;hobbies&#x27; processed OK</div><div class="a-pass">✓ topic_relationships_4: Topic &#x27;relationships&#x27; processed OK</div><div class="a-pass">✓ topic_relationships_5: Topic &#x27;relationships&#x27; processed OK</div><div class="a-pass">✓ topic_health_6: Topic &#x27;health&#x27; processed OK</div><div class="a-pass">✓ topic_goals_7: Topic &#x27;goals&#x27; processed OK</div><div class="a-pass">✓ topic_goals_8: Topic &#x27;goals&#x27; processed OK</div><div class="a-pass">✓ topic_technology_9: Topic &#x27;technology&#x27; processed OK</div><div class="a-pass">✓ topic_technology_10: Topic &#x27;technology&#x27; processed OK</div><div class="a-pass">✓ total_topics_processed: Processed 11 topic conversations</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Social Impressions</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.089s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ social_sarah: Found &#x27;Sarah&#x27; at rank 0</div><div class="a-pass">✓ social_mike: Found &#x27;Mike&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Deep Personal Anchoring</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.122s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ recall_life_reflection: Found &#x27;lost&#x27; at rank 0</div><div class="a-pass">✓ recall_grandfather: Found &#x27;kind&#x27; at rank 0</div><div class="a-pass">✓ recall_career_change: Found &#x27;career&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Reminder Flow</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.001s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ no_premature_fire: Reminders before due: retrieved OK</div><div class="a-pass">✓ first_reminder_check: Due after 25h: 0 reminders (time-warp limited)</div><div class="a-pass">✓ all_reminders_check: Due after 75h total: 0 reminders (time-warp limited)</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Task Lifecycle</td>
+            <td class="num">4</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.031s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ task_created: Task ID: e32675ddb0e1</div><div class="a-pass">✓ task_completed: Complete result: True</div><div class="a-pass">✓ task_failed: Fail result: True</div><div class="a-pass">✓ project_overview: Overview: {&#x27;project&#x27;: &#x27;TestProject&#x27;, &#x27;tasks_active&#x27;: 0, &#x27;tasks_completed&#x27;: 1, &#x27;tasks_failed&#x27;: 1, &#x27;actions_logged&#x27;: 0, &#x27;s</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Sleep Cycle Survival</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.41s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ d14_recall_wedding: Found &#x27;wedding&#x27; at rank 0</div><div class="a-pass">✓ d14_recall_month: Found &#x27;June&#x27; at rank 0</div><div class="a-pass">✓ d30_recall_wedding: Found &#x27;wedding&#x27; at rank 0</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>High Volume Handling</td>
+            <td class="num">3</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">2.102s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ high_volume_no_crash: 100 turns complete. Total memories: 4</div><div class="a-pass">✓ memories_stored: Memories: 4</div><div class="a-pass">✓ post_volume_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.0, &#x27;cortisol&#x27;: 0.7479999999999997, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;:</div></div></td>
+        </tr>
+        <tr class="suite-header">
+            <td colspan="6"><strong>API Endpoints</strong>
+                <span class="badge">27P / 0F / 0E
+                (0.9s)</span>
+            </td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Settings API</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.782s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ get_settings_status: Status: 200</div><div class="a-pass">✓ settings_has_backend: Keys: [&#x27;active_backend&#x27;, &#x27;active_model&#x27;, &#x27;active_preset&#x27;, &#x27;active_profile&#x27;, &#x27;active_character_id&#x27;, &#x27;backends&#x27;, &#x27;system_p</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Presets API</td>
+            <td class="num">7</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ get_presets_status: Status: 200</div><div class="a-pass">✓ presets_is_dict: Type: dict</div><div class="a-pass">✓ preset_companion: &#x27;companion&#x27; in presets: True</div><div class="a-pass">✓ preset_agent: &#x27;agent&#x27; in presets: True</div><div class="a-pass">✓ preset_character: &#x27;character&#x27; in presets: True</div><div class="a-pass">✓ preset_writer: &#x27;writer&#x27; in presets: True</div><div class="a-pass">✓ preset_assistant: &#x27;assistant&#x27; in presets: True</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Stats API</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.014s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ memory_stats_status: Status: 200</div><div class="a-pass">✓ stats_has_total: Keys: [&#x27;total_reflections&#x27;, &#x27;flashbulb_count&#x27;, &#x27;anchor_count&#x27;, &#x27;cherished_count&#x27;, &#x27;embed_synced&#x27;, &#x27;social_entities&#x27;, &#x27;to</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Recall API</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ recall_status: Status: 200</div><div class="a-pass">✓ recall_is_list: Type: list</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Remember API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.042s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ remember_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Browse API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ browse_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Mood API</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ mood_status: Status: 200</div><div class="a-pass">✓ mood_has_label: Keys: [&#x27;mood_label&#x27;, &#x27;mood_pad&#x27;, &#x27;session_count&#x27;, &#x27;chemistry&#x27;]</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Chemistry API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ chemistry_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Export API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ export_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Emotions API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.003s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ emotions_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Memory Filters API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ filters_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Characters API</td>
+            <td class="num">2</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ characters_status: Status: 200</div><div class="a-pass">✓ characters_is_collection: Type: dict, count: 1</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Conversations API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.004s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ conversations_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>TTS Status API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.0s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ tts_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>STT Status API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.015s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ stt_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Tasks API</td>
+            <td class="num">1</td>
+            <td class="num">0</td>
+            <td class="num">—</td>
+            <td class="num">0.006s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ tasks_status: Status: 200</div></div></td>
+        </tr>
+        <tr class="suite-header">
+            <td colspan="6"><strong>Year Simulations</strong>
+                <span class="badge">114P / 13F / 0E
+                (179.23s)</span>
+            </td>
+        </tr>
+        <tr class="fail">
+            <td class="icon">✗</td>
+            <td>Companion Year</td>
+            <td class="num">35</td>
+            <td class="num">4</td>
+            <td class="num">85%</td>
+            <td class="num">73.002s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ week1_name_recall: Found &#x27;Scott&#x27; at rank 1</div><div class="a-pass">✓ week1_hobby_recall: Found &#x27;gaming&#x27; at rank 3</div><div class="a-pass">✓ week1_job_recall: Found &#x27;software developer&#x27; at rank 3</div><div class="a-pass">✓ week1_memory_count: Memory count: 11 (expected 5-999999)</div><div class="a-pass">✓ week1_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ month1_japan_recall: Found &#x27;Japan&#x27; at rank 1</div><div class="a-pass">✓ month1_grandfather_recall: Found &#x27;kind&#x27; at rank 2</div><div class="a-pass">✓ month1_sarah_social: Found &#x27;Sarah&#x27; at rank 2</div><div class="a-pass">✓ month1_memory_count: Memory count: 21 (expected 15-999999)</div><div class="a-pass">✓ month1_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ month3_baby_recall: Found &#x27;baby&#x27; at rank 1</div><div class="a-fail">✗ month3_job_still_recalled: Could not find &#x27;software developer&#x27; in top 5 results</div><div class="a-fail">✗ month3_hobbies_still_recalled: Could not find &#x27;gaming&#x27; in top 5 results</div><div class="a-pass">✓ month3_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ month6_name_recall: Found &#x27;Scott&#x27; at rank 1</div><div class="a-pass">✓ month6_baby_recall: Found &#x27;baby&#x27; at rank 1</div><div class="a-pass">✓ month6_grandfather_recall: Found &#x27;kind&#x27; at rank 1</div><div class="a-pass">✓ month6_japan_recall: Found &#x27;Japan&#x27; at rank 0</div><div class="a-pass">✓ month6_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ month6_memory_count: Memory count: 34 (expected 30-999999)</div><div class="a-pass">✓ month9_stress_recall: Found &#x27;deadline&#x27; at rank 0</div><div class="a-pass">✓ month9_pet_recall: Found &#x27;pet&#x27; at rank 1</div><div class="a-pass">✓ month9_recovery_recall: Found &#x27;manager&#x27; at rank 0</div><div class="a-pass">✓ month9_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ FINAL_name: Found &#x27;Scott&#x27; at rank 1</div><div class="a-fail">✗ FINAL_job: Could not find &#x27;software&#x27; in top 5 results</div><div class="a-pass">✓ FINAL_baby_cherished: Found &#x27;baby&#x27; at rank 1</div><div class="a-pass">✓ FINAL_grandfather_cherished: Found &#x27;kind&#x27; at rank 2</div><div class="a-pass">✓ FINAL_marathon: Found &#x27;marathon&#x27; at rank 3</div><div class="a-fail">✗ FINAL_stress_period: Could not find &#x27;deadline&#x27; in top 5 results</div><div class="a-pass">✓ FINAL_pet_loss: Found &#x27;pet&#x27; at rank 1</div><div class="a-pass">✓ FINAL_hiking_recovery: Found &#x27;hiking&#x27; at rank 0</div><div class="a-pass">✓ FINAL_sarah: Found &#x27;Sarah&#x27; at rank 3</div><div class="a-pass">✓ FINAL_woodworking: Found &#x27;woodworking&#x27; at rank 0</div><div class="a-pass">✓ FINAL_thanksgiving: Found &#x27;Thanksgiving&#x27; at rank 0</div><div class="a-pass">✓ FINAL_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ FINAL_memory_count: Memory count: 44 (expected 40-999999)</div><div class="a-pass">✓ FINAL_mood_valid: Mood: bittersweet</div><div class="a-pass">✓ scenario_completed: Companion year finished</div></div></td>
+        </tr>
+        <tr class="fail">
+            <td class="icon">✗</td>
+            <td>Agent Year</td>
+            <td class="num">13</td>
+            <td class="num">5</td>
+            <td class="num">64%</td>
+            <td class="num">33.919s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ week2_project_recall: Found &#x27;ETL&#x27; at rank 2</div><div class="a-pass">✓ week2_solution_recall: Found &#x27;Pydantic&#x27; at rank 1</div><div class="a-pass">✓ month6_datapipeline_recall: Found &#x27;ETL&#x27; at rank 1</div><div class="a-pass">✓ month6_monitordash_recall: Found &#x27;dashboard&#x27; at rank 3</div><div class="a-pass">✓ month6_solution_backoff: Found &#x27;backoff&#x27; at rank 1</div><div class="a-pass">✓ month6_solution_dedup: Found &#x27;dedup&#x27; at rank 0</div><div class="a-pass">✓ month6_memory_count: Memory count: 23 (expected 15-999999)</div><div class="a-pass">✓ FINAL_datapipeline: Found &#x27;ETL&#x27; at rank 3</div><div class="a-fail">✗ FINAL_monitordash: Could not find &#x27;MonitorDash&#x27; in top 5 results</div><div class="a-fail">✗ FINAL_mlserving: Could not find &#x27;ML&#x27; in top 5 results</div><div class="a-fail">✗ FINAL_pydantic_solution: Could not find &#x27;Pydantic&#x27; in top 5 results</div><div class="a-fail">✗ FINAL_jwt_solution: Could not find &#x27;JWT&#x27; in top 5 results</div><div class="a-fail">✗ FINAL_cicd_solution: Could not find &#x27;parallel&#x27; in top 5 results</div><div class="a-pass">✓ FINAL_bigquery_detail: Found &#x27;BigQuery&#x27; at rank 4</div><div class="a-pass">✓ FINAL_dedup_detail: Found &#x27;hash&#x27; at rank 2</div><div class="a-pass">✓ FINAL_memory_count: Memory count: 22 (expected 20-999999)</div><div class="a-pass">✓ FINAL_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ scenario_completed: Agent year finished</div></div></td>
+        </tr>
+        <tr class="fail">
+            <td class="icon">✗</td>
+            <td>Character Year</td>
+            <td class="num">18</td>
+            <td class="num">3</td>
+            <td class="num">81%</td>
+            <td class="num">20.56s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ arc1_aldric_recall: Found &#x27;Aldric&#x27; at rank 0</div><div class="a-pass">✓ arc1_thornwood_recall: Found &#x27;Thornwood&#x27; at rank 0</div><div class="a-pass">✓ arc1_veilkeepers_recall: Found &#x27;Veilkeepers&#x27; at rank 0</div><div class="a-pass">✓ arc2_aldric_frozen: Found &#x27;crystal&#x27; at rank 3</div><div class="a-pass">✓ arc2_greyhaven: Found &#x27;Greyhaven&#x27; at rank 2</div><div class="a-pass">✓ arc2_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 1.0, &#x27;cortisol&#x27;: 0.0, &#x27;serotonin&#x27;: 1.0, &#x27;oxytocin&#x27;: 0.0, &#x27;norepinephrine&#x27;: 0.0}</div><div class="a-fail">✗ climax_guardian_battle: Could not find &#x27;guardian&#x27; in top 5 results</div><div class="a-pass">✓ climax_aldric_freed: Found &#x27;freed&#x27; at rank 3</div><div class="a-fail">✗ FINAL_elara_identity: Could not find &#x27;traveler&#x27; in top 5 results</div><div class="a-pass">✓ FINAL_aldric: Found &#x27;scholar&#x27; at rank 1</div><div class="a-pass">✓ FINAL_thornwood: Found &#x27;cursed&#x27; at rank 3</div><div class="a-pass">✓ FINAL_veilkeepers: Found &#x27;Veilkeepers&#x27; at rank 3</div><div class="a-fail">✗ FINAL_thorne_joins: Could not find &#x27;accompany&#x27; in top 5 results</div><div class="a-pass">✓ FINAL_crystal: Found &#x27;crystal&#x27; at rank 2</div><div class="a-pass">✓ FINAL_anchor_stone: Found &#x27;Greyhaven&#x27; at rank 0</div><div class="a-pass">✓ FINAL_guardian: Found &#x27;guardian&#x27; at rank 1</div><div class="a-pass">✓ FINAL_veilkeeper_robes: Found &#x27;Veilkeeper&#x27; at rank 0</div><div class="a-pass">✓ FINAL_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ FINAL_memory_count: Memory count: 23 (expected 15-999999)</div><div class="a-pass">✓ FINAL_mood_valid: Mood: neutral</div><div class="a-pass">✓ scenario_completed: Character year finished</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Writer Year</td>
+            <td class="num">20</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">10.8s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ month1_concept_recall: Found &#x27;generation ship&#x27; at rank 0</div><div class="a-pass">✓ month1_maya_recall: Found &#x27;Maya&#x27; at rank 0</div><div class="a-pass">✓ month1_orin_recall: Found &#x27;Orin&#x27; at rank 0</div><div class="a-pass">✓ act2_resistance_recall: Found &#x27;resistance&#x27; at rank 0</div><div class="a-pass">✓ act2_sable_recall: Found &#x27;Sable&#x27; at rank 0</div><div class="a-pass">✓ act2_fuel_twist: Found &#x27;fuel&#x27; at rank 0</div><div class="a-pass">✓ FINAL_concept: Found &#x27;generation ship&#x27; at rank 4</div><div class="a-pass">✓ FINAL_maya: Found &#x27;Maya&#x27; at rank 1</div><div class="a-pass">✓ FINAL_orin: Found &#x27;Orin&#x27; at rank 4</div><div class="a-pass">✓ FINAL_structure: Found &#x27;3 acts&#x27; at rank 3</div><div class="a-pass">✓ FINAL_discovery: Found &#x27;navigation&#x27; at rank 1</div><div class="a-pass">✓ FINAL_sable: Found &#x27;Sable&#x27; at rank 1</div><div class="a-pass">✓ FINAL_fuel: Found &#x27;fuel&#x27; at rank 1</div><div class="a-pass">✓ FINAL_rogue: Found &#x27;rogue planet&#x27; at rank 0</div><div class="a-pass">✓ FINAL_completion: Found &#x27;91,000&#x27; at rank 2</div><div class="a-pass">✓ FINAL_voice_solution: Found &#x27;verbal tic&#x27; at rank 3</div><div class="a-pass">✓ FINAL_confrontation_solution: Found &#x27;subtext&#x27; at rank 1</div><div class="a-pass">✓ FINAL_memory_count: Memory count: 22 (expected 15-999999)</div><div class="a-pass">✓ FINAL_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ scenario_completed: Writer year finished</div></div></td>
+        </tr>
+        <tr class="fail">
+            <td class="icon">✗</td>
+            <td>Assistant Year</td>
+            <td class="num">13</td>
+            <td class="num">1</td>
+            <td class="num">91%</td>
+            <td class="num">40.304s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ week1_standup_recall: Found &#x27;standup&#x27; at rank 0</div><div class="a-pass">✓ week1_schedule_recall: Found &#x27;9-5&#x27; at rank 0</div><div class="a-pass">✓ month3_raise_recall: Found &#x27;15%&#x27; at rank 4</div><div class="a-pass">✓ month3_conference_recall: Found &#x27;microservices&#x27; at rank 4</div><div class="a-pass">✓ FINAL_schedule: Found &#x27;9-5&#x27; at rank 1</div><div class="a-pass">✓ FINAL_standup: Found &#x27;standup&#x27; at rank 3</div><div class="a-pass">✓ FINAL_org_preference: Found &#x27;organized&#x27; at rank 3</div><div class="a-pass">✓ FINAL_raise: Found &#x27;15%&#x27; at rank 3</div><div class="a-fail">✗ FINAL_conference: Could not find &#x27;microservices&#x27; in top 5 results</div><div class="a-pass">✓ FINAL_company_decision: Found &#x27;culture&#x27; at rank 0</div><div class="a-pass">✓ FINAL_spanish: Found &#x27;Spanish&#x27; at rank 2</div><div class="a-pass">✓ FINAL_memory_count: Memory count: 25 (expected 15-999999)</div><div class="a-pass">✓ FINAL_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.5, &#x27;cortisol&#x27;: 0.3, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.4, &#x27;norepinephrine&#x27;: 0.5}</div><div class="a-pass">✓ scenario_completed: Assistant year finished</div></div></td>
+        </tr>
+        <tr class="pass">
+            <td class="icon">✓</td>
+            <td>Multi-Agent Isolation</td>
+            <td class="num">15</td>
+            <td class="num">0</td>
+            <td class="num">100%</td>
+            <td class="num">0.645s</td>
+        </tr>
+        <tr class="detail-row">
+            <td></td>
+            <td colspan="5"><div class="assertions"><div class="a-pass">✓ phase2_luna_recall: Found &#x27;gaming&#x27; at rank 0</div><div class="a-pass">✓ phase2_oak_recall: Found &#x27;bibliography&#x27; at rank 1</div><div class="a-pass">✓ phase2_ai_project_recall: Found &#x27;AI project&#x27; at rank 0</div><div class="a-pass">✓ phase3_hobbies_3mo: Found &#x27;gaming&#x27; at rank 0</div><div class="a-pass">✓ phase3_bibliography_3mo: Found &#x27;bibliography&#x27; at rank 1</div><div class="a-pass">✓ phase3_5k_recall: Found &#x27;5K&#x27; at rank 3</div><div class="a-pass">✓ phase3_litreview_recall: Found &#x27;literature&#x27; at rank 3</div><div class="a-pass">✓ phase3_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.6127, &#x27;cortisol&#x27;: 0.2608, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.47000000000000003, &#x27;norepinep</div><div class="a-pass">✓ phase3_memory_count: Memory count: 13 (expected 8-999999)</div><div class="a-pass">✓ FINAL_ai_project: Found &#x27;AI project&#x27; at rank 0</div><div class="a-pass">✓ FINAL_hobbies: Found &#x27;gaming&#x27; at rank 0</div><div class="a-pass">✓ FINAL_memory_count: Memory count: 13 (expected 8-999999)</div><div class="a-pass">✓ FINAL_chemistry: Chemistry levels: {&#x27;dopamine&#x27;: 0.6127, &#x27;cortisol&#x27;: 0.2608, &#x27;serotonin&#x27;: 0.6, &#x27;oxytocin&#x27;: 0.47000000000000003, &#x27;norepinep</div><div class="a-pass">✓ FINAL_mood_valid: Mood: neutral</div><div class="a-pass">✓ scenario_completed: Multi-agent test finished</div></div></td>
+        </tr>
+</tbody>
+</table>
+
+<h2>Memory Growth &amp; Chemistry</h2>
+<div class="chart-container">
+    <div>
+        <h3 style="color: var(--muted); font-size: 0.85rem; margin-bottom: 0.5rem;">Memory Growth Over Time</h3>
+        <canvas id="memoryChart" width="500" height="300"></canvas>
+    </div>
+    <div>
+        <h3 style="color: var(--muted); font-size: 0.85rem; margin-bottom: 0.5rem;">Chemistry Levels</h3>
+        <canvas id="chemChart" width="500" height="300"></canvas>
+    </div>
+</div>
+
+<script>
+// Simple canvas charts (no external deps)
+const growthData = [{"day": 7, "total": 7, "cherished": 0, "anchored": 0}, {"day": 30, "total": 7, "cherished": 0, "anchored": 0}, {"day": 90, "total": 7, "cherished": 0, "anchored": 0}, {"day": 179, "total": 7, "cherished": 0, "anchored": 0}, {"day": 364, "total": 7, "cherished": 0, "anchored": 0}, {"day": 0, "total": 0, "cherished": 0, "anchored": 0}, {"day": 0, "total": 11, "cherished": 0, "anchored": 0}, {"day": 0, "total": 14, "cherished": 0, "anchored": 0}, {"day": 0, "total": 18, "cherished": 0, "anchored": 0}, {"day": 0, "total": 21, "cherished": 0, "anchored": 0}, {"day": 0, "total": 26, "cherished": 0, "anchored": 0}, {"day": 8, "total": 30, "cherished": 0, "anchored": 0}, {"day": 12, "total": 31, "cherished": 0, "anchored": 0}, {"day": 16, "total": 34, "cherished": 0, "anchored": 0}, {"day": 20, "total": 34, "cherished": 0, "anchored": 0}, {"day": 20, "total": 36, "cherished": 0, "anchored": 0}, {"day": 35, "total": 37, "cherished": 0, "anchored": 0}, {"day": 42, "total": 39, "cherished": 0, "anchored": 0}, {"day": 47, "total": 39, "cherished": 0, "anchored": 0}, {"day": 57, "total": 42, "cherished": 0, "anchored": 0}, {"day": 60, "total": 44, "cherished": 0, "anchored": 0}, {"day": 60, "total": 44, "cherished": 0, "anchored": 0}, {"day": 0, "total": 0, "cherished": 0, "anchored": 0}, {"day": 0, "total": 13, "cherished": 0, "anchored": 0}, {"day": 14, "total": 16, "cherished": 0, "anchored": 0}, {"day": 19, "total": 20, "cherished": 0, "anchored": 0}, {"day": 24, "total": 20, "cherished": 0, "anchored": 0}, {"day": 29, "total": 21, "cherished": 0, "anchored": 0}, {"day": 34, "total": 23, "cherished": 0, "anchored": 0}, {"day": 64, "total": 23, "cherished": 0, "anchored": 0}, {"day": 64, "total": 23, "cherished": 0, "anchored": 0}, {"day": 64, "total": 23, "cherished": 0, "anchored": 0}, {"day": 64, "total": 23, "cherished": 0, "anchored": 0}, {"day": 64, "total": 23, "cherished": 0, "anchored": 0}, {"day": 64, "total": 22, "cherished": 0, "anchored": 0}, {"day": 64, "total": 22, "cherished": 0, "anchored": 0}, {"day": 0, "total": 0, "cherished": 0, "anchored": 0}, {"day": 11, "total": 6, "cherished": 0, "anchored": 0}, {"day": 69, "total": 14, "cherished": 0, "anchored": 0}, {"day": 141, "total": 17, "cherished": 0, "anchored": 0}, {"day": 169, "total": 19, "cherished": 0, "anchored": 0}, {"day": 184, "total": 23, "cherished": 0, "anchored": 0}, {"day": 0, "total": 0, "cherished": 0, "anchored": 0}, {"day": 5, "total": 9, "cherished": 0, "anchored": 0}, {"day": 87, "total": 13, "cherished": 0, "anchored": 0}, {"day": 187, "total": 17, "cherished": 0, "anchored": 0}, {"day": 268, "total": 20, "cherished": 0, "anchored": 0}, {"day": 278, "total": 22, "cherished": 0, "anchored": 0}, {"day": 0, "total": 0, "cherished": 0, "anchored": 0}, {"day": 0, "total": 10, "cherished": 0, "anchored": 0}, {"day": 12, "total": 14, "cherished": 0, "anchored": 0}, {"day": 26, "total": 16, "cherished": 0, "anchored": 0}, {"day": 42, "total": 18, "cherished": 0, "anchored": 0}, {"day": 182, "total": 22, "cherished": 0, "anchored": 0}, {"day": 182, "total": 22, "cherished": 0, "anchored": 0}, {"day": 182, "total": 22, "cherished": 0, "anchored": 0}, {"day": 182, "total": 22, "cherished": 0, "anchored": 0}, {"day": 182, "total": 22, "cherished": 0, "anchored": 0}, {"day": 182, "total": 25, "cherished": 0, "anchored": 0}, {"day": 0, "total": 0, "cherished": 0, "anchored": 0}, {"day": 7, "total": 6, "cherished": 0, "anchored": 0}, {"day": 37, "total": 11, "cherished": 0, "anchored": 0}, {"day": 187, "total": 13, "cherished": 0, "anchored": 0}];
+const chemData = [{"day": 7, "mood": "neutral", "dopamine": 0.5315, "cortisol": 0.2832, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 30, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 90, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 179, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 364, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "thoughtful", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "thoughtful", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "thoughtful", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "thoughtful", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "hopeful", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 8, "mood": "bittersweet", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 12, "mood": "curious", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 16, "mood": "hopeful", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 20, "mood": "curious", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 20, "mood": "anxious", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 35, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 42, "mood": "bittersweet", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 47, "mood": "bittersweet", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 57, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 60, "mood": "bittersweet", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 60, "mood": "bittersweet", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 14, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 19, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 24, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 29, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 34, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 64, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 11, "mood": "neutral", "dopamine": 1.0, "cortisol": 0.0, "serotonin": 1.0, "oxytocin": 0.525, "norepinephrine": 1.0}, {"day": 69, "mood": "neutral", "dopamine": 1.0, "cortisol": 0.0, "serotonin": 1.0, "oxytocin": 0.0, "norepinephrine": 0.0}, {"day": 141, "mood": "neutral", "dopamine": 0.0, "cortisol": 1.0, "serotonin": 0.0, "oxytocin": 1.0, "norepinephrine": 1.0}, {"day": 169, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 184, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 5, "mood": "happy", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 87, "mood": "thoughtful", "dopamine": 1.0, "cortisol": 0.0, "serotonin": 1.0, "oxytocin": 0.0, "norepinephrine": 0.06}, {"day": 187, "mood": "bittersweet", "dopamine": 1.0, "cortisol": 0.0, "serotonin": 1.0, "oxytocin": 0.0, "norepinephrine": 0.0}, {"day": 268, "mood": "hopeful", "dopamine": 0.23, "cortisol": 1.0, "serotonin": 0.05, "oxytocin": 1.0, "norepinephrine": 1.0}, {"day": 278, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "bittersweet", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 12, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 26, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 42, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 182, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 182, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 182, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 182, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 182, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 182, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 0, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 7, "mood": "bittersweet", "dopamine": 1.0, "cortisol": 0.0, "serotonin": 0.6, "oxytocin": 0.96, "norepinephrine": 1.0}, {"day": 37, "mood": "neutral", "dopamine": 0.5, "cortisol": 0.3, "serotonin": 0.6, "oxytocin": 0.4, "norepinephrine": 0.5}, {"day": 187, "mood": "neutral", "dopamine": 0.6127, "cortisol": 0.2608, "serotonin": 0.6, "oxytocin": 0.47000000000000003, "norepinephrine": 0.5336}];
+
+function drawLineChart(canvasId, data, xKey, yKeys, colors) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || data.length === 0) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const pad = {top: 20, right: 20, bottom: 40, left: 50};
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+
+    // Clear
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, W, H);
+
+    // Axes
+    ctx.strokeStyle = '#334155';
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top);
+    ctx.lineTo(pad.left, H - pad.bottom);
+    ctx.lineTo(W - pad.right, H - pad.bottom);
+    ctx.stroke();
+
+    if (data.length < 2) return;
+
+    const xVals = data.map(d => d[xKey] || 0);
+    const xMin = Math.min(...xVals), xMax = Math.max(...xVals) || 1;
+
+    let allY = [];
+    yKeys.forEach(k => data.forEach(d => {
+        const v = d[k];
+        if (v !== undefined && v !== null) allY.push(v);
+    }));
+    const yMin = Math.min(0, ...allY);
+    const yMax = Math.max(1, ...allY);
+
+    const sx = v => pad.left + ((v - xMin) / (xMax - xMin)) * plotW;
+    const sy = v => pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+    yKeys.forEach((key, i) => {
+        ctx.strokeStyle = colors[i % colors.length];
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let started = false;
+        data.forEach(d => {
+            const v = d[key];
+            if (v === undefined || v === null) return;
+            const x = sx(d[xKey] || 0), y = sy(v);
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    });
+
+    // Legend
+    ctx.font = '11px sans-serif';
+    yKeys.forEach((key, i) => {
+        ctx.fillStyle = colors[i % colors.length];
+        const lx = pad.left + 10 + i * 100;
+        ctx.fillRect(lx, H - 18, 12, 12);
+        ctx.fillText(key, lx + 16, H - 8);
+    });
+
+    // X label
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(xKey, W / 2 - 10, H - 2);
+}
+
+drawLineChart('memoryChart', growthData, 'day',
+    ['total', 'cherished', 'anchored'],
+    ['#8b5cf6', '#22c55e', '#f59e0b']);
+
+drawLineChart('chemChart', chemData, 'day',
+    ['dopamine', 'serotonin', 'oxytocin', 'norepinephrine', 'endorphin'],
+    ['#ef4444', '#22c55e', '#ec4899', '#f59e0b', '#06b6d4']);
+</script>
+
+<footer>
+    Mimir's Memory Hub — Year-Long Simulation Report<br>
+    Generated by tests/long_term/run_all.py
+</footer>
+
+</body>
+</html>
