@@ -30,10 +30,11 @@ from playground.conversation_manager import ConversationManager
 from playground.tts_backend import create_tts, EDGE_VOICES
 from playground.stt_backend import WhisperSTTBackend
 from playground.mcp_client import MCPManager
+from playground.proactive_agent import ProactiveAgent, AgentMode, TaskStatus
 
 # ── App ───────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Mimir's Memory Hub", version="0.2.0")
+app = FastAPI(title="Mimir's Memory Hub", version="0.5.0")
 
 _static = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_static)), name="static")
@@ -69,6 +70,9 @@ _RAGE_QUIT_THRESHOLD = 5
 _characters = CharacterManager()
 _conversations = ConversationManager()
 _mcp = MCPManager()
+_proactive = ProactiveAgent(
+    str(Path(__file__).resolve().parent.parent / "playground_data")
+)
 
 # History for visualizations (persisted to disk)
 _mood_history: list[dict] = []
@@ -1002,6 +1006,28 @@ async def memory_import(request: Request):
         imported.append(result)
     mem.save()
     return JSONResponse({"imported": len(imported), "memories": imported})
+
+
+@app.post("/api/memory/import/batch")
+async def memory_import_batch(request: Request):
+    """Batch import memories with automatic dedup."""
+    body = await request.json()
+    mem = _ensure_memory()
+    entries = body.get("entries", [])
+    enrich = body.get("enrich", False)
+
+    if enrich:
+        from playground.memory_manager import detect_emotions, estimate_importance
+        for entry in entries:
+            content = entry.get("content", "")
+            if content and entry.get("emotion", "neutral") == "neutral":
+                detected = detect_emotions(content)
+                if detected:
+                    entry["emotion"] = detected[0]
+                entry["importance"] = estimate_importance(content, "")
+
+    result = mem.import_memories_batch(entries)
+    return JSONResponse(result)
 
 
 # ── Agent Tools API ──────────────────────────────────────────────────
@@ -2855,21 +2881,37 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
 
         - User messages → role: user
         - This agent's own responses → role: assistant
-        - Other agents' responses → role: user (prefixed with their name)
-        This gives each agent a clean alternating history where it only
-        sees its own prior responses as 'assistant'.
+        - Other agents' responses are folded into the preceding user turn
+          so the LLM sees clean user/assistant alternation without confusion.
         """
         result: list[dict] = []
+        pending_context: list[str] = []  # other-agent lines to attach to next user msg
+
         for m in msg_history:
             speaker = m.get("speaker", "")
             content = m.get("content", "")
-            if speaker == "You":
-                result.append({"role": "user", "content": content})
-            elif speaker == current_agent_name:
+            if speaker == current_agent_name:
+                # Flush any pending context as a user turn before assistant reply
+                if pending_context:
+                    result.append({"role": "user", "content": "\n\n".join(pending_context)})
+                    pending_context = []
                 result.append({"role": "assistant", "content": content})
+            elif speaker == "You":
+                # Attach any pending other-agent context to this user message
+                if pending_context:
+                    pending_context.append(content)
+                    result.append({"role": "user", "content": "\n\n".join(pending_context)})
+                    pending_context = []
+                else:
+                    result.append({"role": "user", "content": content})
             else:
-                # Other agent — present as user context so alternation is clean
-                result.append({"role": "user", "content": f"[{speaker}]: {content}"})
+                # Other agent — collect as context for next user turn
+                pending_context.append(f"[{speaker}]: {content}")
+
+        # Flush any trailing other-agent context
+        if pending_context:
+            result.append({"role": "user", "content": "\n\n".join(pending_context)})
+
         return _ensure_alternation(result)
 
     try:
@@ -2953,8 +2995,34 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         parts.append(
                             f"You are in a group conversation with the user and "
                             f"these other participants: {', '.join(other_names)}. "
-                            f"Messages from other participants are prefixed with their name. "
-                            f"Respond naturally as in a group chat."
+                            f"Messages from other participants appear prefixed with their name in brackets like [Name]. "
+                            f"Stay in character as {agent_name}. Do NOT speak as, impersonate, or generate dialogue for "
+                            f"any other participant. Do NOT generate a 'User:' line. "
+                            f"Respond naturally as yourself in a group chat — keep replies concise unless asked to elaborate."
+                        )
+
+                    # Memory context for this agent/character
+                    memory_enabled = _cfg.get("memory", {}).get("enabled", True)
+                    if memory_enabled and char_id:
+                        try:
+                            agent_mem = _ensure_memory(char_id=char_id)
+                            context_block = agent_mem.recall(user_text, top_k=5)
+                            if context_block:
+                                mem_lines = []
+                                for r in context_block:
+                                    c = r.get("content", "") if isinstance(r, dict) else str(r)
+                                    if c:
+                                        mem_lines.append(f"- {c}")
+                                if mem_lines:
+                                    parts.append("## Your Memories\n" + "\n".join(mem_lines[:10]))
+                        except Exception:
+                            pass
+
+                        # Tell the agent it can form memories
+                        parts.append(
+                            "You can form memories by wrapping important information in "
+                            "<remember>content</remember> tags. Use this for things worth "
+                            "remembering about the user or conversation."
                         )
 
                     system_prompt = "\n\n".join(parts)
@@ -2989,7 +3057,31 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             })
 
                         response_text = "".join(full_response)
-                        agent_entry = {"speaker": agent_name, "content": response_text}
+
+                        # Process <remember> tags from this agent's response
+                        if memory_enabled and char_id:
+                            try:
+                                agent_mem = _ensure_memory(char_id=char_id)
+                                tags = _parse_remember_tags(response_text)
+                                for tag in tags:
+                                    if isinstance(tag, dict) and tag.get("content"):
+                                        agent_mem.remember(
+                                            content=tag["content"][:500],
+                                            emotion=tag.get("emotion", "neutral"),
+                                            importance=tag.get("importance", 5),
+                                            source="multi_agent_conversation",
+                                        )
+                                # Run turn processing (emotion detection, chemistry, etc.)
+                                preset = get_preset(_cfg.get("active_preset", "companion"))
+                                agent_mem.process_turn(user_text, response_text, preset, skip_save=bool(tags))
+                            except Exception:
+                                pass
+
+                        # Strip remember tags from displayed response
+                        clean_response = _strip_remember_tags(response_text)
+                        clean_response = _THINK_STRIP_RE.sub("", clean_response).strip()
+
+                        agent_entry = {"speaker": agent_name, "content": clean_response}
                         msg_history.append(agent_entry)
 
                         _conversations.add_message(conv_id, agent_entry)
@@ -3219,3 +3311,211 @@ async def get_cherished_memories():
     ]
     
     return JSONResponse({"memories": cherished, "total": len(cherished)})
+
+
+# ── Proactive Agent API ──────────────────────────────────────────────
+
+_agent_ws_connections: list[WebSocket] = []
+
+
+async def _agent_broadcast(message: dict):
+    """Push a message to all connected agent WebSockets."""
+    dead = []
+    for ws in _agent_ws_connections:
+        try:
+            await ws.send_json(message)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        _agent_ws_connections.remove(ws)
+
+
+def _wire_proactive_agent():
+    """Wire the proactive agent's generate function and broadcast."""
+    _proactive._ws_broadcast = _agent_broadcast
+
+    async def _generate_for_agent(**kwargs):
+        backend_name = _cfg.get("active_backend", "ollama")
+        model_id = _cfg.get("active_model", "")
+        backend = create_backend(backend_name, _cfg.to_dict())
+        async for token in backend.generate(model=model_id, **kwargs):
+            yield token
+
+    _proactive._generate_fn = _generate_for_agent
+
+
+# Agent WebSocket — live updates
+@app.websocket("/ws/agent")
+async def agent_ws(websocket: WebSocket):
+    await websocket.accept()
+    _agent_ws_connections.append(websocket)
+    # Send current status on connect
+    await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type", "")
+
+            if msg_type == "start":
+                mode = AgentMode(data.get("mode", "agent"))
+                _wire_proactive_agent()
+                _proactive.start(mode)
+                await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+
+            elif msg_type == "stop":
+                _proactive.stop()
+                await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+
+            elif msg_type == "pause":
+                _proactive.pause()
+                await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+
+            elif msg_type == "resume":
+                _proactive.resume()
+                await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+
+            elif msg_type == "set_interval":
+                _proactive.interval = max(30, int(data.get("interval", 300)))
+                _proactive._save_state()
+                await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+
+            elif msg_type == "set_mode":
+                mode = AgentMode(data.get("mode", "off"))
+                if mode == AgentMode.OFF:
+                    _proactive.stop()
+                else:
+                    _wire_proactive_agent()
+                    _proactive.start(mode)
+                await websocket.send_json({"type": "agent_status_update", **_proactive.get_status()})
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if websocket in _agent_ws_connections:
+            _agent_ws_connections.remove(websocket)
+
+
+# ── Project endpoints ─────────────────
+
+@app.get("/api/agent/status")
+async def agent_status():
+    return JSONResponse(_proactive.get_status())
+
+
+@app.get("/api/agent/projects")
+async def list_projects():
+    return JSONResponse(_proactive.list_projects())
+
+
+@app.post("/api/agent/projects")
+async def create_project(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    name = body.get("name", "").strip()
+    folder = body.get("folder", "").strip()
+    if not name or not folder:
+        return JSONResponse({"error": "name and folder are required"}, status_code=400)
+    # Validate folder — create it if it doesn't exist yet
+    folder_path = Path(folder)
+    if not folder_path.exists():
+        try:
+            folder_path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return JSONResponse({"error": f"Cannot create folder: {e}"}, status_code=400)
+    elif not folder_path.is_dir():
+        return JSONResponse({"error": f"Path exists but is not a folder: {folder}"}, status_code=400)
+    try:
+        project = _proactive.create_project(
+            name=name,
+            folder=folder,
+            description=body.get("description", ""),
+            tools_enabled=body.get("tools_enabled"),
+        )
+        return JSONResponse(project.to_dict())
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to create project: {e}"}, status_code=500)
+
+
+@app.get("/api/agent/projects/{project_id}")
+async def get_project(project_id: str):
+    project = _proactive.get_project(project_id)
+    if not project:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(project.to_dict())
+
+
+@app.put("/api/agent/projects/{project_id}")
+async def update_project(project_id: str, request: Request):
+    body = await request.json()
+    project = _proactive.update_project(project_id, body)
+    if not project:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(project.to_dict())
+
+
+@app.delete("/api/agent/projects/{project_id}")
+async def delete_project(project_id: str):
+    if _proactive.delete_project(project_id):
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Not found"}, status_code=404)
+
+
+# ── Task endpoints ────────────────────
+
+@app.get("/api/agent/projects/{project_id}/tasks")
+async def list_tasks(project_id: str):
+    return JSONResponse(_proactive.list_tasks(project_id))
+
+
+@app.post("/api/agent/projects/{project_id}/tasks")
+async def create_task(project_id: str, request: Request):
+    body = await request.json()
+    title = body.get("title", "").strip()
+    if not title:
+        return JSONResponse({"error": "title is required"}, status_code=400)
+    priority = body.get("priority", "medium")
+    if priority not in ("low", "medium", "high", "urgent"):
+        priority = "medium"
+    task = _proactive.create_task(
+        project_id=project_id,
+        title=title,
+        description=body.get("description", ""),
+        priority=priority,
+        token_budget=body.get("token_budget", 4096),
+    )
+    if not task:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+    return JSONResponse(task.to_dict())
+
+
+@app.put("/api/agent/projects/{project_id}/tasks/{task_id}")
+async def update_task(project_id: str, task_id: str, request: Request):
+    body = await request.json()
+    task = _proactive.update_task(project_id, task_id, body)
+    if not task:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(task.to_dict())
+
+
+@app.delete("/api/agent/projects/{project_id}/tasks/{task_id}")
+async def delete_task(project_id: str, task_id: str):
+    if _proactive.delete_task(project_id, task_id):
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Not found"}, status_code=404)
+
+
+@app.post("/api/agent/projects/{project_id}/tasks/{task_id}/approve")
+async def approve_task(project_id: str, task_id: str):
+    task = _proactive.update_task(project_id, task_id, {"status": TaskStatus.APPROVED})
+    if not task:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(task.to_dict())
+
+
+# ── Logs endpoint ─────────────────────
+
+@app.get("/api/agent/projects/{project_id}/logs")
+async def get_agent_logs(project_id: str, limit: int = 50):
+    return JSONResponse(_proactive.get_logs(project_id, limit))

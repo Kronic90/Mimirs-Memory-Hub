@@ -84,6 +84,17 @@
                     </svg>
                     <span>Agents</span>
                 </li>
+                <li class="nav-item" data-page="proactive">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
+                        <path d="M6 10v1a6 6 0 0 0 12 0v-1"/>
+                        <path d="M12 18v4"/>
+                        <path d="M8 22h8"/>
+                        <circle cx="12" cy="6" r="1" fill="currentColor"/>
+                        <path d="M17 3l2-1M7 3L5 2"/>
+                    </svg>
+                    <span>Proactive</span>
+                </li>
                 <li class="nav-item" data-page="settings">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <circle cx="12" cy="12" r="3"/>
@@ -94,7 +105,7 @@
             </ul>
 
             <div class="sidebar-footer">
-                <div class="sidebar-version">v0.1.0</div>
+                <div class="sidebar-version">v0.5.0</div>
             </div>
         </nav>
 
@@ -1122,6 +1133,133 @@
                 </div>
             </div>
 
+            <!-- ──────── PROACTIVE AGENT PAGE ──────── -->
+            <div id="page-proactive" class="page">
+                <div class="page-header">
+                    <div>
+                        <h1>Proactive Agent</h1>
+                        <p class="text-muted">Autonomous task execution with project sandboxing</p>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <span id="agent-status-badge" class="status-badge" style="font-size:0.82rem;">⏸ Off</span>
+                        <select id="agent-mode-select" class="input input-sm" style="width:auto;">
+                            <option value="off">Off</option>
+                            <option value="observer">Observer</option>
+                            <option value="agent">Agent</option>
+                        </select>
+                        <button id="btn-agent-toggle" class="btn btn-primary">Start</button>
+                    </div>
+                </div>
+
+                <div class="proactive-layout">
+                    <!-- Left: Projects + Tasks -->
+                    <div class="proactive-sidebar">
+                        <div class="proactive-section">
+                            <div class="proactive-section-header">
+                                <h3>Projects</h3>
+                                <button id="btn-new-project" class="btn btn-sm btn-primary">+ New</button>
+                            </div>
+                            <div id="project-list" class="project-list">
+                                <p class="text-muted" style="padding:12px;font-size:0.85rem;">No projects yet. Create one to get started.</p>
+                            </div>
+                        </div>
+
+                        <div class="proactive-section" id="tasks-section" style="display:none;">
+                            <div class="proactive-section-header">
+                                <h3>Tasks <span id="task-project-name" class="text-muted" style="font-size:0.8rem;"></span></h3>
+                                <button id="btn-new-task" class="btn btn-sm btn-primary">+ Task</button>
+                            </div>
+                            <div id="task-list" class="task-list">
+                                <p class="text-muted" style="padding:12px;font-size:0.85rem;">No tasks.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Activity log + Project detail -->
+                    <div class="proactive-main">
+                        <!-- Project detail / create form -->
+                        <div id="project-editor" class="proactive-editor" style="display:none;">
+                            <h3 id="project-editor-title">New Project</h3>
+                            <div class="form-group">
+                                <label>Name</label>
+                                <input type="text" id="project-name" class="input" placeholder="My Project">
+                            </div>
+                            <div class="form-group">
+                                <label>Working Folder <span class="text-muted" style="font-size:0.75rem;">(agent can only access files here)</span></label>
+                                <input type="text" id="project-folder" class="input" placeholder="C:\Users\you\Projects\my-app">
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea id="project-desc" class="textarea" rows="2" placeholder="What this project is about..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Daily Token Budget</label>
+                                <input type="number" id="project-budget" class="input input-sm" value="50000" min="1000" step="1000" style="width:120px;">
+                            </div>
+                            <div class="form-group">
+                                <label>Enabled Tools</label>
+                                <div id="project-tools" class="tools-grid"></div>
+                            </div>
+                            <div class="form-group" style="display:flex;gap:8px;">
+                                <button id="btn-save-project" class="btn btn-primary">Save Project</button>
+                                <button id="btn-cancel-project" class="btn btn-secondary">Cancel</button>
+                                <button id="btn-delete-project" class="btn btn-secondary" style="margin-left:auto;color:var(--error);display:none;">Delete</button>
+                            </div>
+                        </div>
+
+                        <!-- Task create/edit modal area -->
+                        <div id="task-editor" class="proactive-editor" style="display:none;">
+                            <h3 id="task-editor-title">New Task</h3>
+                            <div class="form-group">
+                                <label>Title</label>
+                                <input type="text" id="task-title" class="input" placeholder="What needs to be done">
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <textarea id="task-desc" class="textarea" rows="3" placeholder="Detailed description of the task..."></textarea>
+                            </div>
+                            <div class="form-row" style="display:flex;gap:12px;">
+                                <div class="form-group" style="flex:1;">
+                                    <label>Priority</label>
+                                    <select id="task-priority" class="input">
+                                        <option value="low">Low</option>
+                                        <option value="medium" selected>Medium</option>
+                                        <option value="high">High</option>
+                                        <option value="urgent">Urgent</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>Token Budget</label>
+                                    <input type="number" id="task-budget" class="input" value="4096" min="256" step="256">
+                                </div>
+                            </div>
+                            <div class="form-group" style="display:flex;gap:8px;">
+                                <button id="btn-save-task" class="btn btn-primary">Save Task</button>
+                                <button id="btn-cancel-task" class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </div>
+
+                        <!-- Activity log -->
+                        <div id="agent-activity" class="proactive-activity">
+                            <div class="proactive-section-header">
+                                <h3>Activity Log</h3>
+                                <span id="agent-activity-status" class="text-muted" style="font-size:0.8rem;">Idle</span>
+                            </div>
+                            <div id="agent-log" class="agent-log">
+                                <p class="text-muted" style="padding:12px;font-size:0.85rem;">Agent activity will appear here when running.</p>
+                            </div>
+                        </div>
+
+                        <!-- Interval config -->
+                        <div class="proactive-config" style="margin-top:12px;padding:12px;background:var(--bg-card);border-radius:var(--radius);display:flex;gap:12px;align-items:center;">
+                            <label style="font-size:0.85rem;">Check interval:</label>
+                            <input type="range" id="agent-interval" min="30" max="1800" value="300" step="30" style="flex:1;">
+                            <span id="agent-interval-label" class="text-muted" style="font-size:0.85rem;min-width:50px;">5 min</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ──────── CONVERSATIONS PAGE ──────── -->
             <div id="page-conversations" class="page">
                 <div class="page-header">
@@ -1273,6 +1411,7 @@
     <script src="/static/js/import.js"></script>
     <script src="/static/js/settings.js"></script>
     <script src="/static/js/agents.js"></script>
+    <script src="/static/js/proactive.js"></script>
     <script src="/static/js/conversations.js"></script>
     <script src="/static/js/multi-chat.js"></script>
 </body>

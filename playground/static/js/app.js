@@ -31,6 +31,7 @@ const App = (() => {
         if (page === 'import') ImportPage.init();
         if (page === 'settings') SettingsPage.init();
         if (page === 'agents') AgentsPage.init();
+        if (page === 'proactive') ProactivePage.init();
         if (page === 'conversations') ConversationsPage.init();
         if (page === 'multi-chat') MultiChatPage.init();
     }

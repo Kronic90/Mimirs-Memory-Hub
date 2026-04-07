@@ -447,6 +447,13 @@ def create_tts(cfg: dict):
         except ImportError:
             _log.warning("TTS mode 'hf' requires torch — falling back to Edge TTS")
             return EdgeTTSBackend(cfg)
+        # Also check snac + soundfile before committing to Maya backend
+        for dep in ("snac", "soundfile", "transformers"):
+            try:
+                __import__(dep)
+            except ImportError:
+                _log.warning("TTS mode 'hf' requires %s — falling back to Edge TTS", dep)
+                return EdgeTTSBackend(cfg)
         return MayaTTSBackend(cfg)
     if mode == "llama_server":
         return MayaTTSBackend(cfg)

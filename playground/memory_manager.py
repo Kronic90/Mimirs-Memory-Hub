@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import sys
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -61,19 +62,67 @@ _EMOTION_KEYWORDS: dict[str, list[str]] = {
     "reflective":   ["thinking about", "reflecting", "looking back", "pondering"],
 }
 
+# Pre-compiled negation pattern — catches "not", "n't", "never", "no" etc.
+_NEGATION_RE = re.compile(
+    r"\b(?:not|n't|never|no|neither|nor|don't|doesn't|didn't|isn't|aren't"
+    r"|wasn't|weren't|won't|wouldn't|can't|couldn't|shouldn't|barely|hardly)"
+    r"\s+",
+    re.IGNORECASE,
+)
+
+# Normalise emotion aliases → canonical label
+_EMOTION_ALIASES: dict[str, str] = {
+    "cheerful": "happy", "joyful": "happy", "elated": "happy",
+    "thrilled": "excited", "enthusiastic": "excited",
+    "worried": "anxious", "nervous": "anxious", "stressed": "anxious",
+    "annoyed": "frustrated", "irritated": "frustrated",
+    "furious": "angry", "enraged": "angry", "livid": "angry",
+    "depressed": "sad", "unhappy": "sad", "gloomy": "sad",
+    "thankful": "grateful", "appreciative": "grateful",
+    "scared": "anxious", "afraid": "anxious", "terrified": "anxious",
+    "content": "peaceful", "serene": "peaceful", "tranquil": "peaceful",
+    "motivated": "inspired", "creative": "inspired",
+    "kind": "warm", "caring": "warm", "affectionate": "warm",
+    "tender": "warm", "sweet": "warm",
+    "wistful": "nostalgic", "bittersweet": "nostalgic",
+    "amazed": "excited", "astonished": "excited",
+    "delighted": "happy", "ecstatic": "happy",
+    "melancholy": "sad", "heartbroken": "sad",
+    "betrayed": "hurt", "disappointed": "hurt",
+    "bewildered": "confused", "perplexed": "confused",
+    "isolated": "lonely", "abandoned": "lonely",
+}
+
+
+def normalize_emotion(emotion: str) -> str:
+    """Map an emotion label to its canonical form."""
+    key = emotion.lower().strip()
+    return _EMOTION_ALIASES.get(key, key)
+
 
 def detect_emotions(text: str, top_k: int = 3) -> list[str]:
-    """Detect emotions from text via keyword matching. Returns top-k labels."""
+    """Detect emotions from text via keyword matching with negation awareness."""
     lower = text.lower()
+    # Build set of negated spans (keyword positions preceded by negation)
+    negated_spans: set[int] = set()
+    for m in _NEGATION_RE.finditer(lower):
+        # Mark words in a 30-char window after the negation token
+        neg_end = min(m.end() + 30, len(lower))
+        negated_spans.update(range(m.start(), neg_end))
+
     scores: dict[str, int] = {}
     for emotion, keywords in _EMOTION_KEYWORDS.items():
         for kw in keywords:
-            if kw in lower:
-                scores[emotion] = scores.get(emotion, 0) + 1
+            idx = lower.find(kw)
+            while idx != -1:
+                # Skip if this keyword occurrence falls within a negation window
+                if idx not in negated_spans:
+                    scores[emotion] = scores.get(emotion, 0) + 1
+                idx = lower.find(kw, idx + 1)
     if not scores:
         return ["neutral"]
     ranked = sorted(scores, key=scores.get, reverse=True)
-    return ranked[:top_k]
+    return [normalize_emotion(e) for e in ranked[:top_k]]
 
 
 def estimate_importance(user_text: str, response_text: str) -> int:
@@ -95,6 +144,18 @@ def estimate_importance(user_text: str, response_text: str) -> int:
     if len(user_text) > 300:
         score += 1
     return max(1, min(10, score))
+
+
+# Pre-compiled neurochemistry event patterns (avoids per-turn keyword loops)
+_NEURO_EVENT_PATTERNS: list[tuple[re.Pattern, str, float]] = [
+    (re.compile(r'\b(?:surprise|unexpected|wow|omg)\b', re.I), "surprise", 0.6),
+    (re.compile(r'\b(?:conflict|argue|disagree|fight)\b', re.I), "conflict", 0.5),
+    (re.compile(r'\b(?:love|care|hug|friend|together)\b', re.I), "warmth", 0.5),
+    (re.compile(r'\b(?:new|novel|first\s+time|discover)\b', re.I), "novelty", 0.4),
+    (re.compile(r'\b(?:solved|fixed|done|completed|success)\b', re.I), "achievement", 0.5),
+    (re.compile(r'\b(?:lost|died|gone|miss|grief)\b', re.I), "loss", 0.5),
+    (re.compile(r'\b(?:haha|lol|funny|joke|lmao)\b', re.I), "humor", 0.4),
+]
 
 
 class MemoryManager:
@@ -122,6 +183,9 @@ class MemoryManager:
         self._memories_since_reflect = 0
         self._last_chemistry_tick = time.time()
         self._wake_log: list[str] = []  # populated by wake_up() for UI notification
+        self._stats_cache: dict | None = None
+        self._stats_cache_time: float = 0.0
+        self._STATS_TTL = 60.0  # seconds
 
         # Check if a wake-up cycle is needed
         self._session_file = self._dir / "_last_session.txt"
@@ -191,11 +255,13 @@ class MemoryManager:
     def remember(self, content: str, emotion: str = "neutral",
                  importance: int = 5, source: str = "playground",
                  why_saved: str = "") -> dict:
+        emotion = normalize_emotion(emotion)
         mem = self._mimir.remember(
             content=content, emotion=emotion,
             importance=importance, source=source,
             why_saved=why_saved,
         )
+        self._invalidate_stats_cache()
         return mem.to_dict()
 
     def remember_exchange(self, user_msg: str, assistant_msg: str,
@@ -227,7 +293,7 @@ class MemoryManager:
         now = time.time()
         dt_minutes = (now - self._last_chemistry_tick) / 60.0
         self._last_chemistry_tick = now
-        if dt_minutes > 0.1:  # at least 6 seconds
+        if dt_minutes > 0.016:  # ~1 second minimum
             try:
                 self._mimir.chemistry.tick(dt_minutes)
             except Exception:
@@ -389,22 +455,11 @@ class MemoryManager:
         # Update mood (also ticks chemistry internally)
         self.update_mood(emotions)
 
-        # Detect neurochemistry events from content
+        # Detect neurochemistry events from content (compiled patterns)
         lower = combined_text.lower()
-        if any(w in lower for w in ["surprise", "unexpected", "wow", "omg"]):
-            self.on_event("surprise", 0.6)
-        if any(w in lower for w in ["conflict", "argue", "disagree", "fight"]):
-            self.on_event("conflict", 0.5)
-        if any(w in lower for w in ["love", "care", "hug", "friend", "together"]):
-            self.on_event("warmth", 0.5)
-        if any(w in lower for w in ["new", "novel", "first time", "discover"]):
-            self.on_event("novelty", 0.4)
-        if any(w in lower for w in ["solved", "fixed", "done", "completed", "success"]):
-            self.on_event("achievement", 0.5)
-        if any(w in lower for w in ["lost", "died", "gone", "miss", "grief"]):
-            self.on_event("loss", 0.5)
-        if any(w in lower for w in ["haha", "lol", "funny", "joke", "lmao"]):
-            self.on_event("humor", 0.4)
+        for pattern, event_type, intensity in _NEURO_EVENT_PATTERNS:
+            if pattern.search(lower):
+                self.on_event(event_type, intensity)
 
         # Increment turn counter & memory counters
         self._turn_count += 1
@@ -582,6 +637,7 @@ class MemoryManager:
             self._mimir.enrich_yggdrasil(batch_size=10)
         except Exception:
             pass
+        self._invalidate_stats_cache()
         self._mimir.save()
 
     def bump_session(self) -> int:
@@ -592,7 +648,9 @@ class MemoryManager:
     def run_consolidation(self) -> dict:
         """Run Muninn consolidation daemon."""
         try:
-            return self._mimir.muninn()
+            result = self._mimir.muninn()
+            self._invalidate_stats_cache()
+            return result
         except Exception as e:
             return {"error": str(e)}
 
@@ -614,9 +672,19 @@ class MemoryManager:
 
     # ── diagnostics ───────────────────────────────────────────────────
 
+    def _invalidate_stats_cache(self):
+        """Clear cached stats so next call recalculates."""
+        self._stats_cache = None
+
     def stats(self) -> dict:
+        now = time.time()
+        if (self._stats_cache is not None
+                and now - self._stats_cache_time < self._STATS_TTL):
+            return self._stats_cache
         s = self._mimir.stats()
         s["turn_count"] = self._turn_count
+        self._stats_cache = s
+        self._stats_cache_time = now
         return s
 
     def emotion_distribution(self) -> dict:
@@ -1055,6 +1123,7 @@ class MemoryManager:
         refs = self._mimir._reflections
         if 0 <= index < len(refs):
             refs.pop(index)
+            self._invalidate_stats_cache()
             self.save()
             return True
         return False
@@ -1218,7 +1287,19 @@ class MemoryManager:
                       importance: int = 5, source: str = "import",
                       why_saved: str = "imported from external system",
                       timestamp: str = "") -> dict:
-        """Import a memory and let Mimir fully index it."""
+        """Import a memory with dedup check and emotion normalization."""
+        emotion = normalize_emotion(emotion)
+        # Dedup check: skip near-identical memories
+        try:
+            from vividmimir.helpers import _content_words, _overlap_ratio
+        except ImportError:
+            from mimir_modular.helpers import _content_words, _overlap_ratio
+        new_words = _content_words(content.lower())
+        if new_words:
+            for existing in self._mimir._reflections:
+                if _overlap_ratio(new_words, existing.content_words) >= 0.85:
+                    # Very similar memory already exists — return existing
+                    return existing.to_dict()
         mem = self._mimir.remember(
             content=content, emotion=emotion,
             importance=importance, source=source,
@@ -1226,7 +1307,53 @@ class MemoryManager:
         )
         if timestamp:
             mem.timestamp = timestamp
+        self._invalidate_stats_cache()
         return mem.to_dict()
+
+    def import_memories_batch(self, memories: list[dict]) -> dict:
+        """Batch import: accepts a list of memory dicts, deduplicates, returns summary."""
+        imported = 0
+        skipped = 0
+        for m in memories:
+            content = m.get("content", "").strip()
+            if not content:
+                skipped += 1
+                continue
+            emotion = normalize_emotion(m.get("emotion", "neutral"))
+            importance = max(1, min(10, int(m.get("importance", 5))))
+            source = m.get("source", "import")
+            why_saved = m.get("why_saved", "batch import")
+            timestamp = m.get("timestamp", "")
+
+            # Dedup check
+            try:
+                from vividmimir.helpers import _content_words, _overlap_ratio
+            except ImportError:
+                from mimir_modular.helpers import _content_words, _overlap_ratio
+            new_words = _content_words(content.lower())
+            is_dup = False
+            if new_words:
+                for existing in self._mimir._reflections:
+                    if _overlap_ratio(new_words, existing.content_words) >= 0.85:
+                        is_dup = True
+                        break
+            if is_dup:
+                skipped += 1
+                continue
+
+            mem = self._mimir.remember(
+                content=content, emotion=emotion,
+                importance=importance, source=source,
+                why_saved=why_saved,
+            )
+            if timestamp:
+                mem.timestamp = timestamp
+            imported += 1
+
+        if imported > 0:
+            self._invalidate_stats_cache()
+            self.save()
+        return {"imported": imported, "skipped": skipped, "total": len(memories)}
 
     # ── Relationship Strength ─────────────────────────────────────────
 
