@@ -544,6 +544,27 @@ class Mimir(
                 lines.append(f"— [{tag}] {m.gist}")
             lines.append("")
 
+        # Semantic knowledge — crystallized facts that should always
+        # be available, like neocortical long-term storage
+        semantic_mems = [
+            m for m in self._reflections
+            if m.source == "semantic" and m.vividness > 0.3]
+        if semantic_mems:
+            top_semantic = sorted(
+                semantic_mems, key=lambda m: m.importance,
+                reverse=True)[:5]
+            lines.append("=== THINGS I KNOW ===")
+            for m in top_semantic:
+                # Strip the [semantic — ...] prefix for cleaner display
+                display = m.content
+                if display.startswith("[semantic"):
+                    try:
+                        display = display.split("] ", 1)[1]
+                    except IndexError:
+                        pass
+                lines.append(f"— {display}")
+            lines.append("")
+
         return "\n".join(lines) if lines else ""
 
     # ──────────────────────────────────────────────────────────────────
@@ -1149,6 +1170,10 @@ class Mimir(
                 if m.content.startswith("[gist")),
             "chunk_memories": sum(
                 1 for m in self._reflections if m.source == "chunk"),
+            "semantic_memories": sum(
+                1 for m in self._reflections if m.source == "semantic"),
+            "summary_memories": sum(
+                1 for m in self._reflections if m.source == "summary"),
             "memories_since_consolidation": self._memories_since_consolidation,
             "encryption_active": self._fernet is not None,
             "llm_active": self._llm_fn is not None,

@@ -312,3 +312,78 @@ _WEEKDAY_MAP = {
     "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
     "friday": 4, "saturday": 5, "sunday": 6,
 }
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Long-Term Memory Improvements (v0.7.0)
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── 22. Importance-based decay floors ────────────────────────────────────
+# High-importance memories never drop below a vividness floor, mirroring
+# strong synaptic consolidation in real neurons.  Importance 7-8 gets a
+# modest floor; 9-10 gets a higher one (below flashbulb, above anchor).
+IMPORTANCE_FLOOR_THRESHOLD  = 7          # importance >= this gets a floor
+IMPORTANCE_FLOOR_LOW        = 0.15       # floor multiplier for imp 7-8
+IMPORTANCE_FLOOR_HIGH       = 0.40       # floor multiplier for imp 9-10
+
+# ── 23. Semantic memory crystallization (Huginn stage 5) ─────────────────
+# During consolidation, Huginn detects facts mentioned across multiple
+# episodic memories and crystallizes them into durable semantic memories.
+# Models the episodic→semantic transition of real memory (Tulving 1972).
+SEMANTIC_MIN_MENTIONS       = 3          # times a fact-phrase must recur
+SEMANTIC_STABILITY          = 150.0      # near-permanent stability (days)
+SEMANTIC_IMPORTANCE_FLOOR   = 7          # minimum importance for semantic mems
+SEMANTIC_VIVIDNESS_FLOOR    = 0.50       # semantic mems never fade below this
+
+# ── 24. Hierarchical summarization (Muninn stage 4) ──────────────────────
+# During consolidation, Muninn produces weekly gist-summaries from clusters
+# of same-week episodic memories, like hippocampal replay compressing
+# episodes into schemas.
+SUMMARY_MIN_MEMORIES        = 4          # min memories in a week to summarize
+SUMMARY_AGE_DAYS            = 14         # only summarize weeks older than this
+SUMMARY_IMPORTANCE          = 6          # importance of summary memories
+SUMMARY_STABILITY           = 90.0       # summaries last a long time
+
+# ── 25. Retrieval-augmented reinforcement (Huginn stage 6) ───────────────
+# During consolidation, Huginn scans for high-importance memories that are
+# fading and refreshes their stability — like the hippocampus replaying
+# important traces during slow-wave sleep.
+REINFORCEMENT_IMPORTANCE_MIN = 6         # only reinforce memories imp >= this
+REINFORCEMENT_VIVIDNESS_MAX  = 0.40      # only reinforce if vividness <= this
+REINFORCEMENT_STABILITY_BOOST = 1.5      # multiply stability by this
+REINFORCEMENT_MAX_PER_CYCLE  = 10        # cap per consolidation cycle
+
+# ── 26. Entity-anchored recall (recall enhancement) ──────────────────────
+# When a query contains a recognized entity name, boost entity-edge
+# activation in spreading activation and add direct entity lookups.
+ENTITY_RECALL_BOOST         = 0.15       # bonus added per entity-matched mem
+
+# ── 27. Query-adaptive signal weighting ──────────────────────────────────
+# When the system detects a factual/entity query vs emotional/thematic
+# query, shift the composite re-rank weights accordingly.
+# Factual queries: boost BM25 + vividness, reduce mood weight
+# Emotional queries: boost semantic + mood, reduce keyword weight
+_W_KEYWORD_FACTUAL   = 0.40
+_W_SEMANTIC_FACTUAL  = 0.20
+_W_VIVIDNESS_FACTUAL = 0.25
+_W_MOOD_FACTUAL      = 0.05
+_W_RECENCY_FACTUAL   = 0.10
+
+_W_KEYWORD_EMOTIONAL  = 0.20
+_W_SEMANTIC_EMOTIONAL = 0.35
+_W_VIVIDNESS_EMOTIONAL = 0.15
+_W_MOOD_EMOTIONAL     = 0.20
+_W_RECENCY_EMOTIONAL  = 0.10
+
+# Factual query indicators (entity names, "what is", "who", numbers, etc.)
+_FACTUAL_QUERY_WORDS = frozenset({
+    "what", "who", "which", "where", "when", "name", "called",
+    "job", "work", "title", "birthday", "age", "live", "address",
+    "number", "email", "phone", "project", "company",
+})
+
+# Emotional query indicators
+_EMOTIONAL_QUERY_WORDS = frozenset({
+    "feel", "feeling", "felt", "emotion", "mood", "happy", "sad",
+    "angry", "afraid", "anxious", "stressed", "excited", "love",
+    "hate", "miss", "worry", "scared", "lonely", "grateful",
+})

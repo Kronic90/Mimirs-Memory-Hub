@@ -444,13 +444,21 @@ class MemoryManager:
             else:
                 assistant_brief = assistant_msg
             mem_content += f"\nI responded: {assistant_brief}"
-            self.remember(
+            mem = self.remember(
                 content=mem_content,
                 emotion=primary_emotion,
                 importance=importance,
                 source="conversation",
                 why_saved=why,
             )
+            # Entity extraction: link memory to known social entities
+            # mentioned in the user message (helps crystallization)
+            if mem and not mem.entity:
+                msg_lower = user_msg.lower()
+                for ent_name in self._mimir._social:
+                    if ent_name.lower() in msg_lower:
+                        mem.entity = ent_name
+                        break
 
         # Update mood (also ticks chemistry internally)
         self.update_mood(emotions)

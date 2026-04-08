@@ -236,14 +236,61 @@ class PersistenceMixin:
                 self._reflections = [Memory.from_dict(d) for d in data]
                 self._rebuild_index()
 
+        # ── Rebuild social index from reflections ─────────────────────
+        # Social memories now live in _reflections (full pipeline).
+        # Rebuild _social by scanning for source=="social" + entity.
+        for mem in self._reflections:
+            if mem.source == "social" and mem.entity:
+                if mem.entity not in self._social:
+                    self._social[mem.entity] = []
+                self._social[mem.entity].append(mem)
+
+        # ── Legacy migration: promote social-only memories ────────────
+        # Older profiles stored social memories ONLY in social/ dir,
+        # not in reflections.  Import them into _reflections so they
+        # get full recall + embedding support going forward.
         social_dir = self._data_dir / "social"
         if social_dir.exists():
+            # Build a quick content set to avoid duplicating memories
+            # that are already in _reflections.
+            existing_social = set()
+            for mem in self._reflections:
+                if mem.source == "social" and mem.entity:
+                    existing_social.add(
+                        (mem.entity, mem.content))
+
             for f in social_dir.glob("*.json"):
                 data = self._read_json(f)
                 if isinstance(data, list) and data:
                     entity = data[0].get("entity", f.stem)
-                    self._social[entity] = [
-                        Memory.from_dict(d) for d in data]
+                    for d in data:
+                        mem = Memory.from_dict(d)
+                        if not mem.entity:
+                            mem.entity = entity
+                        if mem.source != "social":
+                            mem.source = "social"
+                        key = (mem.entity, mem.content)
+                        if key not in existing_social:
+                            # Promote into reflections
+                            self._reflections.append(mem)
+                            self._index_memory(
+                                len(self._reflections) - 1, mem)
+                            if mem.entity not in self._social:
+                                self._social[mem.entity] = []
+                            self._social[mem.entity].append(mem)
+                            existing_social.add(key)
+                            # Sync to VividEmbed if available
+                            if (self._embed is not None
+                                    and not mem._embed_uid):
+                                try:
+                                    entry = self._embed.add(
+                                        content=mem.content,
+                                        emotion=mem.emotion,
+                                        importance=mem.importance,
+                                        stability=mem._stability)
+                                    mem._embed_uid = entry.uid
+                                except Exception:
+                                    pass
 
         lpath = self._data_dir / "lessons.json"
         if lpath.exists():

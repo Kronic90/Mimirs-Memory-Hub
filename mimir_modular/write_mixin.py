@@ -312,20 +312,36 @@ class WriteMixin:
                               emotion: str = "neutral",
                               importance: int = 5,
                               why_saved: str = "") -> Memory:
-        """Store a memory about someone."""
+        """Store a memory about someone through the full pipeline.
+
+        Social memories go through the same VividnessMem → VividEmbed →
+        Mimir pipeline as regular memories (novelty, dedup, embedding,
+        flashbulb detection, arc position, Yggdrasil edges, etc.) and
+        are additionally linked to their entity for relationship tracking.
+        """
+        # Apply social boost from neurochemistry
         mods = self._chemistry.get_modifiers()
-        combined = mods["encoding_boost"] * mods.get("social_boost", 1.0)
-        eff_imp = max(1, min(10, round(importance * combined)))
-        self._chemistry.on_emotion(emotion)
+        social_boost = mods.get("social_boost", 1.0)
+        boosted_imp = max(1, min(10, round(importance * social_boost)))
+
+        # Route through the full remember() pipeline — this handles
+        # novelty, dedup, VividEmbed, flashbulb, pattern separation,
+        # date extraction, Yggdrasil edges, and auto-consolidation.
+        mem = self.remember(
+            content=content,
+            emotion=emotion,
+            importance=boosted_imp,
+            source="social",
+            why_saved=why_saved,
+        )
+
+        # Tag with entity and link into the social graph
+        mem.entity = entity
 
         if entity not in self._social:
             self._social[entity] = []
-
-        mem = Memory(content=content, emotion=emotion,
-                     importance=eff_imp, source="social",
-                     entity=entity, why_saved=why_saved)
-        mem._encoding_mood = self._mood
         self._social[entity].append(mem)
+
         return mem
 
     # ──────────────────────────────────────────────────────────────────

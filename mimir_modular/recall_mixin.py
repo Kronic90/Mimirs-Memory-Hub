@@ -17,6 +17,12 @@ from .constants import (
     TEMPORAL_PROXIMITY_BOOST, TEMPORAL_SALIENCE_BOOST,
     TEMPORAL_LOOKAHEAD_DAYS, TEMPORAL_LOOKBEHIND_DAYS,
     VISUAL_BOOST,
+    ENTITY_RECALL_BOOST,
+    _W_KEYWORD_FACTUAL, _W_SEMANTIC_FACTUAL, _W_VIVIDNESS_FACTUAL,
+    _W_MOOD_FACTUAL, _W_RECENCY_FACTUAL,
+    _W_KEYWORD_EMOTIONAL, _W_SEMANTIC_EMOTIONAL, _W_VIVIDNESS_EMOTIONAL,
+    _W_MOOD_EMOTIONAL, _W_RECENCY_EMOTIONAL,
+    _FACTUAL_QUERY_WORDS, _EMOTIONAL_QUERY_WORDS,
 )
 from .helpers import (
     _emotion_to_vector, _closest_emotion,
@@ -158,6 +164,61 @@ class RecallMixin:
                         "semantic": 0.0,
                     }
 
+        # ── Stage 1a¾: Entity-anchored recall ─────────────────────────
+        # When a query mentions a recognized entity, do a direct lookup
+        # via entity edges — like how saying someone's name instantly
+        # activates all memories involving them.
+        query_lower = context.lower()
+        entity_matched: set[int] = set()
+        known_entities = set()
+        for ent in self._social:
+            known_entities.add(ent.lower())
+        for idx, mem in enumerate(self._reflections):
+            if mem.entity and mem.entity.lower() in query_lower:
+                entity_matched.add(idx)
+                known_entities.add(mem.entity.lower())
+        # Also check social entity names against query
+        for ent_name in known_entities:
+            if ent_name in query_lower:
+                for idx, mem in enumerate(self._reflections):
+                    if (mem.entity
+                            and mem.entity.lower() == ent_name):
+                        entity_matched.add(idx)
+        for idx in entity_matched:
+            if idx not in candidates:
+                candidates[idx] = {
+                    "bm25": bm25_norm.get(idx, 0.0),
+                    "semantic": 0.0,
+                }
+
+        # ── Query-type detection (factual vs emotional) ───────────────
+        query_word_set = set(query_lower.split())
+        factual_score = len(query_word_set & _FACTUAL_QUERY_WORDS)
+        emotional_score = len(query_word_set & _EMOTIONAL_QUERY_WORDS)
+        # Also boost factual score if entity name detected
+        if entity_matched:
+            factual_score += 2
+
+        if factual_score > emotional_score:
+            w_kw = _W_KEYWORD_FACTUAL
+            w_sem = _W_SEMANTIC_FACTUAL
+            w_viv = _W_VIVIDNESS_FACTUAL
+            w_mood = _W_MOOD_FACTUAL
+            w_rec = _W_RECENCY_FACTUAL
+        elif emotional_score > factual_score:
+            w_kw = _W_KEYWORD_EMOTIONAL
+            w_sem = _W_SEMANTIC_EMOTIONAL
+            w_viv = _W_VIVIDNESS_EMOTIONAL
+            w_mood = _W_MOOD_EMOTIONAL
+            w_rec = _W_RECENCY_EMOTIONAL
+        else:
+            # Default balanced weights
+            w_kw = _W_KEYWORD
+            w_sem = _W_SEMANTIC
+            w_viv = _W_VIVIDNESS
+            w_mood = _W_MOOD
+            w_rec = _W_RECENCY
+
         # ── Stage 1b: VividEmbed semantic search ──────────────────────
         if self._embed is not None:
             try:
@@ -263,15 +324,21 @@ class RecallMixin:
                 -0.693 * age_days / _RECENCY_HALF_LIFE_DAYS)
 
             composite = (
-                _W_KEYWORD   * s_keyword
-                + _W_SEMANTIC  * s_semantic
-                + _W_VIVIDNESS * s_vividness
-                + _W_MOOD      * s_mood
-                + _W_RECENCY   * s_recency
+                w_kw   * s_keyword
+                + w_sem  * s_semantic
+                + w_viv  * s_vividness
+                + w_mood * s_mood
+                + w_rec  * s_recency
             )
 
             if mem._cherished:
                 composite *= 1.1
+
+            # Entity-anchored boost — memories directly about a
+            # mentioned entity get a recall advantage, like how
+            # hearing a name activates the entire person-schema.
+            if idx in entity_matched:
+                composite += ENTITY_RECALL_BOOST
 
             mem_words = _resonance_words(
                 f"{mem.content} {mem.emotion}")

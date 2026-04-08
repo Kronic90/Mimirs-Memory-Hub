@@ -17,6 +17,8 @@ from .constants import (
     VISUAL_VIVID_THRESHOLD, VISUAL_GIST_THRESHOLD,
     SOLUTION_INITIAL_IMPORTANCE, SOLUTION_REUSE_BOOST,
     _DEDUP_STOP,
+    IMPORTANCE_FLOOR_THRESHOLD, IMPORTANCE_FLOOR_LOW, IMPORTANCE_FLOOR_HIGH,
+    SEMANTIC_VIVIDNESS_FLOOR, SEMANTIC_STABILITY,
 )
 from .helpers import _emotion_to_vector, _closest_emotion, _content_words
 
@@ -145,6 +147,12 @@ class Memory:
             datetime.now() - datetime.fromisoformat(self.timestamp)
         ).total_seconds() / 86400
         effective_stability = self._stability
+
+        # Semantic memories get near-permanent stability
+        if self.source == "semantic":
+            effective_stability = max(
+                effective_stability, SEMANTIC_STABILITY)
+
         if self._anchor:
             effective_stability = max(
                 effective_stability, ANCHOR_STABILITY_FLOOR)
@@ -153,10 +161,29 @@ class Memory:
                 effective_stability, FLASHBULB_STABILITY_FLOOR)
         retention = math.exp(-age_days / max(effective_stability, 0.1))
         raw = self.importance * retention
+
+        # Flashbulb floor (highest priority)
         if self._is_flashbulb:
             return max(raw, self.importance * FLASHBULB_VIVIDNESS_FLOOR)
+
+        # Semantic memory floor — crystallized facts resist fading
+        if self.source == "semantic":
+            return max(raw, self.importance * SEMANTIC_VIVIDNESS_FLOOR)
+
+        # Anchor floor
         if self._anchor:
             return max(raw, self.importance * ANCHOR_VIVIDNESS_FLOOR)
+
+        # Importance-based floor — strong memories have biological
+        # protection (stronger synaptic consolidation)
+        if self.importance >= IMPORTANCE_FLOOR_THRESHOLD:
+            floor_mult = (
+                IMPORTANCE_FLOOR_HIGH
+                if self.importance >= 9
+                else IMPORTANCE_FLOOR_LOW
+            )
+            return max(raw, self.importance * floor_mult)
+
         return raw
 
     # ── Mood-adjusted vividness (state-dependent memory) ──────────────

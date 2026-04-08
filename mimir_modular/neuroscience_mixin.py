@@ -13,6 +13,12 @@ from .constants import (
     CHUNK_OVERLAP_THRESHOLD, CHUNK_MIN_GROUP, CHUNK_MAX_CONTENT_WORDS,
     VOLVA_SAMPLE_PAIRS, VOLVA_INSIGHT_IMPORTANCE,
     COGNITIVE_BIAS_THRESHOLD, DRIFT_ALERT_THRESHOLD,
+    SEMANTIC_MIN_MENTIONS, SEMANTIC_STABILITY,
+    SEMANTIC_IMPORTANCE_FLOOR, SEMANTIC_VIVIDNESS_FLOOR,
+    SUMMARY_MIN_MEMORIES, SUMMARY_AGE_DAYS,
+    SUMMARY_IMPORTANCE, SUMMARY_STABILITY,
+    REINFORCEMENT_IMPORTANCE_MIN, REINFORCEMENT_VIVIDNESS_MAX,
+    REINFORCEMENT_STABILITY_BOOST, REINFORCEMENT_MAX_PER_CYCLE,
 )
 from .helpers import (
     _emotion_to_vector, _content_words, _overlap_ratio, _resonance_words,
@@ -286,7 +292,205 @@ class NeuroscienceMixin:
                     why_saved="reconsolidation drift detected by Huginn")
                 insights.append(mem)
 
+        # ── 5. Semantic memory crystallization (Tulving 1972) ─────
+        # Scan episodic memories for recurring factual content that
+        # should graduate into durable semantic knowledge — like how the
+        # hippocampus transfers repeated patterns to the neocortex.
+        semantic_insights = self._crystallize_semantic_memories()
+        insights.extend(semantic_insights)
+
+        # ── 6. Retrieval-augmented reinforcement (slow-wave replay) ──
+        # Identify important memories that are fading and refresh their
+        # stability — mimics hippocampal replay during slow-wave sleep.
+        reinforced = self._reinforce_fading_memories()
+        if reinforced:
+            self._audit.log("huginn_reinforcement",
+                            details={"reinforced": reinforced})
+
         return insights
+
+    # ══════════════════════════════════════════════════════════════════
+    #  Semantic Memory Crystallization (Tulving 1972 — episodic→semantic)
+    # ══════════════════════════════════════════════════════════════════
+
+    def _crystallize_semantic_memories(self) -> list[Memory]:
+        """Extract recurring factual content from episodic memories and
+        crystallize it into durable semantic memories.
+
+        This models the real neuroscience process where repeated episodic
+        experiences gradually distill into semantic knowledge stored in the
+        neocortex.  Semantic memories live in the same store as episodic
+        ones but get near-permanent stability and a high vividness floor.
+        """
+        crystallized: list[Memory] = []
+
+        # Collect significant phrases from episodic memories
+        # (skip insight/dream/chunk/existing semantic memories)
+        _skip_sources = {"huginn", "volva", "chunk", "semantic", "summary"}
+        episodic = [
+            m for m in self._reflections if m.source not in _skip_sources]
+        if len(episodic) < SEMANTIC_MIN_MENTIONS:
+            return crystallized
+
+        # Build entity→content fragments index for fact extraction
+        # Focus on memories with entities (named people, places, projects)
+        entity_facts: dict[str, list[str]] = {}
+        for m in episodic:
+            if not m.entity:
+                continue
+            ent = m.entity.lower()
+            if ent not in entity_facts:
+                entity_facts[ent] = []
+            entity_facts[ent].append(m.content)
+
+        # Also track frequently repeated short phrases (3-5 word n-grams)
+        from collections import Counter
+        ngram_counts: Counter = Counter()
+        for m in episodic:
+            words = m.content.lower().split()
+            for n in range(3, 6):
+                for i in range(len(words) - n + 1):
+                    gram = " ".join(words[i:i + n])
+                    # Skip grams that are mostly stopwords
+                    meaningful = sum(
+                        1 for w in words[i:i + n]
+                        if len(w) >= 4 and w not in _DEDUP_STOP)
+                    if meaningful >= 2:
+                        ngram_counts[gram] += 1
+
+        # Existing semantic content (dedup)
+        existing_semantic = {
+            m.content for m in self._reflections
+            if m.source == "semantic"}
+
+        # Crystallize entity-linked facts that appear across
+        # multiple episodic memories
+        for entity, contents in entity_facts.items():
+            if len(contents) < SEMANTIC_MIN_MENTIONS:
+                continue
+
+            # Find the most representative content fragment
+            # (the one with highest word overlap with others)
+            best_content = contents[0]
+            best_overlap = 0.0
+            content_word_sets = [
+                set(_content_words(c)) for c in contents]
+            for i, c in enumerate(contents):
+                avg_overlap = sum(
+                    len(content_word_sets[i] & content_word_sets[j])
+                    / max(len(content_word_sets[i] | content_word_sets[j]), 1)
+                    for j in range(len(contents)) if j != i
+                ) / max(len(contents) - 1, 1)
+                if avg_overlap > best_overlap:
+                    best_overlap = avg_overlap
+                    best_content = c
+
+            semantic_content = (
+                f"[semantic — {entity}] {best_content[:200]}")
+            if semantic_content not in existing_semantic:
+                mem = Memory(
+                    content=semantic_content,
+                    emotion="neutral",
+                    importance=max(SEMANTIC_IMPORTANCE_FLOOR, 7),
+                    source="semantic",
+                    entity=entity,
+                    why_saved=(
+                        f"crystallized from {len(contents)} episodic "
+                        f"memories about {entity}"),
+                )
+                mem._stability = SEMANTIC_STABILITY
+                mem._encoding_mood = self._mood
+                self._reflections.append(mem)
+                if self._embed is not None:
+                    try:
+                        entry = self._embed.add(
+                            content=mem.content,
+                            emotion="neutral",
+                            importance=mem.importance,
+                            stability=mem._stability)
+                        mem._embed_uid = entry.uid
+                    except Exception:
+                        pass
+                crystallized.append(mem)
+                existing_semantic.add(semantic_content)
+
+        # Crystallize frequently repeated phrases (entity-free facts)
+        for gram, count in ngram_counts.most_common(20):
+            if count < SEMANTIC_MIN_MENTIONS:
+                break
+            # Don't duplicate existing semantic knowledge
+            if any(gram in sc for sc in existing_semantic):
+                continue
+            semantic_content = (
+                f"[semantic — recurring fact] {gram} "
+                f"(mentioned {count} times)")
+            mem = Memory(
+                content=semantic_content,
+                emotion="neutral",
+                importance=SEMANTIC_IMPORTANCE_FLOOR,
+                source="semantic",
+                why_saved=(
+                    f"crystallized from {count} repetitions "
+                    f"during consolidation"),
+            )
+            mem._stability = SEMANTIC_STABILITY
+            mem._encoding_mood = self._mood
+            self._reflections.append(mem)
+            if self._embed is not None:
+                try:
+                    entry = self._embed.add(
+                        content=mem.content,
+                        emotion="neutral",
+                        importance=mem.importance,
+                        stability=mem._stability)
+                    mem._embed_uid = entry.uid
+                except Exception:
+                    pass
+            crystallized.append(mem)
+            existing_semantic.add(semantic_content)
+
+        if crystallized:
+            self._audit.log("semantic_crystallization",
+                            details={"crystallized": len(crystallized)})
+
+        return crystallized
+
+    # ══════════════════════════════════════════════════════════════════
+    #  Retrieval-Augmented Reinforcement (slow-wave hippocampal replay)
+    # ══════════════════════════════════════════════════════════════════
+
+    def _reinforce_fading_memories(self) -> int:
+        """During consolidation, find high-importance memories that are
+        fading and boost their stability — like the hippocampus replaying
+        important traces during slow-wave sleep.
+
+        This prevents the "forgot my job title after 3 months" problem
+        by giving important memories a periodic refresh cycle.
+        """
+        candidates = []
+        for m in self._reflections:
+            if m._is_flashbulb or m._cherished or m._anchor:
+                continue  # already protected
+            if m.source in ("huginn", "volva"):
+                continue  # insights don't need reinforcement
+            if m.importance < REINFORCEMENT_IMPORTANCE_MIN:
+                continue
+            vivid = m.vividness
+            # Only reinforce memories that are genuinely fading
+            if vivid <= REINFORCEMENT_VIVIDNESS_MAX * m.importance:
+                candidates.append((vivid, m))
+
+        # Sort by vividness ascending — reinforce the most faded first
+        candidates.sort(key=lambda x: x[0])
+        reinforced = 0
+        for _, m in candidates[:REINFORCEMENT_MAX_PER_CYCLE]:
+            old_stability = m._stability
+            m._stability = min(
+                m._stability * REINFORCEMENT_STABILITY_BOOST,
+                STABILITY_CAP)
+            reinforced += 1
+
+        return reinforced
 
     # ══════════════════════════════════════════════════════════════════
     #  Muninn — Memory (consolidation daemon, mechanism #12)
@@ -325,6 +529,8 @@ class NeuroscienceMixin:
                         keeper._cherished = True
                     if donor._anchor:
                         keeper._anchor = True
+                    if donor.entity and not keeper.entity:
+                        keeper.entity = donor.entity
                     if self._embed and donor._embed_uid:
                         try:
                             self._embed.remove(donor._embed_uid)
@@ -342,7 +548,8 @@ class NeuroscienceMixin:
                     and not m._is_flashbulb
                     and not m._anchor
                     and not m._cherished
-                    and m.source not in ("huginn", "volva")):
+                    and m.source not in (
+                        "huginn", "volva", "semantic", "summary")):
                 if self._embed and m._embed_uid:
                     try:
                         self._embed.remove(m._embed_uid)
@@ -379,8 +586,135 @@ class NeuroscienceMixin:
                         details={"merged": merged, "pruned": pruned,
                                  "strengthened": strengthened})
 
+        # ── 4. Hierarchical summarization (hippocampal replay) ────────
+        # Group old episodic memories by week and produce durable summary
+        # memories — like how the hippocampus replays episode clusters
+        # into compressed schemas for neocortical storage.
+        summarized = self._produce_weekly_summaries()
+
         return {"merged": merged, "pruned": pruned,
-                "strengthened": strengthened}
+                "strengthened": strengthened,
+                "summarized": summarized}
+
+    # ══════════════════════════════════════════════════════════════════
+    #  Hierarchical Summarization (hippocampal schema compression)
+    # ══════════════════════════════════════════════════════════════════
+
+    def _produce_weekly_summaries(self) -> int:
+        """Produce weekly summary memories from clusters of old episodic
+        memories — models hippocampal replay compressing episodes into
+        durable schemas.
+
+        Summary memories are stored as source='summary' with high
+        stability, and participate in normal recall and Yggdrasil graph
+        connections.
+        """
+        now = datetime.now()
+        _skip_sources = {
+            "huginn", "volva", "chunk", "semantic", "summary"}
+
+        # Group episodic memories by ISO week
+        week_groups: dict[str, list[Memory]] = {}
+        for m in self._reflections:
+            if m.source in _skip_sources:
+                continue
+            try:
+                ts = datetime.fromisoformat(m.timestamp)
+            except Exception:
+                continue
+            age_days = (now - ts).total_seconds() / 86400
+            if age_days < SUMMARY_AGE_DAYS:
+                continue  # too recent to summarize
+            # ISO year-week key
+            iso_year, iso_week, _ = ts.isocalendar()
+            week_key = f"{iso_year}-W{iso_week:02d}"
+            if week_key not in week_groups:
+                week_groups[week_key] = []
+            week_groups[week_key].append(m)
+
+        # Existing summary weeks (dedup)
+        existing_weeks = set()
+        for m in self._reflections:
+            if m.source == "summary" and m.content.startswith("[summary — "):
+                # Extract week key from content
+                try:
+                    wk = m.content.split("]")[0].replace("[summary — ", "")
+                    existing_weeks.add(wk)
+                except Exception:
+                    pass
+
+        summaries_created = 0
+        for week_key, mems in sorted(week_groups.items()):
+            if week_key in existing_weeks:
+                continue
+            if len(mems) < SUMMARY_MIN_MEMORIES:
+                continue
+
+            # Build summary: dominant emotions, entities, top themes
+            emotion_counts: dict[str, int] = {}
+            entities_seen: set[str] = set()
+            all_content_words: list[str] = []
+            max_importance = 0
+            for m in mems:
+                emotion_counts[m.emotion] = (
+                    emotion_counts.get(m.emotion, 0) + 1)
+                if m.entity:
+                    entities_seen.add(m.entity)
+                all_content_words.extend(
+                    w for w in m.content_words if len(w) >= 4)
+                max_importance = max(max_importance, m.importance)
+
+            dominant_emotion = max(
+                emotion_counts, key=emotion_counts.get)
+
+            # Top theme words by frequency
+            from collections import Counter
+            word_freq = Counter(all_content_words)
+            top_themes = [w for w, _ in word_freq.most_common(8)]
+            themes_str = ", ".join(top_themes) if top_themes else "various"
+            entities_str = (
+                ", ".join(sorted(entities_seen)[:5])
+                if entities_seen else "no specific entities"
+            )
+
+            content = (
+                f"[summary — {week_key}] "
+                f"{len(mems)} memories: "
+                f"themes — {themes_str}; "
+                f"entities — {entities_str}; "
+                f"dominant feeling — {dominant_emotion}")
+
+            mem = Memory(
+                content=content,
+                emotion=dominant_emotion,
+                importance=max(SUMMARY_IMPORTANCE, min(max_importance, 8)),
+                source="summary",
+                why_saved=(
+                    f"weekly summary of {len(mems)} memories "
+                    f"from {week_key}"),
+            )
+            mem._stability = SUMMARY_STABILITY
+            mem._encoding_mood = self._mood
+            self._reflections.append(mem)
+
+            if self._embed is not None:
+                try:
+                    entry = self._embed.add(
+                        content=mem.content,
+                        emotion=dominant_emotion,
+                        importance=mem.importance,
+                        stability=mem._stability)
+                    mem._embed_uid = entry.uid
+                except Exception:
+                    pass
+
+            summaries_created += 1
+
+        if summaries_created:
+            self._audit.log("muninn_summarization",
+                            details={"summaries": summaries_created})
+
+        return summaries_created
 
     # ══════════════════════════════════════════════════════════════════
     #  Gist Compression (Reyna & Brainerd 1995)
@@ -393,7 +727,7 @@ class NeuroscienceMixin:
         for m in self._reflections:
             if m._is_flashbulb or m._anchor or m._cherished:
                 continue
-            if m.source in ("huginn", "volva"):
+            if m.source in ("huginn", "volva", "semantic", "summary"):
                 continue
             try:
                 age_days = (
@@ -430,13 +764,13 @@ class NeuroscienceMixin:
             if not word_sets[i]:
                 continue
             mi = self._reflections[i]
-            if mi.source in ("huginn", "volva", "chunk"):
+            if mi.source in ("huginn", "volva", "chunk", "semantic", "summary"):
                 continue
             for j in range(i + 1, n):
                 if not word_sets[j]:
                     continue
                 mj = self._reflections[j]
-                if mj.source in ("huginn", "volva", "chunk"):
+                if mj.source in ("huginn", "volva", "chunk", "semantic", "summary"):
                     continue
                 overlap = _overlap_ratio(word_sets[i], word_sets[j])
                 if CHUNK_OVERLAP_THRESHOLD <= overlap < _DEDUP_THRESHOLD:
@@ -563,7 +897,8 @@ class NeuroscienceMixin:
 
         real_mems = [
             m for m in self._reflections
-            if m.source not in ("huginn", "volva")]
+            if m.source not in (
+                "huginn", "volva", "semantic", "summary")]
         if len(real_mems) < 4:
             return []
 
