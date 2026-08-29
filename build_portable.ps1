@@ -83,12 +83,24 @@ if ($LASTEXITCODE -ne 0) {
 # ── Step 4: Copy app files ────────────────────────────────────────────
 Write-Host " [4/5] Copying application files..." -ForegroundColor Yellow
 Copy-Item -Path "$ROOT\playground"       -Destination "$BUILD_DIR\playground"       -Recurse
+# Bundle the local vividmimir/ source directly rather than relying solely on
+# the PyPI package requirements.txt installs — local often has fixes not yet
+# republished. Placed at the app root so it's found on sys.path before the
+# pip-installed copy in site-packages (embedded Python's ._pth adds ".." —
+# the app root — ahead of "import site").
+Copy-Item -Path "$ROOT\vividmimir"       -Destination "$BUILD_DIR\vividmimir"       -Recurse
 Copy-Item -Path "$ROOT\Mimir.py"         -Destination "$BUILD_DIR\Mimir.py"
 Copy-Item -Path "$ROOT\run.bat"          -Destination "$BUILD_DIR\run.bat"
 Copy-Item -Path "$ROOT\run.sh"           -Destination "$BUILD_DIR\run.sh"
 Copy-Item -Path "$ROOT\start.command"    -Destination "$BUILD_DIR\start.command"
 Copy-Item -Path "$ROOT\requirements.txt" -Destination "$BUILD_DIR\requirements.txt"
 Copy-Item -Path "$ROOT\README.md"        -Destination "$BUILD_DIR\README.md"
+
+# Strip stale __pycache__ dirs pulled in by the recursive copies above —
+# bytecode cached from the dev machine's Python version, unnecessary bloat
+# in a public download and never needed (freshly generated on first run).
+Get-ChildItem -Path $BUILD_DIR -Recurse -Directory -Filter "__pycache__" |
+    Remove-Item -Recurse -Force
 
 # Empty data directory (users get a fresh start)
 New-Item -ItemType Directory -Path "$BUILD_DIR\playground_data" | Out-Null
