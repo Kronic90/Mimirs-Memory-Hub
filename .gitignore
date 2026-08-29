@@ -16,6 +16,8 @@ playground_data/settings.json
 playground_data/characters/
 playground_data/conversations/
 playground_data/profiles/
+playground_data/proactive_state.json
+playground_data/projects/
 # Keep the models gitignore but not the model files themselves
 !playground_data/models/.gitignore
 

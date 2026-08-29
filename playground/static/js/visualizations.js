@@ -6,6 +6,7 @@
 // Initialize tab switching
 document.addEventListener('DOMContentLoaded', () => {
     setupVisualizationTabs();
+    setupVizAgentSelect();
 });
 
 function setupVisualizationTabs() {
@@ -15,6 +16,48 @@ function setupVisualizationTabs() {
             const vizType = e.target.dataset.viz;
             switchVizualizationView(vizType);
         });
+    });
+}
+
+// ── Shared "which agent's memories" selection ──────────────────
+// Auto-follows the currently active character by default; the dropdown
+// lets you browse any other character's (or Default's) memories without
+// switching who's actually active in chat.
+let _selectedVizCharId = '';
+
+function _charQuery() {
+    return _selectedVizCharId ? `?char_id=${encodeURIComponent(_selectedVizCharId)}` : '';
+}
+
+// Exposed for visualize.js (the "Original Graph" tab), which owns its own
+// module scope and can't see _selectedVizCharId directly.
+window.getVizCharId = () => _selectedVizCharId;
+
+async function setupVizAgentSelect() {
+    const sel = document.getElementById('viz-agent-select');
+    if (!sel) return;
+    try {
+        const [charsRes, settings] = await Promise.all([
+            App.api('/characters'),
+            App.api('/settings'),
+        ]);
+        (charsRes.characters || []).forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name || c.id;
+            sel.appendChild(opt);
+        });
+        // Auto-follow whichever character is currently active in chat.
+        _selectedVizCharId = settings.active_character_id || '';
+        sel.value = _selectedVizCharId;
+    } catch (err) {
+        console.error('Failed to load characters for viz selector:', err);
+    }
+
+    sel.addEventListener('change', () => {
+        _selectedVizCharId = sel.value;
+        const activeTab = document.querySelector('.viz-tab.active');
+        if (activeTab) switchVizualizationView(activeTab.dataset.viz);
     });
 }
 
@@ -60,7 +103,7 @@ let _landscape3dCleanup = null;
 
 async function loadLandscape3D() {
     try {
-        const res = await App.api('/visualization/landscape');
+        const res = await App.api('/visualization/landscape' + _charQuery());
         renderLandscape3D(res);
     } catch (err) {
         console.error('Failed to load landscape:', err);
@@ -595,7 +638,7 @@ function renderMoodTimeline(history) {
 
 async function loadCherishedWall() {
     try {
-        const res = await App.api('/visualization/cherished');
+        const res = await App.api('/visualization/cherished' + _charQuery());
         renderCherishedWall(res.memories || []);
     } catch (err) {
         console.error('Failed to load cherished:', err);
@@ -718,7 +761,7 @@ async function loadRelationships() {
     if (!container) return;
     container.innerHTML = '<p class="text-muted">Loading relationships…</p>';
     try {
-        const data = await App.api('/memory/relationships');
+        const data = await App.api('/memory/relationships' + _charQuery());
         if (!data || data.length === 0) {
             container.innerHTML = '<p class="text-muted">No social relationships recorded yet.</p>';
             return;
@@ -761,7 +804,7 @@ async function loadTopicClusters() {
     if (!container) return;
     container.innerHTML = '<p class="text-muted">Analysing memory clusters…</p>';
     try {
-        const data = await App.api('/memory/clusters');
+        const data = await App.api('/memory/clusters' + _charQuery());
         if (!data || data.length === 0) {
             container.innerHTML = '<p class="text-muted">Not enough memories to form clusters yet.</p>';
             return;
@@ -810,8 +853,8 @@ async function loadMemoryAttic() {
     container.innerHTML = '<p class="text-muted">Searching the memory attic…</p>';
     try {
         const [dormant, attic] = await Promise.all([
-            App.api('/memory/dormant'),
-            App.api('/memory/attic'),
+            App.api('/memory/dormant' + _charQuery()),
+            App.api('/memory/attic' + _charQuery()),
         ]);
 
         let html = '';

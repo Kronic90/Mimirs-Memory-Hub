@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from .helpers import _resonance_words
 
 
@@ -118,7 +120,22 @@ class LLMMixin:
                     content=f"[reflection] {response.strip()[:300]}",
                     emotion="contemplative", importance=4,
                     source="huginn",
-                    why_saved="periodic self-analysis")
+                    why_saved="periodic self-analysis",
+                    category="self")
             return response.strip()
         except Exception:
             return ""
+
+    REFLECT_COOLDOWN_SECONDS = 900
+
+    def trigger_self_reflect(self) -> str | None:
+        """Model-requested self-analysis (<self_reflect/> tag). Rate-limited;
+        returns None if still cooling down or if no LLM callback is wired up."""
+        now = datetime.now()
+        if (self._last_reflect_at and
+                (now - self._last_reflect_at).total_seconds() < self.REFLECT_COOLDOWN_SECONDS):
+            return None
+        self._last_reflect_at = now
+        if not self._llm_fn:
+            return None
+        return self.reflect() or None

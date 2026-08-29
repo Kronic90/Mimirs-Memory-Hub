@@ -47,21 +47,34 @@ const MemoryPage = (() => {
         try {
             const stats = await App.api('/memory/stats' + _charQuery());
             const cards = [
-                { label: 'Memories', value: stats.total_reflections || 0, icon: '🧠' },
-                { label: 'Mood', value: stats.mood || '—', icon: '😊' },
-                { label: 'Flashbulbs', value: stats.flashbulb_count || 0, icon: '⚡' },
-                { label: 'Anchors', value: stats.anchor_count || 0, icon: '⚓' },
-                { label: 'Cherished', value: stats.cherished_count || 0, icon: '💎' },
-                { label: 'Social', value: (stats.social_entities || []).length, icon: '👥' },
-                { label: 'Lessons', value: stats.total_lessons || 0, icon: '📚' },
-                { label: 'Tasks', value: stats.active_tasks || 0, icon: '📋' },
-                { label: 'Yggdrasil', value: stats.yggdrasil_edges || 0, icon: '🌳' },
-                { label: 'Insights', value: stats.huginn_insights || 0, icon: '🔮' },
+                { label: 'Memories', value: stats.total_reflections || 0, icon: '🧠',
+                  desc: 'Every distinct thing remembered — the full memory count.' },
+                { label: 'Mood', value: stats.mood || '—', icon: '😊',
+                  desc: "Current emotional state, blended from recent memories and conversation." },
+                { label: 'Flashbulbs', value: stats.flashbulb_count || 0, icon: '⚡',
+                  desc: 'Highly vivid, emotionally intense memories that resist fading over time.' },
+                { label: 'Anchors', value: stats.anchor_count || 0, icon: '⚓',
+                  desc: 'Foundational memories marked to stay stable and never fade, however old.' },
+                { label: 'Cherished', value: stats.cherished_count || 0, icon: '💎',
+                  desc: 'Memories deliberately marked as precious — get a boost during recall.' },
+                { label: 'Self-Identity', value: stats.self_count || 0, icon: '🌀',
+                  desc: "Memories about who the AI itself is — its own traits and opinions, not about you." },
+                { label: 'Social', value: (stats.social_entities || []).length, icon: '👥',
+                  desc: 'Number of distinct people/entities it has formed impressions about.' },
+                { label: 'Lessons', value: stats.total_lessons || 0, icon: '📚',
+                  desc: 'Lessons learned from past mistakes or successes, to avoid repeating errors.' },
+                { label: 'Tasks', value: stats.active_tasks || 0, icon: '📋',
+                  desc: 'Goals or to-dos currently being tracked.' },
+                { label: 'Yggdrasil', value: stats.yggdrasil_edges || 0, icon: '🌳',
+                  desc: 'Connections in the memory graph — how many memories link to each other.' },
+                { label: 'Insights', value: stats.huginn_insights || 0, icon: '🔮',
+                  desc: 'Patterns the AI has noticed on its own by analysing its memories.' },
             ];
             grid.innerHTML = '';
             cards.forEach(c => {
                 const card = document.createElement('div');
                 card.className = 'stat-card';
+                card.setAttribute('data-tip', c.desc);
                 card.innerHTML = `<div class="stat-icon">${c.icon}</div>
                     <div class="stat-info"><div class="stat-value">${c.value}</div>
                     <div class="stat-label">${c.label}</div></div>`;
@@ -90,13 +103,20 @@ const MemoryPage = (() => {
                     oxytocin: '#f472b6', norepinephrine: '#f97316',
                     cortisol: '#ef4444'
                 };
+                const chemDesc = {
+                    dopamine: 'Dopamine — reward and motivation. Rises with novelty, praise, and progress.',
+                    serotonin: 'Serotonin — stability and contentment. Rises with consistency and comfort.',
+                    oxytocin: 'Oxytocin — bonding and trust. Rises with warmth, closeness, and connection.',
+                    norepinephrine: 'Norepinephrine — alertness and arousal. Rises with excitement, urgency, or surprise.',
+                    cortisol: 'Cortisol — stress response. Rises with conflict, threat, or anxiety; dampens other reactions when high.',
+                };
                 barsEl.innerHTML = '';
                 for (const [name, val] of Object.entries(levels)) {
                     const pct = Math.min(100, Math.max(0, val * 100));
                     const label = name.slice(0, 3).toUpperCase();
                     barsEl.innerHTML += `
                         <div class="chem-bar-row">
-                            <span class="chem-label" title="${name}">${label}</span>
+                            <span class="chem-label" data-tip="${esc(chemDesc[name] || name)}">${label}</span>
                             <div class="chem-bar-track">
                                 <div class="chem-bar-fill" style="width:${pct}%;background:${colors[name] || '#7c3aed'}"></div>
                             </div>
@@ -168,7 +188,7 @@ const MemoryPage = (() => {
         results.innerHTML = '<p class="text-muted">Searching…</p>';
 
         try {
-            const memories = await App.apiPost('/memory/recall', { context: query, limit: 30 });
+            const memories = await App.apiPost('/memory/recall' + _charQuery(), { context: query, limit: 30 });
             renderMemories(memories || [], true);
             document.getElementById('memory-pager').style.display = 'none';
         } catch {
@@ -237,7 +257,7 @@ const MemoryPage = (() => {
     async function deleteMemory(idx) {
         if (!confirm('Delete this memory permanently?')) return;
         try {
-            await fetch('/api/memory/' + idx, { method: 'DELETE' });
+            await fetch('/api/memory/' + idx + _charQuery(), { method: 'DELETE' });
             App.toast('Memory deleted', 'success');
             browseMemories();
             loadStats();
@@ -246,7 +266,7 @@ const MemoryPage = (() => {
 
     async function toggleCherish(idx) {
         try {
-            const r = await App.apiPost('/memory/' + idx + '/cherish', {});
+            const r = await App.apiPost('/memory/' + idx + '/cherish' + _charQuery(), {});
             App.toast(r.cherished ? 'Cherished ✨' : 'Uncherished', 'info');
             browseMemories();
             loadStats();
@@ -255,7 +275,7 @@ const MemoryPage = (() => {
 
     async function toggleAnchor(idx) {
         try {
-            const r = await App.apiPost('/memory/' + idx + '/anchor', {});
+            const r = await App.apiPost('/memory/' + idx + '/anchor' + _charQuery(), {});
             App.toast(r.anchored ? 'Anchored ⚓' : 'Unanchored', 'info');
             browseMemories();
             loadStats();
@@ -271,7 +291,7 @@ const MemoryPage = (() => {
         if (isNaN(importance) || importance < 1 || importance > 10) {
             App.toast('Importance must be 1-10', 'error'); return;
         }
-        fetch('/api/memory/' + idx, {
+        fetch('/api/memory/' + idx + _charQuery(), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ emotion, importance }),
@@ -298,7 +318,7 @@ const MemoryPage = (() => {
     async function triggerSleep() {
         App.toast('Running sleep consolidation…', 'info');
         try {
-            await App.apiPost('/memory/sleep', {});
+            await App.apiPost('/memory/sleep' + _charQuery(), {});
             App.toast('Consolidation complete', 'success');
             loadStats(); loadChemistry();
         } catch { App.toast('Consolidation failed', 'error'); }
@@ -308,7 +328,7 @@ const MemoryPage = (() => {
     async function runHuginn() {
         App.toast('Running Huginn pattern detection…', 'info');
         try {
-            const insights = await App.apiPost('/memory/huginn', {});
+            const insights = await App.apiPost('/memory/huginn' + _charQuery(), {});
             const el = document.getElementById('insight-results');
             if (Array.isArray(insights) && insights.length > 0 && !insights[0].error) {
                 el.innerHTML = '<h3>🔮 Huginn Insights</h3>' +
@@ -327,7 +347,7 @@ const MemoryPage = (() => {
     async function runDream() {
         App.toast('Running Völva dream synthesis…', 'info');
         try {
-            const dreams = await App.apiPost('/memory/dream', {});
+            const dreams = await App.apiPost('/memory/dream' + _charQuery(), {});
             const el = document.getElementById('insight-results');
             if (Array.isArray(dreams) && dreams.length > 0 && !dreams[0].error) {
                 el.innerHTML = '<h3>💭 Völva Dreams</h3>' +
@@ -346,7 +366,7 @@ const MemoryPage = (() => {
     async function runReflect() {
         App.toast('Reflecting on memories…', 'info');
         try {
-            const result = await App.apiPost('/memory/reflect', {});
+            const result = await App.apiPost('/memory/reflect' + _charQuery(), {});
             const el = document.getElementById('insight-results');
             if (result.reflection) {
                 el.innerHTML = '<h3>🌀 Self-Reflection</h3>' +
@@ -371,7 +391,7 @@ const MemoryPage = (() => {
         if (instruction === null) return;
         App.toast('AI curating memories…', 'info');
         try {
-            const result = await App.apiPost('/memory/edit', { instruction });
+            const result = await App.apiPost('/memory/edit' + _charQuery(), { instruction });
             if (result.error) {
                 App.toast('Curate: ' + result.error, 'error');
             } else {
@@ -392,7 +412,7 @@ const MemoryPage = (() => {
         const el = document.getElementById('social-list');
         if (!el) return;
         try {
-            const impressions = await App.api('/memory/social');
+            const impressions = await App.api('/memory/social' + _charQuery());
             if (!impressions.length) {
                 el.innerHTML = '<p class="text-muted">No social impressions yet.</p>';
                 return;
@@ -420,7 +440,7 @@ const MemoryPage = (() => {
         const importance = parseInt(document.getElementById('social-importance').value) || 5;
         if (!entity || !content) { App.toast('Entity and content required', 'error'); return; }
         try {
-            await App.apiPost('/memory/social', { entity, content, emotion, importance, why_saved: 'user-added social impression' });
+            await App.apiPost('/memory/social' + _charQuery(), { entity, content, emotion, importance, why_saved: 'user-added social impression' });
             App.toast(`Impression about "${entity}" saved`, 'success');
             document.getElementById('social-content').value = '';
             loadSocialImpressions();
@@ -432,7 +452,7 @@ const MemoryPage = (() => {
         const el = document.getElementById('lessons-list');
         if (!el) return;
         try {
-            const lessons = await App.api('/memory/lessons');
+            const lessons = await App.api('/memory/lessons' + _charQuery());
             if (!lessons.length) {
                 el.innerHTML = '<p class="text-muted">No lessons yet.</p>';
                 return;
@@ -458,7 +478,7 @@ const MemoryPage = (() => {
         const importance = parseInt(document.getElementById('lesson-importance').value) || 5;
         if (!topic || !strategy) { App.toast('Topic and strategy required', 'error'); return; }
         try {
-            await App.apiPost('/memory/lessons', { topic, context_trigger: trigger, strategy, importance });
+            await App.apiPost('/memory/lessons' + _charQuery(), { topic, context_trigger: trigger, strategy, importance });
             App.toast('Lesson added', 'success');
             document.getElementById('lesson-topic').value = '';
             document.getElementById('lesson-trigger').value = '';
@@ -473,7 +493,7 @@ const MemoryPage = (() => {
         const el = document.getElementById('reminders-list');
         if (!el) return;
         try {
-            const reminders = await App.api('/memory/reminders');
+            const reminders = await App.api('/memory/reminders' + _charQuery());
             if (!reminders.length) {
                 el.innerHTML = '<p class="text-muted">No reminders set.</p>';
                 return;
@@ -495,7 +515,7 @@ const MemoryPage = (() => {
         const el = document.getElementById('visual-memories-grid');
         if (!el) return;
         try {
-            const memories = await App.api('/memory/visual');
+            const memories = await App.api('/memory/visual' + _charQuery());
             if (!memories.length) {
                 el.innerHTML = '<p class="text-muted">No visual memories saved yet.</p>';
                 return;
@@ -506,7 +526,7 @@ const MemoryPage = (() => {
                 card.className = 'visual-memory-card';
 
                 const img = document.createElement('img');
-                img.src = '/api/memory/visual/' + m.visual_hash;
+                img.src = '/api/memory/visual/' + m.visual_hash + _charQuery();
                 img.className = 'vm-thumb';
                 img.alt = m.visual_description || 'visual memory';
                 img.loading = 'lazy';
@@ -534,7 +554,7 @@ const MemoryPage = (() => {
         const hours = parseFloat(document.getElementById('reminder-hours').value) || 24;
         if (!text) { App.toast('Reminder text required', 'error'); return; }
         try {
-            await App.apiPost('/memory/reminders', { text, hours });
+            await App.apiPost('/memory/reminders' + _charQuery(), { text, hours });
             App.toast(`Reminder set for ${hours}h`, 'success');
             document.getElementById('reminder-text').value = '';
             loadReminders();
@@ -548,8 +568,8 @@ const MemoryPage = (() => {
         if (!el) return;
         try {
             const [tasks, overview] = await Promise.all([
-                App.api('/tasks'),
-                App.api('/project/overview'),
+                App.api('/tasks' + _charQuery()),
+                App.api('/project/overview' + _charQuery()),
             ]);
             if (badge) {
                 const parts = [];
@@ -565,10 +585,12 @@ const MemoryPage = (() => {
             }
             el.innerHTML = tasks.map(t => {
                 const statusIcon = t.status === 'active' ? '🔵' : t.status === 'completed' ? '✅' : '❌';
-                const actions = t.status === 'active' ? `
+                const actions = (t.status === 'active' ? `
                     <button class="btn-sm-action" onclick="MemoryPage.completeTask('${esc(t.task_id)}')" title="Complete">✅</button>
                     <button class="btn-sm-action" onclick="MemoryPage.failTask('${esc(t.task_id)}')" title="Fail">❌</button>
-                ` : '';
+                ` : '') + `
+                    <button class="btn-sm-action btn-danger" onclick="MemoryPage.deleteTask('${esc(t.task_id)}')" title="Delete">🗑️</button>
+                `;
                 return `<div class="organic-item">
                     <div style="flex:1;">
                         <span>${statusIcon}</span>
@@ -591,7 +613,7 @@ const MemoryPage = (() => {
         const project = document.getElementById('task-project').value.trim();
         if (!desc) { App.toast('Task description required', 'error'); return; }
         try {
-            const result = await App.apiPost('/tasks', { description: desc, priority, project });
+            const result = await App.apiPost('/tasks' + _charQuery(), { description: desc, priority, project });
             App.toast(`Task created: ${result.task_id.slice(0, 8)}`, 'success');
             document.getElementById('task-description').value = '';
             loadTasks();
@@ -602,7 +624,7 @@ const MemoryPage = (() => {
         const outcome = prompt('Outcome (optional):');
         if (outcome === null) return;
         try {
-            await App.apiPost(`/tasks/${taskId}/complete`, { outcome });
+            await App.apiPost(`/tasks/${taskId}/complete` + _charQuery(), { outcome });
             App.toast('Task completed', 'success');
             loadTasks();
             loadStats();
@@ -613,17 +635,27 @@ const MemoryPage = (() => {
         const reason = prompt('Failure reason (optional):');
         if (reason === null) return;
         try {
-            await App.apiPost(`/tasks/${taskId}/fail`, { reason });
+            await App.apiPost(`/tasks/${taskId}/fail` + _charQuery(), { reason });
             App.toast('Task marked as failed', 'info');
             loadTasks();
             loadStats();
         } catch { App.toast('Failed to update task', 'error'); }
     }
 
+    async function deleteTask(taskId) {
+        if (!confirm('Delete this task permanently?')) return;
+        try {
+            await fetch('/api/tasks/' + taskId + _charQuery(), { method: 'DELETE' });
+            App.toast('Task deleted', 'success');
+            loadTasks();
+            loadStats();
+        } catch { App.toast('Delete failed', 'error'); }
+    }
+
     async function setProject() {
         const name = document.getElementById('task-project').value.trim();
         try {
-            const result = await App.apiPost('/project/active', { name });
+            const result = await App.apiPost('/project/active' + _charQuery(), { name });
             App.toast(result.message || 'Project set', 'success');
             loadTasks();
         } catch { App.toast('Failed to set project', 'error'); }
@@ -636,7 +668,7 @@ const MemoryPage = (() => {
         const importance = parseInt(document.getElementById('solution-importance').value) || 5;
         if (!problem || !solution) { App.toast('Both problem and solution required', 'error'); return; }
         try {
-            await App.apiPost('/solutions', { problem, solution, importance });
+            await App.apiPost('/solutions' + _charQuery(), { problem, solution, importance });
             App.toast('Solution recorded', 'success');
             document.getElementById('solution-problem').value = '';
             document.getElementById('solution-content').value = '';
@@ -649,7 +681,7 @@ const MemoryPage = (() => {
         if (!problem) { App.toast('Enter a problem to search for', 'error'); return; }
         const el = document.getElementById('solutions-list');
         try {
-            const results = await App.apiPost('/solutions/search', { problem, top_k: 5 });
+            const results = await App.apiPost('/solutions/search' + _charQuery(), { problem, top_k: 5 });
             if (!results.length) {
                 el.innerHTML = '<p class="text-muted">No matching solutions found.</p>';
                 return;
@@ -736,7 +768,7 @@ const MemoryPage = (() => {
     return {
         init, editMemory, deleteMemory, toggleCherish, toggleAnchor,
         runReflect, runAICurate, loadSocialImpressions, loadLessons, loadReminders,
-        loadVisualMemories, loadTasks, addTask, completeTask, failTask,
+        loadVisualMemories, loadTasks, addTask, completeTask, failTask, deleteTask,
         setProject, addSolution, searchSolutions
     };
 })();

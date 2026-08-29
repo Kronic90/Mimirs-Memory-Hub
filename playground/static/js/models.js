@@ -97,14 +97,42 @@ const ModelsPage = (() => {
         const name = input.value.trim();
         if (!name) return;
 
-        App.toast('Pulling ' + name + '…', 'info');
         try {
-            const resp = await fetch('/api/models');
-            App.toast('Pull request sent. Check Ollama logs for progress.', 'info');
-            setTimeout(() => loadOllamaModels(), 5000);
+            await App.apiPost('/models/ollama/pull', { name });
         } catch (e) {
-            App.toast('Pull failed: ' + e.message, 'error');
+            App.toast('Pull failed to start: ' + e.message, 'error');
+            return;
         }
+        App.toast('Pulling ' + name + '…', 'info');
+
+        let checks = 0;
+        const maxChecks = 1200; // 20 minutes at 1s intervals
+        const pollInterval = setInterval(async () => {
+            checks++;
+            try {
+                const status = await App.api('/models/ollama/pull/status');
+                const prog = status[name];
+                if (prog) {
+                    if (prog.status === 'success') {
+                        clearInterval(pollInterval);
+                        App.toast(name + ' pulled successfully!', 'success');
+                        loadOllamaModels();
+                        return;
+                    } else if (prog.status === 'error') {
+                        clearInterval(pollInterval);
+                        App.toast('Pull failed: ' + (prog.error || 'Unknown error'), 'error');
+                        return;
+                    } else if (prog.total && prog.completed) {
+                        const pct = Math.round(prog.completed / prog.total * 100);
+                        App.toast(`${name}: ${prog.status || 'downloading'} (${pct}%)`, 'info');
+                    }
+                }
+            } catch { /* transient poll failure, keep trying */ }
+            if (checks >= maxChecks) {
+                clearInterval(pollInterval);
+                App.toast('Pull timed out — check Ollama logs.', 'error');
+            }
+        }, 1000);
     }
 
     // ── HuggingFace search ───────────────────────────────────────
@@ -219,7 +247,7 @@ const ModelsPage = (() => {
                 checks++;
                 try {
                     const status = await App.api('/models/hf/download/status');
-                    const prog_data = status[filename];
+                    const prog_data = status[repoId + '::' + filename];
                     if (prog_data) {
                         if (prog_data.status === 'complete') {
                             clearInterval(pollInterval);
@@ -742,9 +770,79 @@ const ModelsPage = (() => {
                 });
             }
 
+            // GPU / local-model-backend status + guided update
+            const btnCheckUpdate = document.getElementById('btn-check-backend-update');
+            const updateStatusEl = document.getElementById('backend-update-status');
+            if (btnCheckUpdate) {
+                btnCheckUpdate.addEventListener('click', async () => {
+                    btnCheckUpdate.disabled = true;
+                    updateStatusEl.textContent = 'Checking for a matching build…';
+                    try {
+                        const candidate = await App.api('/system/backend-candidate');
+                        if (!candidate.found) {
+                            updateStatusEl.textContent = candidate.reason || 'No known-good build found for your GPU.';
+                            btnCheckUpdate.disabled = false;
+                            return;
+                        }
+                        const c = candidate.candidate;
+                        const ok = confirm(
+                            `Found a known-good build for ${candidate.gpu.name} (${c.label}):\n` +
+                            `llama-cpp-python ${c.version}\n\n` +
+                            `This will back up your current install first, and automatically restore it ` +
+                            `if the new build fails to load or doesn't support GPU offload. Proceed?`
+                        );
+                        if (!ok) {
+                            updateStatusEl.textContent = '';
+                            btnCheckUpdate.disabled = false;
+                            return;
+                        }
+                        updateStatusEl.textContent = 'Backing up, downloading, and verifying — this can take a minute…';
+                        const result = await App.apiPost('/system/update-backend', { wheel_url: c.url });
+                        if (result.ok) {
+                            updateStatusEl.textContent =
+                                `Updated to ${result.backend.version} — GPU offload: ${result.backend.gpu_offload_supported ? '✓' : '✗'}`;
+                            App.toast('Local model backend updated', 'success');
+                            loadBackendStatus();
+                        } else {
+                            const rolledBack = result.rolled_back ? ' (automatically rolled back to your previous working build)' : '';
+                            updateStatusEl.textContent = `Update failed at "${result.step}": ${result.error}${rolledBack}`;
+                            App.toast('Backend update failed' + rolledBack, 'error');
+                        }
+                    } catch (e) {
+                        updateStatusEl.textContent = 'Update failed: ' + (e.message || e);
+                    }
+                    btnCheckUpdate.disabled = false;
+                });
+            }
+
             initialized = true;
         }
         loadOllamaModels();
+        loadBackendStatus();
+    }
+
+    async function loadBackendStatus() {
+        const el = document.getElementById('backend-status-card');
+        if (!el) return;
+        try {
+            const status = await App.api('/system/backend-status');
+            const gpu = status.gpu || {};
+            const lc = status.llama_cpp || {};
+            const parts = [];
+            if (gpu.available) {
+                parts.push(`GPU: ${esc(gpu.name)} (sm_${esc(gpu.compute_capability)}, driver supports CUDA ${esc(gpu.driver_max_cuda_version || '?')})`);
+            } else {
+                parts.push('No NVIDIA GPU detected (CPU-only, or another vendor)');
+            }
+            if (lc.installed) {
+                parts.push(`llama-cpp-python ${esc(lc.version)} · GPU offload: ${lc.gpu_offload_supported ? '✓' : '✗'}`);
+            } else {
+                parts.push('llama-cpp-python is not installed');
+            }
+            el.innerHTML = parts.join('<br>');
+        } catch {
+            el.textContent = 'Could not check backend status.';
+        }
     }
 
     return { init, useModel, viewRepo, downloadHF, removeScanDir, useLocalModel, searchSafeTensors, viewSafeTensorsRepo, useSafeTensorsModel };

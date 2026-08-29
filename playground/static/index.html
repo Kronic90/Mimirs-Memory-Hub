@@ -15,15 +15,19 @@
             <div class="sidebar-logo">
                 <img src="/static/img/logo.png" alt="Mimir's Memory Hub" class="logo-img">
             </div>
+            <div class="sidebar-header-links">
+                <a class="sidebar-footer-link" href="https://www.reddit.com/user/Upper-Promotion8574/" target="_blank" rel="noopener noreferrer" data-tip="Message the developer on Reddit">💬 Contact Dev</a>
+                <a class="sidebar-footer-link" href="https://github.com/Kronic90/Mimirs-Memory-Hub/discussions" target="_blank" rel="noopener noreferrer" data-tip="Found a bug? Report it on GitHub Discussions">🐛 Report Bug</a>
+            </div>
 
             <ul class="nav-items">
-                <li class="nav-item active" data-page="chat">
+                <li class="nav-item active" data-page="chat" data-tip="Talk with your AI — the main conversation window.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                     </svg>
                     <span>Chat</span>
                 </li>
-                <li class="nav-item" data-page="models">
+                <li class="nav-item" data-page="models" data-tip="Choose and configure which AI model powers your conversations.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
                         <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
@@ -31,14 +35,14 @@
                     </svg>
                     <span>Models</span>
                 </li>
-                <li class="nav-item" data-page="memory">
+                <li class="nav-item" data-page="memory" data-tip="Browse, search, and manage everything your AI remembers.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.7-3.3 6H8.3C6.3 13.7 5 11.5 5 9a7 7 0 0 1 7-7z"/>
                         <path d="M9 15v2a3 3 0 0 0 6 0v-2"/>
                     </svg>
                     <span>Memory</span>
                 </li>
-                <li class="nav-item" data-page="visualize">
+                <li class="nav-item" data-page="visualize" data-tip="See your AI's memories as an interactive graph, timeline, and more.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/>
                         <circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/>
@@ -46,14 +50,14 @@
                     </svg>
                     <span>Visualize</span>
                 </li>
-                <li class="nav-item" data-page="conversations">
+                <li class="nav-item" data-page="conversations" data-tip="Past conversations you've saved to revisit later.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                         <path d="M7 9h.01M12 9h.01M17 9h.01"/>
                     </svg>
                     <span>Saved Chats</span>
                 </li>
-                <li class="nav-item" data-page="multi-chat">
+                <li class="nav-item" data-page="multi-chat" data-tip="Chat with several AI characters together in one shared conversation.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                         <circle cx="9" cy="7" r="4"/>
@@ -62,14 +66,14 @@
                     </svg>
                     <span>Multi-Chat</span>
                 </li>
-                <li class="nav-item" data-page="tools">
-                
+                <li class="nav-item" data-page="tools" data-tip="Give your AI abilities like file access, web search, or running code — sandboxed with permissions you control.">
+
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
                     </svg>
                     <span>Tools</span>
                 </li>
-                <li class="nav-item" data-page="import">
+                <li class="nav-item" data-page="import" data-tip="Bring memories in from other systems — reindexed with full memory processing.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
@@ -77,14 +81,14 @@
                     </svg>
                     <span>Import</span>
                 </li>
-                <li class="nav-item" data-page="agents">
+                <li class="nav-item" data-page="agents" data-tip="Create and manage AI personas/characters, each with their own separate memories.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                         <circle cx="12" cy="7" r="4"/>
                     </svg>
                     <span>Agents</span>
                 </li>
-                <li class="nav-item" data-page="proactive">
+                <li class="nav-item" data-page="proactive" data-tip="Let your AI work autonomously on tasks in a sandboxed project folder, without you driving every step.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
                         <path d="M6 10v1a6 6 0 0 0 12 0v-1"/>
@@ -95,7 +99,7 @@
                     </svg>
                     <span>Proactive</span>
                 </li>
-                <li class="nav-item" data-page="settings">
+                <li class="nav-item" data-page="settings" data-tip="Configure backend, voice, appearance, and other app-wide options.">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                         <circle cx="12" cy="12" r="3"/>
                         <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>
@@ -105,7 +109,7 @@
             </ul>
 
             <div class="sidebar-footer">
-                <div class="sidebar-version">v0.5.0</div>
+                <div class="sidebar-version">v1.0.0</div>
             </div>
         </nav>
 
@@ -191,11 +195,11 @@
                             <div class="panel-section">
                                 <div class="panel-label">Chemistry</div>
                                 <div class="panel-chem-bars" id="panel-chem-bars">
-                                    <div class="chem-bar-row"><span class="chem-label">DOP</span><div class="chem-bar-track"><div class="chem-bar-fill chem-dopamine" id="bar-dopamine" style="width:50%"></div></div></div>
-                                    <div class="chem-bar-row"><span class="chem-label">SER</span><div class="chem-bar-track"><div class="chem-bar-fill chem-serotonin" id="bar-serotonin" style="width:50%"></div></div></div>
-                                    <div class="chem-bar-row"><span class="chem-label">OXY</span><div class="chem-bar-track"><div class="chem-bar-fill chem-oxytocin" id="bar-oxytocin" style="width:50%"></div></div></div>
-                                    <div class="chem-bar-row"><span class="chem-label">NOR</span><div class="chem-bar-track"><div class="chem-bar-fill chem-norepinephrine" id="bar-norepinephrine" style="width:50%"></div></div></div>
-                                    <div class="chem-bar-row"><span class="chem-label">COR</span><div class="chem-bar-track"><div class="chem-bar-fill chem-cortisol" id="bar-cortisol" style="width:30%"></div></div></div>
+                                    <div class="chem-bar-row"><span class="chem-label" data-tip="Dopamine — reward and motivation. Rises with novelty, praise, and progress.">DOP</span><div class="chem-bar-track"><div class="chem-bar-fill chem-dopamine" id="bar-dopamine" style="width:50%"></div></div></div>
+                                    <div class="chem-bar-row"><span class="chem-label" data-tip="Serotonin — stability and contentment. Rises with consistency and comfort.">SER</span><div class="chem-bar-track"><div class="chem-bar-fill chem-serotonin" id="bar-serotonin" style="width:50%"></div></div></div>
+                                    <div class="chem-bar-row"><span class="chem-label" data-tip="Oxytocin — bonding and trust. Rises with warmth, closeness, and connection.">OXY</span><div class="chem-bar-track"><div class="chem-bar-fill chem-oxytocin" id="bar-oxytocin" style="width:50%"></div></div></div>
+                                    <div class="chem-bar-row"><span class="chem-label" data-tip="Norepinephrine — alertness and arousal. Rises with excitement, urgency, or surprise.">NOR</span><div class="chem-bar-track"><div class="chem-bar-fill chem-norepinephrine" id="bar-norepinephrine" style="width:50%"></div></div></div>
+                                    <div class="chem-bar-row"><span class="chem-label" data-tip="Cortisol — stress response. Rises with conflict, threat, or anxiety; dampens other reactions when high.">COR</span><div class="chem-bar-track"><div class="chem-bar-fill chem-cortisol" id="bar-cortisol" style="width:30%"></div></div></div>
                                 </div>
                             </div>
                             <div class="panel-divider"></div>
@@ -313,11 +317,20 @@
                                 </div>
                                 <div id="mmproj-scan-results" style="margin-top:8px;"></div>
                                 <p class="text-muted" style="font-size:0.78rem;margin-top:6px;">
-                                    VL models are detected automatically by filename keywords (llava, moondream, minicpm-v, …).  
+                                    VL models are detected automatically by filename keywords (llava, moondream, minicpm-v, …).
                                     Set the matching mmproj file above to enable image input for those models.
                                     The vision model dropdown in the chat header also auto-detects mmproj files.
                                     If no VL model is set, <strong>BLIP</strong> auto-captioning is available as a fallback.
                                 </p>
+                            </div>
+                            <!-- GPU / local-model-backend status -->
+                            <div class="form-group" style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">
+                                <label style="font-weight:600;">Local Model Backend</label>
+                                <div id="backend-status-card" class="text-muted" style="font-size:0.85rem;margin-top:6px;">Checking…</div>
+                                <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+                                    <button id="btn-check-backend-update" class="btn btn-secondary btn-sm" data-tip="Look for a known-good build matching your GPU — doesn't install anything until you confirm.">🔍 Check for a backend update</button>
+                                    <span id="backend-update-status" class="text-muted" style="font-size:0.82rem;"></span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -403,11 +416,11 @@
                             <option value="">Global (Default)</option>
                         </select>
                         <button id="btn-export-memories" class="btn btn-secondary">📥 Export JSON</button>
-                        <button id="btn-sleep" class="btn btn-secondary">🌙 Sleep</button>
-                        <button id="btn-run-huginn" class="btn btn-secondary">🔮 Huginn</button>
-                        <button id="btn-run-dream" class="btn btn-secondary">💭 Dream</button>
-                        <button id="btn-reflect" class="btn btn-secondary">🌀 Reflect</button>
-                        <button id="btn-ai-curate" class="btn btn-secondary">🤖 AI Curate</button>
+                        <button id="btn-sleep" class="btn btn-secondary" data-tip="Simulate a night's sleep — resets neurochemistry and runs a full consolidation pass (merges duplicates, strengthens key memories).">🌙 Sleep</button>
+                        <button id="btn-run-huginn" class="btn btn-secondary" data-tip="Scan memories for patterns — recurring themes, emotional arcs, and unresolved threads.">🔮 Huginn</button>
+                        <button id="btn-run-dream" class="btn btn-secondary" data-tip="Cross-pollinate distant, unrelated memories to find surprising connections — may create new insight memories.">💭 Dream</button>
+                        <button id="btn-reflect" class="btn btn-secondary" data-tip="Ask the AI to genuinely analyse its own memory and emotional patterns — the result is saved as a memory.">🌀 Reflect</button>
+                        <button id="btn-ai-curate" class="btn btn-secondary" data-tip="Let the AI review and reorganize its own memories — promote, demote, merge, or forget as it sees fit.">🤖 AI Curate</button>
                     </div>
                 </div>
 
@@ -583,6 +596,9 @@
                         <p class="text-muted">See your memories as a living neural graph</p>
                     </div>
                     <div style="display:flex;gap:8px;">
+                        <select id="viz-agent-select" class="input input-sm" style="width:auto;" title="Viewing memories for">
+                            <option value="">Default</option>
+                        </select>
                         <button id="btn-viz-refresh" class="btn btn-secondary">↻ Refresh</button>
                         <select id="viz-filter" class="input input-sm" style="width:auto;">
                             <option value="all">All Memories</option>
@@ -591,6 +607,7 @@
                             <option value="anchor">Anchors</option>
                             <option value="task">Tasks</option>
                             <option value="social">Social</option>
+                            <option value="self">Self-Identity</option>
                             <option value="huginn">Huginn Insights</option>
                             <option value="volva">Völva Dreams</option>
                         </select>
@@ -599,14 +616,14 @@
 
                 <!-- Visualization Tabs -->
                 <div class="viz-tabs" style="margin-bottom:16px;">
-                    <button class="viz-tab active" data-viz="original">🧠 Original Graph</button>
-                    <button class="viz-tab" data-viz="landscape">🗻 Memory Landscape</button>
-                    <button class="viz-tab" data-viz="mood-timeline">😊 Mood Timeline</button>
-                    <button class="viz-tab" data-viz="cherished">💎 Cherished Memories</button>
-                    <button class="viz-tab" data-viz="chemistry">⚗️ Neurochemistry</button>
-                    <button class="viz-tab" data-viz="relationships">🤝 Relationships</button>
-                    <button class="viz-tab" data-viz="clusters">🏷️ Topic Clusters</button>
-                    <button class="viz-tab" data-viz="attic">🏚️ Memory Attic</button>
+                    <button class="viz-tab active" data-viz="original" data-tip="The full memory graph — every memory as a node, connected by shared people, timing, emotion, or topic.">🧠 Original Graph</button>
+                    <button class="viz-tab" data-viz="landscape" data-tip="Memories plotted in 3D by vividness, importance, and stability — a terrain view of what stands out most.">🗻 Memory Landscape</button>
+                    <button class="viz-tab" data-viz="mood-timeline" data-tip="How the AI's mood has shifted over time across your conversations.">😊 Mood Timeline</button>
+                    <button class="viz-tab" data-viz="cherished" data-tip="Memories deliberately marked as precious, displayed together.">💎 Cherished Memories</button>
+                    <button class="viz-tab" data-viz="chemistry" data-tip="Simulated neurochemical levels (dopamine, serotonin, oxytocin, etc.) driving mood and behaviour over time.">⚗️ Neurochemistry</button>
+                    <button class="viz-tab" data-viz="relationships" data-tip="How strong the AI's relationship is with each person it knows, based on what it remembers about them.">🤝 Relationships</button>
+                    <button class="viz-tab" data-viz="clusters" data-tip="Memories automatically grouped by shared topic.">🏷️ Topic Clusters</button>
+                    <button class="viz-tab" data-viz="attic" data-tip="Memories that have faded from active recall or been pruned — recoverable, not deleted.">🏚️ Memory Attic</button>
                 </div>
 
                 <!-- Original Yggdrasil Graph (Default) -->
@@ -614,6 +631,7 @@
                     <div id="viz-legend" class="viz-legend">
                         <span class="viz-legend-item"><span class="dot dot-episodic"></span>Episodic</span>
                         <span class="viz-legend-item"><span class="dot dot-social"></span>Social</span>
+                        <span class="viz-legend-item"><span class="dot dot-self"></span>Self-Identity</span>
                         <span class="viz-legend-item"><span class="dot dot-huginn"></span>Huginn</span>
                         <span class="viz-legend-item"><span class="dot dot-volva"></span>Völva</span>
                         <span class="viz-legend-item"><span class="dot dot-flashbulb"></span>Flashbulb</span>
@@ -1329,8 +1347,8 @@
                                     <label class="turn-option">
                                         <input type="radio" name="turn-order" value="user_addresses" checked>
                                         <div class="turn-option-content">
-                                            <span class="turn-option-title">Address by Name</span>
-                                            <span class="turn-option-desc">Mention an agent's name to reply — else the first agent responds</span>
+                                            <span class="turn-option-title">Group Chat</span>
+                                            <span class="turn-option-desc">Everyone replies — mention a name to talk to just that one</span>
                                         </div>
                                     </label>
                                     <label class="turn-option">
@@ -1373,7 +1391,18 @@
                         <!-- Columns: populated by JS -->
                         <div class="columns-layout" id="columns-layout" style="display:none;"></div>
                         <div class="chat-input-area">
-                            <input type="text" id="multi-chat-input" class="input" placeholder="Type a message… (Enter to send)">
+                            <div id="multi-image-attach-preview" class="image-attach-preview"></div>
+                            <div class="chat-input-wrap">
+                                <button id="btn-multi-attach-image" class="btn-attach" title="Attach image" data-tip="Attach an image — only agents whose backend/model supports vision will actually see it.">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                                        <polyline points="21 15 16 10 5 21"/>
+                                    </svg>
+                                </button>
+                                <input type="file" id="multi-image-file-input" accept="image/*" style="display:none;">
+                                <input type="text" id="multi-chat-input" class="input" placeholder="Type a message… (Enter to send)">
+                            </div>
                         </div>
                     </div>
 

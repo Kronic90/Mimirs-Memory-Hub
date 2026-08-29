@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vividmimir"
+version = "2.0.0"
+description = "The Ultimate Memory Architecture — 21 neuroscience mechanisms for organic AI memory"
+readme = "README.md"
+license = {text = "PolyForm-Noncommercial-1.0.0"}
+requires-python = ">=3.10"
+authors = [{name = "Kronic90"}]
+keywords = [
+    "ai", "memory", "episodic-memory", "neurochemistry", "llm",
+    "agent", "companion", "organic-memory", "neuroscience",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/Kronic90/Mimir"
+Repository = "https://github.com/Kronic90/Mimir"
+Issues = "https://github.com/Kronic90/Mimir/issues"
+
+[project.optional-dependencies]
+neurochemistry = ["vividnessmem>=1.0.0"]
+embedding = ["vividembed>=1.0.0"]
+visual = ["Pillow>=9.0"]
+encryption = ["cryptography>=41.0"]
+all = ["vividnessmem>=1.0.0", "vividembed>=1.0.0", "Pillow>=9.0", "cryptography>=41.0"]
+
+[tool.setuptools.packages.find]
+include = ["vividmimir*"]

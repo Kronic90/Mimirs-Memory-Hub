@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from playground.conversation_manager import ConversationManager
 from playground.tts_backend import create_tts, EDGE_VOICES
 from playground.stt_backend import WhisperSTTBackend
 from playground.mcp_client import MCPManager
+from playground import gpu_diagnostics
 from playground.proactive_agent import ProactiveAgent, AgentMode, TaskStatus
 
 # ── App ───────────────────────────────────────────────────────────────
@@ -55,7 +57,8 @@ async def no_cache_static(request: Request, call_next):
 _cfg = Config()
 _memory: MemoryManager | None = None
 _char_memories: dict[str, MemoryManager] = {}   # per-character isolated memories
-_download_progress: dict[str, dict] = {}  # filename -> {status, downloaded, total, percent}
+_download_progress: dict[str, dict] = {}  # "repo_id::filename" -> {status, downloaded, total, percent}
+_ollama_pull_progress: dict[str, dict] = {}  # model name -> latest Ollama /api/pull progress line
 _tts = None  # EdgeTTSBackend or MayaTTSBackend
 _stt: WhisperSTTBackend | None = None
 _conversation: list[dict[str, str]] = []
@@ -125,6 +128,17 @@ async def _startup_mcp():
         _mcp_initialized = True
 
 
+@app.on_event("shutdown")
+async def _shutdown_local_gguf_worker():
+    from playground.llm_backends import LocalGGUFBackend
+    if LocalGGUFBackend._worker is not None and LocalGGUFBackend._worker.is_alive():
+        try:
+            LocalGGUFBackend._in_q.put({"cmd": "shutdown"})
+            LocalGGUFBackend._worker.join(timeout=5)
+        except Exception:
+            pass
+
+
 # ── Remember-tag parsing ──────────────────────────────────────────────
 
 import re as _re
@@ -174,7 +188,7 @@ _MEMORY_INTENT_RE = _re.compile(
 def _parse_remember_tags(text: str) -> list[dict]:
     """Extract all <remember> entries from model output.
 
-    Each entry: { content, emotion, importance, why, source, cherish, anchor }
+    Each entry: { content, emotion, importance, why, source, cherish, anchor, is_self }
     """
     entries = []
     for m in _REMEMBER_RE.finditer(text):
@@ -189,6 +203,10 @@ def _parse_remember_tags(text: str) -> list[dict]:
             "source":     attrs.get("source", "conversation"),
             "cherish":    attrs.get("cherish", "").lower() == "true",
             "anchor":     attrs.get("anchor", "").lower() == "true",
+            # "identity" is the current attribute name; "self" (legacy, and
+            # confusingly close to <self_reflect/>) is still accepted.
+            "is_self":    (attrs.get("identity", attrs.get("self", ""))
+                            .lower() == "true"),
         })
     return entries
 
@@ -349,17 +367,20 @@ def _strip_social_tags(text: str) -> str:
     return _SOCIAL_RE.sub("", text).strip()
 
 
-# ── Cherish tag parsing (retroactive) ────────────────────────────────────────
-# <cherish query="birthday party"/> or <cherish query="first conversation" anchor="true"/>
+# ── Treasure tag parsing (retroactive cherish) ────────────────────────────────
+# <treasure query="birthday party"/> or <treasure query="first conversation" anchor="true"/>
+# Renamed from <cherish> — that name collided with the cherish="true" attribute
+# on <remember>, a different mechanism (marking a brand-new memory vs. marking
+# an existing one found by search). Old spelling still accepted for safety.
 
 _CHERISH_RE = _re.compile(
-    r'<cherish\s+(?P<attrs>[^>]*?)(?:/>|>\s*</cherish>)',
+    r'<(?:treasure|cherish)\s+(?P<attrs>[^>]*?)(?:/>|>\s*</(?:treasure|cherish)>)',
     _re.DOTALL | _re.IGNORECASE,
 )
 
 
 def _parse_cherish_tags(text: str) -> list[dict]:
-    """Extract <cherish> tags → [{query, anchor}]"""
+    """Extract <treasure> (or legacy <cherish>) tags → [{query, anchor}]"""
     entries = []
     for m in _CHERISH_RE.finditer(text):
         attrs = dict(_ATTR_RE.findall(m.group("attrs")))
@@ -375,6 +396,53 @@ def _parse_cherish_tags(text: str) -> list[dict]:
 
 def _strip_cherish_tags(text: str) -> str:
     return _CHERISH_RE.sub("", text).strip()
+
+
+# ── Recall tag parsing ────────────────────────────────────────────────────────
+# <recall query="that conversation about astronomy"/>
+# Renamed from <deep_remember> — that name shared the "remember" root with
+# <remember>, a completely different mechanism (this asks for detail on an
+# EXISTING memory; it does not create a new one). Old spelling still accepted.
+# Resolved in the background after the turn; the matched memory's full
+# conversation snapshot surfaces in the model's NEXT context block.
+
+_DEEP_REMEMBER_RE = _re.compile(
+    r'<(?:recall|deep_remember)\s+(?P<attrs>[^>]*?)(?:/>|>\s*</(?:recall|deep_remember)>)',
+    _re.DOTALL | _re.IGNORECASE,
+)
+
+
+def _parse_deep_remember_tags(text: str) -> list[dict]:
+    """Extract <recall> (or legacy <deep_remember>) tags → [{query}]"""
+    entries = []
+    for m in _DEEP_REMEMBER_RE.finditer(text):
+        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        query = attrs.get("query", "").strip()
+        if not query:
+            continue
+        entries.append({"query": query})
+    return entries
+
+
+def _strip_deep_remember_tags(text: str) -> str:
+    return _DEEP_REMEMBER_RE.sub("", text).strip()
+
+
+# ── Dream / self-reflect tag parsing ──────────────────────────────────────────
+# <dream/> — consolidation cycle (Huginn + Völva + sleep_reset), rate-limited.
+# <self_reflect/> — genuine LLM self-analysis, rate-limited, stored as a memory.
+# Both self-closing, no attributes, resolved in the background after the turn.
+
+_DREAM_RE = _re.compile(r'<dream\s*/>', _re.IGNORECASE)
+_SELF_REFLECT_RE = _re.compile(r'<self_reflect\s*/>', _re.IGNORECASE)
+
+
+def _strip_dream_tags(text: str) -> str:
+    return _DREAM_RE.sub("", text).strip()
+
+
+def _strip_self_reflect_tags(text: str) -> str:
+    return _SELF_REFLECT_RE.sub("", text).strip()
 
 
 # ── Code block + file saving parsing for Agent mode ──────────────────────────
@@ -480,6 +548,49 @@ def _heuristic_reminder_from_user(user_text: str) -> list[dict]:
     return [{"text": reminder_text, "hours": hours}]
 
 
+def _sync_llm_fn(prompt: str) -> str:
+    """Sync bridge letting the memory engine (Mimir._llm_fn) make its own
+    LLM calls — e.g. for <self_reflect/>, or the engine's own internal
+    _infer_relations — using whichever backend/model is currently active.
+
+    _llm_fn is a general-purpose hook the engine can call from anywhere,
+    including synchronously from within an already-running request handler
+    (e.g. write_mixin.remember() -> yggdrasil_mixin._infer_relations()) —
+    not just from trigger_self_reflect()'s asyncio.to_thread-wrapped call.
+    asyncio.run() raises if the calling thread already has a running event
+    loop, so we always execute in a dedicated worker thread with its own
+    fresh loop, regardless of what thread/context called us.
+    """
+    import threading
+
+    async def _call():
+        backend_name = _cfg.get("active_backend", "ollama")
+        model_id = _cfg.get("active_model", "")
+        backend = create_backend(backend_name, _cfg.to_dict())
+        chunks = []
+        async for token in backend.generate(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="", temperature=0.7, max_tokens=300, model=model_id,
+        ):
+            chunks.append(token)
+        return "".join(chunks)
+
+    outcome: dict = {}
+
+    def _run():
+        try:
+            outcome["value"] = asyncio.run(_call())
+        except Exception as e:
+            outcome["error"] = e
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join()
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value", "")
+
+
 def _ensure_memory(char_id: str = "") -> MemoryManager:
     """Return the MemoryManager for the given character (isolated) or global default."""
     global _memory, _char_memories
@@ -490,6 +601,7 @@ def _ensure_memory(char_id: str = "") -> MemoryManager:
             _char_memories[char_id] = MemoryManager(
                 profile_dir=char_mem_dir,
                 chemistry=preset.get("chemistry", True),
+                llm_fn=_sync_llm_fn,
             )
         return _char_memories[char_id]
     if _memory is None:
@@ -497,6 +609,7 @@ def _ensure_memory(char_id: str = "") -> MemoryManager:
         _memory = MemoryManager(
             profile_dir=str(_cfg.profile_dir),
             chemistry=preset.get("chemistry", True),
+            llm_fn=_sync_llm_fn,
         )
     return _memory
 
@@ -547,6 +660,20 @@ async def get_settings():
 async def update_settings(request: Request):
     global _memory, _char_memories, _tts, _stt
     patch = await request.json()
+
+    # Reject a malformed/wrong-typed patch before it reaches _deep_merge —
+    # e.g. {"backends": null} would otherwise replace the whole nested
+    # config with None, get persisted immediately, and crash every later
+    # piece of code (including the masked-API-key check right below) that
+    # assumes these are always dicts.
+    _DICT_SHAPED_KEYS = ("backends", "llm_params", "memory", "tts", "stt",
+                        "tool_permissions", "search_provider")
+    for key in _DICT_SHAPED_KEYS:
+        if key in patch and not isinstance(patch[key], dict):
+            return JSONResponse(
+                {"error": f"'{key}' must be an object, got {type(patch[key]).__name__}"},
+                status_code=400)
+
     # Never overwrite real API keys with masked values from the frontend
     for name in ("openai", "anthropic", "google", "custom"):
         incoming_key = patch.get("backends", {}).get(name, {}).get("api_key")
@@ -786,6 +913,93 @@ async def set_mmproj(request: Request):
     return JSONResponse({"ok": True, "path": path})
 
 
+# ── GPU / local-model-backend diagnostics ──────────────────────────
+
+@app.get("/api/system/backend-status")
+async def system_backend_status():
+    """GPU + llama-cpp-python capability snapshot for the Settings page."""
+    status = await asyncio.to_thread(gpu_diagnostics.backend_status)
+    return JSONResponse(status)
+
+
+@app.get("/api/system/backend-candidate")
+async def system_backend_candidate():
+    """Look up a known-good backend build for the detected GPU, without
+    installing anything."""
+    gpu = await asyncio.to_thread(gpu_diagnostics.detect_gpu)
+    if not gpu.get("available"):
+        return JSONResponse({"found": False, "reason": "No NVIDIA GPU detected."})
+    candidate = gpu_diagnostics.find_candidate_wheel(gpu.get("compute_capability", ""))
+    if not candidate:
+        return JSONResponse({
+            "found": False,
+            "reason": f"No known-good build on file for compute capability "
+                      f"{gpu.get('compute_capability', '?')}.",
+        })
+    return JSONResponse({"found": True, "gpu": gpu, "candidate": candidate})
+
+
+_BACKUP_ROOT = Path("playground_data") / "backend_backups"
+
+
+@app.post("/api/system/update-backend")
+async def system_update_backend(request: Request):
+    """Guided, self-verifying, auto-rollback backend update.
+
+    Backs up the current install to a local restore point (so rollback
+    never depends on an external URL still being reachable), installs the
+    candidate wheel, verifies it in a FRESH subprocess (a broken native
+    extension can't be re-tested by re-importing in this process), and
+    restores the backup automatically if verification fails. Opt-in only —
+    never called except from an explicit user action.
+    """
+    body = await request.json()
+    wheel_url = body.get("wheel_url", "")
+    if not wheel_url:
+        return JSONResponse({"ok": False, "error": "wheel_url is required"}, status_code=400)
+
+    _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    backup = await asyncio.to_thread(gpu_diagnostics.backup_current_backend, _BACKUP_ROOT)
+    if not backup.get("ok") and "nothing to back up" not in backup.get("error", ""):
+        return JSONResponse({"ok": False, "step": "backup", "error": backup.get("error")})
+
+    try:
+        import tempfile
+        import urllib.request
+        fname = wheel_url.rsplit("/", 1)[-1].split("?")[0] or "candidate.whl"
+        tmp_path = Path(tempfile.gettempdir()) / fname
+        await asyncio.to_thread(urllib.request.urlretrieve, wheel_url, str(tmp_path))
+    except Exception as e:
+        return JSONResponse({"ok": False, "step": "download", "error": str(e)})
+
+    install = await asyncio.to_thread(
+        lambda: subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", str(tmp_path)],
+            capture_output=True, text=True, timeout=300,
+        )
+    )
+    if install.returncode != 0:
+        restore = None
+        if backup.get("ok"):
+            restore = await asyncio.to_thread(gpu_diagnostics.restore_backend, backup["path"])
+        return JSONResponse({
+            "ok": False, "step": "install", "error": install.stderr[-1000:],
+            "rolled_back": bool(restore and restore.get("ok")),
+        })
+
+    verify = await asyncio.to_thread(gpu_diagnostics.verify_backend_in_subprocess, sys.executable)
+    if not verify.get("ok"):
+        restore = None
+        if backup.get("ok"):
+            restore = await asyncio.to_thread(gpu_diagnostics.restore_backend, backup["path"])
+        return JSONResponse({
+            "ok": False, "step": "verify", "error": verify.get("error"),
+            "rolled_back": bool(restore and restore.get("ok")),
+        })
+
+    return JSONResponse({"ok": True, "backend": verify, "backup_path": backup.get("path")})
+
+
 @app.get("/api/vision/status")
 async def vision_status():
     """Return current vision model status and capabilities."""
@@ -903,15 +1117,19 @@ async def download_hf(request: Request):
     if dest_path.exists():
         return JSONResponse({"status": "exists", "path": str(dest_path)})
 
-    # Start download in background, track progress
-    _download_progress[filename] = {"status": "starting", "downloaded": 0, "total": 0, "percent": 0}
+    # Keyed by repo_id+filename, not filename alone — GGUF filenames are
+    # frequently reused across different repos/quantizers, and a plain
+    # filename key would let two concurrent downloads clobber each other's
+    # progress tracking.
+    progress_key = f"{repo_id}::{filename}"
+    _download_progress[progress_key] = {"status": "starting", "downloaded": 0, "total": 0, "percent": 0}
 
     async def _do_download():
         try:
             async for prog in model_manager.download_model(repo_id, filename, dest_dir):
-                _download_progress[filename] = prog
+                _download_progress[progress_key] = prog
         except Exception as e:
-            _download_progress[filename] = {"status": "error", "error": str(e)}
+            _download_progress[progress_key] = {"status": "error", "error": str(e)}
 
     asyncio.create_task(_do_download())
     return JSONResponse({"status": "started", "filename": filename, "dest": dest_dir})
@@ -923,6 +1141,35 @@ async def download_status():
     return JSONResponse(_download_progress)
 
 
+@app.post("/api/models/ollama/pull")
+async def pull_ollama_model(request: Request):
+    """Pull a model from Ollama, tracking real progress."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+
+    base_url = _cfg.get("backends", {}).get("ollama", {}).get("base_url", "http://localhost:11434")
+    _ollama_pull_progress[name] = {"status": "starting"}
+
+    async def _do_pull():
+        try:
+            backend = OllamaBackend(base_url)
+            async for prog in backend.pull_model(name):
+                _ollama_pull_progress[name] = prog
+        except Exception as e:
+            _ollama_pull_progress[name] = {"status": "error", "error": str(e)}
+
+    asyncio.create_task(_do_pull())
+    return JSONResponse({"status": "started", "name": name})
+
+
+@app.get("/api/models/ollama/pull/status")
+async def ollama_pull_status():
+    """Return current progress for all active/recent Ollama pulls."""
+    return JSONResponse(_ollama_pull_progress)
+
+
 # ── Memory API ────────────────────────────────────────────────────────
 
 @app.get("/api/memory/stats")
@@ -932,26 +1179,29 @@ async def memory_stats(char_id: str = ""):
 
 
 @app.post("/api/memory/recall")
-async def memory_recall(request: Request):
+async def memory_recall(request: Request, char_id: str = ""):
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     results = mem.recall(body.get("context", ""), body.get("limit", 10))
     return JSONResponse(results)
 
 
 @app.post("/api/memory/sleep")
-async def memory_sleep():
-    mem = _ensure_memory()
+async def memory_sleep(char_id: str = ""):
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     mem.sleep()
     return JSONResponse({"ok": True})
 
 
 @app.post("/api/memory/remember")
-async def memory_remember(request: Request):
+async def memory_remember(request: Request, char_id: str = ""):
     body = await request.json()
-    mem = _ensure_memory()
+    content = body.get("content", "").strip()
+    if not content:
+        return JSONResponse({"error": "content is required"}, status_code=400)
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.remember(
-        content=body.get("content", ""),
+        content=content,
         emotion=body.get("emotion", "neutral"),
         importance=body.get("importance", 5),
         source=body.get("source", "manual"),
@@ -962,17 +1212,17 @@ async def memory_remember(request: Request):
 
 
 @app.get("/api/memory/graph")
-async def memory_graph():
+async def memory_graph(char_id: str = ""):
     """Return all memories with vividness, types, and graph edges for visualization."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_graph())
 
 
 @app.post("/api/memory/import")
-async def memory_import(request: Request):
+async def memory_import(request: Request, char_id: str = ""):
     """Import memories from uploaded text/JSON/markdown content."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     entries = body.get("entries", [])
     enrich = body.get("enrich", False)
     imported = []
@@ -1009,10 +1259,10 @@ async def memory_import(request: Request):
 
 
 @app.post("/api/memory/import/batch")
-async def memory_import_batch(request: Request):
+async def memory_import_batch(request: Request, char_id: str = ""):
     """Batch import memories with automatic dedup."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     entries = body.get("entries", [])
     enrich = body.get("enrich", False)
 
@@ -1107,40 +1357,40 @@ async def memory_mood(char_id: str = ""):
 
 
 @app.post("/api/memory/consolidate")
-async def memory_consolidate():
+async def memory_consolidate(char_id: str = ""):
     """Run Muninn consolidation (merge duplicates, prune dead memories)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = await asyncio.to_thread(mem.run_consolidation)
     return JSONResponse(result)
 
 
 @app.post("/api/memory/huginn")
-async def memory_huginn():
+async def memory_huginn(char_id: str = ""):
     """Run Huginn pattern detection (sentiment arcs, theme clusters, open threads)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = await asyncio.to_thread(mem.run_huginn)
     return JSONResponse(result)
 
 
 @app.post("/api/memory/dream")
-async def memory_dream():
+async def memory_dream(char_id: str = ""):
     """Run Volva dream synthesis (cross-pollinate distant memories)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = await asyncio.to_thread(mem.run_dream)
     return JSONResponse(result)
 
 
 @app.get("/api/memory/emotions")
-async def memory_emotions():
+async def memory_emotions(char_id: str = ""):
     """Return emotion distribution across all memories."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.emotion_distribution())
 
 
 @app.get("/api/memory/chemistry")
-async def memory_chemistry():
+async def memory_chemistry(char_id: str = ""):
     """Return neurochemistry snapshot."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.neurochemistry_snapshot())
 
 
@@ -1162,9 +1412,9 @@ async def memory_browse(offset: int = 0, limit: int = 50,
 
 
 @app.delete("/api/memory/{index}")
-async def memory_delete(index: int):
+async def memory_delete(index: int, char_id: str = ""):
     """Delete a memory by index."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     ok = mem.delete_memory(index)
     if ok:
         return JSONResponse({"ok": True})
@@ -1172,10 +1422,10 @@ async def memory_delete(index: int):
 
 
 @app.put("/api/memory/{index}")
-async def memory_update(index: int, request: Request):
+async def memory_update(index: int, request: Request, char_id: str = ""):
     """Update a memory's editable fields."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.update_memory(index, body)
     if result is not None:
         return JSONResponse(result)
@@ -1183,9 +1433,9 @@ async def memory_update(index: int, request: Request):
 
 
 @app.post("/api/memory/{index}/cherish")
-async def memory_cherish(index: int):
+async def memory_cherish(index: int, char_id: str = ""):
     """Toggle cherished status."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.toggle_cherish(index)
     if result is not None:
         return JSONResponse({"cherished": result})
@@ -1193,9 +1443,9 @@ async def memory_cherish(index: int):
 
 
 @app.post("/api/memory/{index}/anchor")
-async def memory_anchor(index: int):
+async def memory_anchor(index: int, char_id: str = ""):
     """Toggle anchor status."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.toggle_anchor(index)
     if result is not None:
         return JSONResponse({"anchored": result})
@@ -1222,10 +1472,10 @@ async def memory_filters(char_id: str = ""):
 # ── Social Impressions ────────────────────────────────────────────
 
 @app.post("/api/memory/social")
-async def memory_add_social(request: Request):
+async def memory_add_social(request: Request, char_id: str = ""):
     """Add a social impression about a person/entity."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.add_social(
         entity=body.get("entity", ""),
         content=body.get("content", ""),
@@ -1238,26 +1488,26 @@ async def memory_add_social(request: Request):
 
 
 @app.get("/api/memory/social")
-async def memory_get_social(entity: str = ""):
+async def memory_get_social(entity: str = "", char_id: str = ""):
     """Get social impressions, optionally filtered by entity."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_social_impressions(entity=entity))
 
 
 # ── Lessons ──────────────────────────────────────────────────────
 
 @app.get("/api/memory/lessons")
-async def memory_get_lessons():
+async def memory_get_lessons(char_id: str = ""):
     """Get all active lessons."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_active_lessons())
 
 
 @app.post("/api/memory/lessons")
-async def memory_add_lesson(request: Request):
+async def memory_add_lesson(request: Request, char_id: str = ""):
     """Add a lesson derived from experience."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.add_lesson(
         topic=body.get("topic", ""),
         context_trigger=body.get("context_trigger", ""),
@@ -1269,10 +1519,10 @@ async def memory_add_lesson(request: Request):
 
 
 @app.post("/api/memory/lessons/{lesson_id}/outcome")
-async def memory_record_outcome(lesson_id: str, request: Request):
+async def memory_record_outcome(lesson_id: str, request: Request, char_id: str = ""):
     """Record an attempt outcome for a lesson."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     ok = mem.record_outcome(
         lesson_id=lesson_id,
         action=body.get("action", ""),
@@ -1285,10 +1535,10 @@ async def memory_record_outcome(lesson_id: str, request: Request):
 # ── Relationship Strength ────────────────────────────────────────
 
 @app.get("/api/memory/relationships")
-async def memory_relationships(entity: str = ""):
+async def memory_relationships(entity: str = "", char_id: str = ""):
     """Get relationship strength scores for all (or one) entity."""
     try:
-        mem = _ensure_memory()
+        mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
         result = mem.get_relationship_strength(entity)
         return JSONResponse(result)
     except Exception as e:
@@ -1298,10 +1548,10 @@ async def memory_relationships(entity: str = ""):
 # ── Topic Clusters ───────────────────────────────────────────────
 
 @app.get("/api/memory/clusters")
-async def memory_clusters():
+async def memory_clusters(char_id: str = ""):
     """Get auto-detected topic clusters from memories."""
     try:
-        mem = _ensure_memory()
+        mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
         return JSONResponse(mem.get_topic_clusters())
     except Exception as e:
         return JSONResponse([], status_code=200)
@@ -1310,10 +1560,10 @@ async def memory_clusters():
 # ── Emotional Trajectory ────────────────────────────────────────
 
 @app.get("/api/memory/trajectory")
-async def memory_trajectory(window_days: int = 30):
+async def memory_trajectory(window_days: int = 30, char_id: str = ""):
     """Get emotional trajectory analysis over a time window."""
     try:
-        mem = _ensure_memory()
+        mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
         return JSONResponse(mem.get_emotional_trajectory(window_days))
     except Exception as e:
         return JSONResponse({}, status_code=200)
@@ -1322,30 +1572,30 @@ async def memory_trajectory(window_days: int = 30):
 # ── Forgotten Memory Recovery (Memory Attic) ─────────────────────
 
 @app.get("/api/memory/dormant")
-async def memory_dormant(limit: int = 20):
+async def memory_dormant(limit: int = 20, char_id: str = ""):
     """Get dormant memories that are fading from active storage."""
     try:
-        mem = _ensure_memory()
+        mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
         return JSONResponse(mem.get_dormant_memories(limit))
     except Exception as e:
         return JSONResponse([], status_code=200)
 
 
 @app.get("/api/memory/attic")
-async def memory_attic(limit: int = 50):
+async def memory_attic(limit: int = 50, char_id: str = ""):
     """Browse archived (pruned) memories in the Memory Attic."""
     try:
-        mem = _ensure_memory()
+        mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
         return JSONResponse(mem.get_attic_memories(limit))
     except Exception as e:
         return JSONResponse([], status_code=200)
 
 
 @app.post("/api/memory/rediscover")
-async def memory_rediscover(request: Request):
+async def memory_rediscover(request: Request, char_id: str = ""):
     """Recover a memory from the attic or nudge a dormant one."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     action = body.get("action", "rediscover")
 
     if action == "nudge":
@@ -1364,10 +1614,10 @@ async def memory_rediscover(request: Request):
 # ── Reminders ────────────────────────────────────────────────────
 
 @app.post("/api/memory/reminders")
-async def memory_add_reminder(request: Request):
+async def memory_add_reminder(request: Request, char_id: str = ""):
     """Create a timed reminder."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.set_reminder(
         text=body.get("text", ""),
         hours=float(body.get("hours", 24)),
@@ -1377,29 +1627,29 @@ async def memory_add_reminder(request: Request):
 
 
 @app.get("/api/memory/reminders")
-async def memory_get_reminders(include_fired: bool = False):
+async def memory_get_reminders(include_fired: bool = False, char_id: str = ""):
     """Get all pending reminders."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_reminders(include_fired=include_fired))
 
 
 # ── Visual Memory API ─────────────────────────────────────────────
 
 @app.get("/api/memory/visual")
-async def memory_get_visual():
+async def memory_get_visual(char_id: str = ""):
     """List all visual memories (metadata only, no image bytes)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_visual_memories())
 
 
 @app.get("/api/memory/visual/{hash_val}")
-async def memory_get_visual_image(hash_val: str):
+async def memory_get_visual_image(hash_val: str, char_id: str = ""):
     """Serve a compressed visual memory image as WebP."""
     import re as _re2
     if not _re2.match(r'^[a-fA-F0-9]+$', hash_val):
         from fastapi.responses import Response
         return Response(status_code=400)
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     data = mem.get_visual_image(hash_val)
     if data is None:
         from fastapi.responses import Response
@@ -1409,7 +1659,7 @@ async def memory_get_visual_image(hash_val: str):
 
 
 @app.post("/api/memory/visual")
-async def memory_save_visual(request: Request):
+async def memory_save_visual(request: Request, char_id: str = ""):
     """Manually save an image as a visual memory.
     Body: { image_b64: str, description: str, emotion?: str, importance?: int, why_saved?: str }
     """
@@ -1422,7 +1672,7 @@ async def memory_save_visual(request: Request):
         image_bytes = base64.b64decode(b64)
     except Exception:
         return JSONResponse({"error": "Invalid base64 data"}, status_code=400)
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.remember_visual(
         image_bytes=image_bytes,
         description=body.get("description", ""),
@@ -1437,9 +1687,9 @@ async def memory_save_visual(request: Request):
 # ── LLM Reflect & Edit ───────────────────────────────────────────
 
 @app.post("/api/memory/reflect")
-async def memory_reflect():
+async def memory_reflect(char_id: str = ""):
     """Run LLM self-reflection on memories, store as insight."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     backend_name = _cfg.get("active_backend", "ollama")
     model_id = _cfg.get("active_model", "")
     backend = create_backend(backend_name, _cfg.to_dict())
@@ -1448,10 +1698,10 @@ async def memory_reflect():
 
 
 @app.post("/api/memory/edit")
-async def memory_edit(request: Request):
+async def memory_edit(request: Request, char_id: str = ""):
     """LLM-driven bulk memory curation (promote/demote/forget/update)."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     backend_name = _cfg.get("active_backend", "ollama")
     model_id = _cfg.get("active_model", "")
     backend = create_backend(backend_name, _cfg.to_dict())
@@ -1463,10 +1713,10 @@ async def memory_edit(request: Request):
 # ── Per-memory advanced ops ───────────────────────────────────────
 
 @app.post("/api/memory/{index}/reframe")
-async def memory_reframe(index: int, request: Request):
+async def memory_reframe(index: int, request: Request, char_id: str = ""):
     """Properly reframe a memory's emotion (logged to audit)."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.reframe_memory(
         index=index,
         new_emotion=body.get("emotion", "neutral"),
@@ -1478,9 +1728,9 @@ async def memory_reframe(index: int, request: Request):
 
 
 @app.post("/api/memory/{index}/relive")
-async def memory_relive(index: int):
+async def memory_relive(index: int, char_id: str = ""):
     """Mental Time Travel: touch memory and shift current mood."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.relive_memory(index)
     if result is not None:
         return JSONResponse(result)
@@ -1490,10 +1740,10 @@ async def memory_relive(index: int):
 # ── Yggdrasil enrichment ─────────────────────────────────────────
 
 @app.post("/api/memory/enrich")
-async def memory_enrich(request: Request):
+async def memory_enrich(request: Request, char_id: str = ""):
     """Run LLM-inferred graph enrichment (Yggdrasil edges)."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = await asyncio.to_thread(
         mem.enrich_yggdrasil, body.get("batch_size", 20)
     )
@@ -1503,24 +1753,24 @@ async def memory_enrich(request: Request):
 # ── Task / Project API ───────────────────────────────────────────
 
 @app.get("/api/tasks")
-async def list_tasks():
+async def list_tasks(char_id: str = ""):
     """List all tasks (active + completed + failed)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_all_tasks())
 
 
 @app.get("/api/tasks/active")
-async def list_active_tasks():
+async def list_active_tasks(char_id: str = ""):
     """List only active tasks."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_active_tasks())
 
 
 @app.post("/api/tasks")
-async def create_task(request: Request):
+async def create_task(request: Request, char_id: str = ""):
     """Create a new task."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.start_task(
         description=body.get("description", ""),
         priority=body.get("priority", 5),
@@ -1531,10 +1781,10 @@ async def create_task(request: Request):
 
 
 @app.post("/api/tasks/{task_id}/complete")
-async def complete_task(task_id: str, request: Request):
+async def complete_task(task_id: str, request: Request, char_id: str = ""):
     """Mark a task as completed."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     ok = mem.complete_task(task_id, body.get("outcome", ""))
     if ok:
         mem.save()
@@ -1543,10 +1793,10 @@ async def complete_task(task_id: str, request: Request):
 
 
 @app.post("/api/tasks/{task_id}/fail")
-async def fail_task(task_id: str, request: Request):
+async def fail_task(task_id: str, request: Request, char_id: str = ""):
     """Mark a task as failed."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     ok = mem.fail_task(task_id, body.get("reason", ""))
     if ok:
         mem.save()
@@ -1554,27 +1804,38 @@ async def fail_task(task_id: str, request: Request):
     return JSONResponse({"error": "Task not found or not active"}, status_code=404)
 
 
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: str, char_id: str = ""):
+    """Permanently delete a task, regardless of status."""
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
+    ok = mem.delete_task(task_id)
+    if ok:
+        mem.save()
+        return JSONResponse({"ok": True})
+    return JSONResponse({"error": "Task not found"}, status_code=404)
+
+
 @app.get("/api/project/overview")
-async def project_overview():
+async def project_overview(char_id: str = ""):
     """Get project overview (task counts, solutions, artifacts)."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_project_overview())
 
 
 @app.post("/api/project/active")
-async def set_active_project(request: Request):
+async def set_active_project(request: Request, char_id: str = ""):
     """Set the active project context."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     msg = mem.set_active_project(body.get("name", ""))
     return JSONResponse({"message": msg})
 
 
 @app.post("/api/solutions")
-async def record_solution(request: Request):
+async def record_solution(request: Request, char_id: str = ""):
     """Record a reusable problem → solution pattern."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     result = mem.record_solution(
         problem=body.get("problem", ""),
         solution=body.get("solution", ""),
@@ -1585,10 +1846,10 @@ async def record_solution(request: Request):
 
 
 @app.post("/api/solutions/search")
-async def search_solutions(request: Request):
+async def search_solutions(request: Request, char_id: str = ""):
     """Search for matching solution patterns."""
     body = await request.json()
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     results = mem.find_solutions(
         problem=body.get("problem", ""),
         top_k=body.get("top_k", 3),
@@ -1862,7 +2123,7 @@ async def delete_character(char_id: str):
         global _char_memories
         _cfg.update({"active_character_id": ""})
         _char_memories.pop(char_id, None)
-    ok = _characters.delete_character(char_id)
+    ok = _characters.delete_character(char_id, profile_dir=_cfg.profile_dir)
     if ok:
         return JSONResponse({"ok": True})
     return JSONResponse({"error": "Not found"}, status_code=404)
@@ -2082,7 +2343,7 @@ async def chat_ws(ws: WebSocket):
     # and generate an AI greeting so the conversation starts on the
     # assistant's turn (avoids double-user-message alternation issues).
     try:
-        mem = _ensure_memory()
+        mem = _ensure_memory(char_id=_cfg.get("active_character_id", ""))
         wake_log = mem.get_wake_log()
         if wake_log:
             await ws.send_json({
@@ -2254,6 +2515,7 @@ async def chat_ws(ws: WebSocket):
 
             # Memory context — uses character-isolated memory if active
             mem = _ensure_memory(char_id=active_char_id)
+            interaction_gap = mem.record_interaction()
             memory_enabled = _cfg.get("memory", {}).get("enabled", True)
             if memory_enabled:
                 try:
@@ -2262,6 +2524,7 @@ async def chat_ws(ws: WebSocket):
                         preset=preset,
                         conversation_context=user_text,
                         entity=entity,
+                        interaction_gap_seconds=interaction_gap,
                     )
                     if context_block:
                         parts.append("## Your Memories\n" + context_block)
@@ -2377,12 +2640,18 @@ async def chat_ws(ws: WebSocket):
                 clean_response = _strip_solution_tags(clean_response)
                 clean_response = _strip_social_tags(clean_response)
                 clean_response = _strip_cherish_tags(clean_response)
+                clean_response = _strip_deep_remember_tags(clean_response)
+                clean_response = _strip_dream_tags(clean_response)
+                clean_response = _strip_self_reflect_tags(clean_response)
                 remember_tags  = _parse_remember_tags(response_text) if memory_enabled else []
                 remind_tags    = _parse_remind_tags(response_text) if memory_enabled else []
                 task_tags      = _parse_task_tags(response_text) if memory_enabled else []
                 solution_tags  = _parse_solution_tags(response_text) if memory_enabled else []
                 social_tags    = _parse_social_tags(response_text) if memory_enabled else []
                 cherish_tags   = _parse_cherish_tags(response_text) if memory_enabled else []
+                deep_remember_tags = _parse_deep_remember_tags(response_text) if memory_enabled else []
+                dream_requested = bool(_DREAM_RE.search(response_text)) if memory_enabled else False
+                self_reflect_requested = bool(_SELF_REFLECT_RE.search(response_text)) if memory_enabled else False
 
                 # Parse agent code blocks & file-save tags
                 code_blocks = _parse_code_blocks(response_text) if preset_name in ("agent", "assistant") else []
@@ -2436,6 +2705,10 @@ async def chat_ws(ws: WebSocket):
                 _bg_solution_tags = list(solution_tags)
                 _bg_social_tags = list(social_tags)
                 _bg_cherish_tags = list(cherish_tags)
+                _bg_deep_remember_tags = list(deep_remember_tags)
+                _bg_dream_requested = dream_requested
+                _bg_self_reflect_requested = self_reflect_requested
+                _bg_conversation_snapshot = list(_conversation)
                 _bg_code_blocks = list(code_blocks)
                 _bg_save_files = list(save_file_tags)
                 _bg_tool_calls = list(tool_calls)
@@ -2471,6 +2744,8 @@ async def chat_ws(ws: WebSocket):
                                     importance=entry["importance"],
                                     source=entry.get("source", "conversation"),
                                     why_saved=entry["why"],
+                                    conversation_snapshot=_bg_conversation_snapshot,
+                                    category="self" if entry.get("is_self") else "",
                                 )
                                 # Apply cherish/anchor if the model requested it
                                 if result and (entry.get("cherish") or entry.get("anchor")):
@@ -2486,7 +2761,7 @@ async def chat_ws(ws: WebSocket):
                         # Process retroactive cherish/anchor on existing memories
                         for ct in _bg_cherish_tags:
                             try:
-                                matches = mem._mimir.recall(ct["query"], top_k=1)
+                                matches = mem._mimir.recall(ct["query"], limit=1)
                                 if matches:
                                     # Find the index of this memory
                                     target = matches[0]
@@ -2508,7 +2783,31 @@ async def chat_ws(ws: WebSocket):
                                     content=si["content"],
                                     emotion=si["emotion"],
                                     importance=si["importance"],
+                                    conversation_snapshot=_bg_conversation_snapshot,
                                 )
+                            except Exception:
+                                pass
+
+                        # Resolve deep-remember requests — surfaces the full
+                        # conversation snapshot in the model's NEXT context block
+                        for dr in _bg_deep_remember_tags:
+                            try:
+                                mem.request_deep_remember(dr["query"])
+                            except Exception:
+                                pass
+
+                        # Resolve <dream/> — consolidation cycle, rate-limited
+                        if _bg_dream_requested:
+                            try:
+                                mem.trigger_dream()
+                            except Exception:
+                                pass
+
+                        # Resolve <self_reflect/> — genuine LLM self-analysis,
+                        # rate-limited, stored as a memory by reflect() itself
+                        if _bg_self_reflect_requested:
+                            try:
+                                await asyncio.to_thread(mem.trigger_self_reflect)
                             except Exception:
                                 pass
 
@@ -2520,7 +2819,9 @@ async def chat_ws(ws: WebSocket):
                         for t in _bg_task_tags:
                             try:
                                 if t["action"] == "start":
-                                    result = mem.start_task(
+                                    dup = mem.has_similar_active_task(
+                                        t["content"], t.get("project", ""))
+                                    result = dup or mem.start_task(
                                         description=t["content"],
                                         priority=t["priority"],
                                         project=t.get("project", ""),
@@ -2529,6 +2830,7 @@ async def chat_ws(ws: WebSocket):
                                         "type": "task_created",
                                         "task_id": result["task_id"],
                                         "description": result["description"],
+                                        "duplicate": bool(dup),
                                     })
                                 elif t["action"] == "complete" and t.get("id"):
                                     mem.complete_task(t["id"], t["content"])
@@ -2692,6 +2994,7 @@ async def chat_ws(ws: WebSocket):
                                     importance=importance_fb,
                                     source="conversation",
                                     why_saved="auto-captured task/goal signal",
+                                    conversation_snapshot=_bg_conversation_snapshot,
                                 )
 
                         # process_turn handles mood/chemistry/huginn/volva/consolidation
@@ -2876,21 +3179,33 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
             conv_meta.update(fresh["meta"])
         return [p for p in conv_meta.get("participants", []) if p.get("type") == "agent"]
 
-    def _build_agent_messages(msg_history: list[dict], current_agent_name: str) -> list[dict]:
+    def _build_agent_messages(msg_history: list[dict], current_agent_name: str,
+                               current_agent_id: str = "") -> list[dict]:
         """Build a message list tailored for a specific agent.
 
         - User messages → role: user
         - This agent's own responses → role: assistant
         - Other agents' responses are folded into the preceding user turn
           so the LLM sees clean user/assistant alternation without confusion.
+
+        Matches by character_id (via each entry's "speaker_id") when both
+        the entry and the current agent have one — falls back to matching by
+        display name only for older entries saved before speaker_id existed.
+        Matching by name alone would fold two same-named characters' lines
+        into each other's "things I said" history.
         """
         result: list[dict] = []
         pending_context: list[str] = []  # other-agent lines to attach to next user msg
 
         for m in msg_history:
             speaker = m.get("speaker", "")
+            speaker_id = m.get("speaker_id", "")
             content = m.get("content", "")
-            if speaker == current_agent_name:
+            is_current_agent = (
+                (speaker_id and current_agent_id and speaker_id == current_agent_id)
+                or (not speaker_id and speaker == current_agent_name)
+            )
+            if is_current_agent:
                 # Flush any pending context as a user turn before assistant reply
                 if pending_context:
                     result.append({"role": "user", "content": "\n\n".join(pending_context)})
@@ -2944,6 +3259,31 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                 agents = _reload_agents()
 
                 user_text = msg.get("content", "").strip()
+
+                # Image attached by user (base64 string from browser FileReader)
+                image_b64: str = msg.get("image", "")
+                pending_image_bytes: bytes | None = None
+                if image_b64:
+                    import base64 as _b64
+                    try:
+                        pending_image_bytes = _b64.b64decode(image_b64)
+                    except Exception:
+                        image_b64 = ""
+                        pending_image_bytes = None
+
+                # Computed at most once per message, on first non-vision
+                # agent's turn, and reused for every other non-vision agent
+                # in the same round rather than re-captioning per agent.
+                _blip_cache: dict = {}
+
+                async def _mc_get_blip_caption() -> str:
+                    if "value" not in _blip_cache:
+                        try:
+                            _blip_cache["value"] = await asyncio.to_thread(_blip_describe, image_b64)
+                        except Exception:
+                            _blip_cache["value"] = ""
+                    return _blip_cache["value"]
+
                 user_entry = {"speaker": "You", "content": user_text}
                 msg_history.append(user_entry)
                 await ws.send_json({
@@ -2960,16 +3300,24 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                 responding_agents = list(agents)
 
                 if turn_order == "user_addresses":
-                    # Addressed agents go first, then everyone else responds
+                    # Default group-chat behaviour: everyone responds, unless
+                    # the user names specific agents — then only those do.
+                    # Uncapped on both branches: named agents are already a
+                    # natural bound, and a full-group turn should include
+                    # however many agents the user actually added.
                     mentioned = [a for a in agents if a["name"].lower() in user_text.lower()]
-                    others = [a for a in agents if a not in mentioned]
-                    responding_agents = (mentioned + others)[:max_per_round]
+                    responding_agents = mentioned if mentioned else agents
                 elif turn_order == "sequential":
                     if "_seq_index" not in conv_meta:
                         conv_meta["_seq_index"] = 0
                     idx = conv_meta["_seq_index"] % len(agents) if agents else 0
                     responding_agents = [agents[idx]] if agents else []
                     conv_meta["_seq_index"] = idx + 1
+                    # Persist so a reconnect (including the client's own
+                    # auto-reconnect-on-drop) continues the rotation instead
+                    # of restarting it from agent 0.
+                    _conversations.update_conversation(
+                        conv_id, {"_seq_index": conv_meta["_seq_index"]})
                 elif turn_order == "all_respond":
                     responding_agents = agents[:max_per_round]
 
@@ -2989,8 +3337,11 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         if char.get("system_prompt"):
                             parts.append(char["system_prompt"])
 
-                    # Tell agent about other participants
-                    other_names = [a["name"] for a in agents if a["name"] != agent_name]
+                    # Tell agent about other participants (matched by
+                    # character_id so a same-named agent isn't wrongly
+                    # excluded, or a different agent wrongly included)
+                    other_names = [a["name"] for a in agents
+                                   if a.get("character_id") != char_id]
                     if other_names:
                         parts.append(
                             f"You are in a group conversation with the user and "
@@ -3001,29 +3352,33 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             f"Respond naturally as yourself in a group chat — keep replies concise unless asked to elaborate."
                         )
 
-                    # Memory context for this agent/character
+                    # Memory context for this agent/character — same rich
+                    # context block and tag vocabulary single-chat gets
+                    # (mood, active memories, self-identity, images, lessons,
+                    # reminders, temporal awareness), not just a flat recall
+                    # list, and the full <remember>/<treasure>/<social>/
+                    # <recall>/<dream/>/<self_reflect/> instruction set.
                     memory_enabled = _cfg.get("memory", {}).get("enabled", True)
+                    agent_preset = get_preset(
+                        (char.get("preset_type") if char else "")
+                        or agent.get("preset_type", "companion"))
                     if memory_enabled and char_id:
                         try:
                             agent_mem = _ensure_memory(char_id=char_id)
-                            context_block = agent_mem.recall(user_text, top_k=5)
+                            interaction_gap = agent_mem.record_interaction()
+                            context_block = agent_mem.get_context_for_preset(
+                                preset=agent_preset,
+                                conversation_context=user_text,
+                                entity=agent_name,
+                                interaction_gap_seconds=interaction_gap,
+                            )
                             if context_block:
-                                mem_lines = []
-                                for r in context_block:
-                                    c = r.get("content", "") if isinstance(r, dict) else str(r)
-                                    if c:
-                                        mem_lines.append(f"- {c}")
-                                if mem_lines:
-                                    parts.append("## Your Memories\n" + "\n".join(mem_lines[:10]))
+                                parts.append("## Your Memories\n" + context_block)
                         except Exception:
                             pass
 
-                        # Tell the agent it can form memories
-                        parts.append(
-                            "You can form memories by wrapping important information in "
-                            "<remember>content</remember> tags. Use this for things worth "
-                            "remembering about the user or conversation."
-                        )
+                        if agent_preset.get("system_prompt_suffix"):
+                            parts.append(agent_preset["system_prompt_suffix"])
 
                     system_prompt = "\n\n".join(parts)
 
@@ -3034,8 +3389,45 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                 or (char.get("model") if char else "")
                                 or _cfg.get("active_model", ""))
 
+                    # Per-character vision model — deliberately NOT falling
+                    # back to the global mmproj setting, so an agent with no
+                    # vision model configured never gets another agent's
+                    # mmproj wrongly attached when they alternate turns.
+                    vision_model = (agent.get("vision_model")
+                                    or (char.get("vision_model") if char else "")
+                                    or "")
+                    if backend_name == "local":
+                        _cfg.update({"backends": {"local": {"mmproj_path": vision_model}}})
+
                     # Build per-agent message view
-                    agent_messages = _build_agent_messages(msg_history, agent_name)
+                    agent_messages = _build_agent_messages(msg_history, agent_name, char_id or "")
+
+                    # Route the attached image only to agents whose backend
+                    # actually supports it (matches what single-chat supports
+                    # today — Ollama/OpenAI/Local/Transformers) — everyone
+                    # else gets a BLIP-caption fallback folded into their own
+                    # message view instead, so a non-vision agent's turn
+                    # doesn't crash or silently ignore the image. Anthropic/
+                    # Google generate() don't accept images= at all (a
+                    # pre-existing gap, not fixed here) — passing that kwarg
+                    # to them at all would raise TypeError, so it's only ever
+                    # added to the call below for backends that declare it.
+                    agent_can_see = image_b64 and (
+                        backend_name in ("ollama", "openai", "transformers")
+                        or (backend_name == "local" and bool(vision_model)))
+                    if agent_can_see and memory_enabled and char_id:
+                        system_prompt += (
+                            "\n\nAn image was just shared. If it feels meaningful or worth "
+                            "remembering, save it with: <remember source=\"visual\" "
+                            "emotion=\"EMOTION\" importance=\"1-10\">Vivid, detailed "
+                            "description of what you see</remember>"
+                        )
+                    if image_b64 and not agent_can_see:
+                        blip_caption = await _mc_get_blip_caption()
+                        if blip_caption and agent_messages and agent_messages[-1]["role"] == "user":
+                            agent_messages[-1] = dict(agent_messages[-1])
+                            agent_messages[-1]["content"] += (
+                                f"\n\n[User attached an image. BLIP caption: {blip_caption}]")
 
                     backend = create_backend(backend_name, _cfg.to_dict())
                     llm_params = _cfg.get("llm_params", {})
@@ -3048,6 +3440,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             temperature=llm_params.get("temperature", 0.7),
                             max_tokens=llm_params.get("max_tokens", 2048),
                             model=model_id,
+                            **({"images": [image_b64]} if agent_can_see else {}),
                         ):
                             full_response.append(token)
                             await ws.send_json({
@@ -3057,31 +3450,112 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             })
 
                         response_text = "".join(full_response)
+                        showimage_hashes: list[str] = []
 
-                        # Process <remember> tags from this agent's response
+                        # Process this agent's tags — same full vocabulary as
+                        # single-chat (remember/visual, treasure, social,
+                        # recall, dream, self_reflect, reminders), all scoped
+                        # to this agent's own isolated memory.
                         if memory_enabled and char_id:
                             try:
                                 agent_mem = _ensure_memory(char_id=char_id)
+
                                 tags = _parse_remember_tags(response_text)
                                 for tag in tags:
-                                    if isinstance(tag, dict) and tag.get("content"):
+                                    if not isinstance(tag, dict) or not tag.get("content"):
+                                        continue
+                                    if tag.get("source") == "visual" and agent_can_see and pending_image_bytes:
+                                        agent_mem.remember_visual(
+                                            image_bytes=pending_image_bytes,
+                                            description=tag["content"][:500],
+                                            emotion=tag.get("emotion", "neutral"),
+                                            importance=tag.get("importance", 5),
+                                        )
+                                    else:
                                         agent_mem.remember(
                                             content=tag["content"][:500],
                                             emotion=tag.get("emotion", "neutral"),
                                             importance=tag.get("importance", 5),
                                             source="multi_agent_conversation",
+                                            category="self" if tag.get("is_self") else "",
                                         )
+
+                                # Retroactive treasure/cherish on existing memories
+                                for ct in _parse_cherish_tags(response_text):
+                                    try:
+                                        matches = agent_mem._mimir.recall(ct["query"], limit=1)
+                                        if matches:
+                                            target = matches[0]
+                                            for idx, m in enumerate(agent_mem._mimir._reflections):
+                                                if m is target:
+                                                    if not getattr(m, '_cherished', False):
+                                                        agent_mem.toggle_cherish(idx)
+                                                    if ct.get("anchor") and not getattr(m, '_anchor', False):
+                                                        agent_mem.toggle_anchor(idx)
+                                                    break
+                                    except Exception:
+                                        pass
+
+                                # Social impressions
+                                for si in _parse_social_tags(response_text):
+                                    try:
+                                        agent_mem.add_social(
+                                            entity=si["entity"], content=si["content"],
+                                            emotion=si["emotion"], importance=si["importance"],
+                                        )
+                                    except Exception:
+                                        pass
+
+                                # Deep recall requests — surfaces next turn
+                                for dr in _parse_deep_remember_tags(response_text):
+                                    try:
+                                        agent_mem.request_deep_remember(dr["query"])
+                                    except Exception:
+                                        pass
+
+                                # Reminders
+                                for r in _parse_remind_tags(response_text):
+                                    try:
+                                        agent_mem.set_reminder(text=r["text"], hours=r["hours"])
+                                    except Exception:
+                                        pass
+
+                                # Dream / self-reflect — rate-limited internally
+                                if _DREAM_RE.search(response_text):
+                                    try:
+                                        agent_mem.trigger_dream()
+                                    except Exception:
+                                        pass
+                                if _SELF_REFLECT_RE.search(response_text):
+                                    try:
+                                        await asyncio.to_thread(agent_mem.trigger_self_reflect)
+                                    except Exception:
+                                        pass
+
+                                showimage_hashes = _parse_showimage_tags(response_text)
+
                                 # Run turn processing (emotion detection, chemistry, etc.)
-                                preset = get_preset(_cfg.get("active_preset", "companion"))
-                                agent_mem.process_turn(user_text, response_text, preset, skip_save=bool(tags))
+                                agent_mem.process_turn(user_text, response_text, agent_preset, skip_save=bool(tags))
                             except Exception:
                                 pass
 
-                        # Strip remember tags from displayed response
+                        # Strip every tag from the displayed/stored response
                         clean_response = _strip_remember_tags(response_text)
+                        clean_response = _strip_remind_tags(clean_response)
+                        clean_response = _strip_showimage_tags(clean_response)
+                        clean_response = _strip_social_tags(clean_response)
+                        clean_response = _strip_cherish_tags(clean_response)
+                        clean_response = _strip_deep_remember_tags(clean_response)
+                        clean_response = _strip_dream_tags(clean_response)
+                        clean_response = _strip_self_reflect_tags(clean_response)
                         clean_response = _THINK_STRIP_RE.sub("", clean_response).strip()
 
-                        agent_entry = {"speaker": agent_name, "content": clean_response}
+                        for h in showimage_hashes:
+                            await ws.send_json({"type": "show_image", "speaker": agent_name,
+                                                 "hash": h, "char_id": char_id or ""})
+
+                        agent_entry = {"speaker": agent_name, "speaker_id": char_id or "",
+                                       "content": clean_response}
                         msg_history.append(agent_entry)
 
                         _conversations.add_message(conv_id, agent_entry)
@@ -3222,17 +3696,17 @@ async def get_chemistry_history():
 
 
 @app.get("/api/visualization/yggdrasil")
-async def get_yggdrasil():
+async def get_yggdrasil(char_id: str = ""):
     """Return knowledge graph data (Yggdrasil) for 3D visualization."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     return JSONResponse(mem.get_graph())
 
 
 @app.get("/api/visualization/landscape")
-async def get_landscape():
+async def get_landscape(char_id: str = ""):
     """Return memory landscape data for 3D scatterplot."""
     import random
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     graph = mem.get_graph()
     
     raw_nodes = graph.get("nodes", [])
@@ -3290,9 +3764,9 @@ async def get_landscape():
 
 
 @app.get("/api/visualization/cherished")
-async def get_cherished_memories():
+async def get_cherished_memories(char_id: str = ""):
     """Return cherished memories for wall visualization."""
-    mem = _ensure_memory()
+    mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
     graph = mem.get_graph()
     
     # Filter only cherished memories
@@ -3508,6 +3982,16 @@ async def delete_task(project_id: str, task_id: str):
 
 @app.post("/api/agent/projects/{project_id}/tasks/{task_id}/approve")
 async def approve_task(project_id: str, task_id: str):
+    task = _proactive.update_task(project_id, task_id, {"status": TaskStatus.APPROVED})
+    if not task:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(task.to_dict())
+
+
+@app.post("/api/agent/projects/{project_id}/tasks/{task_id}/resume")
+async def resume_task(project_id: str, task_id: str):
+    """Resume a paused task (budget exhausted, max iterations hit, or
+    interrupted mid-task) — otherwise nothing ever picks it back up."""
     task = _proactive.update_task(project_id, task_id, {"status": TaskStatus.APPROVED})
     if not task:
         return JSONResponse({"error": "Not found"}, status_code=404)

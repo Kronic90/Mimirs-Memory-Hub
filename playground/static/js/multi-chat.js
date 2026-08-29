@@ -33,6 +33,35 @@ const MultiChatPage = (() => {
         return agentColorMap[name];
     }
 
+    // ── Reasoning ("thinking") block handling ──────────────────────
+    // Reuses Chat.splitThinking/Chat.buildThinkBlock (chat.js) so raw
+    // <think>...</think> content streams into a collapsible block instead
+    // of showing up as literal tag text in the bubble, matching single-chat.
+    function _updateBubbleContent(bubble, rawText, isStreaming) {
+        const contentEl = bubble.querySelector('.message-content');
+        if (!window.Chat || !Chat.splitThinking) {
+            contentEl.textContent = rawText || '';
+            return;
+        }
+        const split = Chat.splitThinking(rawText);
+        contentEl.textContent = split.response || '';
+        if (split.thinking) {
+            let thinkEl = bubble._thinkEl;
+            if (!thinkEl) {
+                thinkEl = Chat.buildThinkBlock(split.thinking, split.streaming);
+                bubble.insertBefore(thinkEl, contentEl);
+                bubble._thinkEl = thinkEl;
+            } else {
+                thinkEl.querySelector('.think-body').textContent = split.thinking;
+                if (!split.streaming && thinkEl.classList.contains('think-streaming')) {
+                    thinkEl.classList.remove('think-streaming');
+                    thinkEl.querySelector('.think-summary').innerHTML =
+                        '<span class="think-icon">🧠</span> Thought <span class="think-chevron">›</span>';
+                }
+            }
+        }
+    }
+
     // ── WebSocket Management ──────────────────────────────────────
 
     function connectWebSocket(convId) {
@@ -70,12 +99,57 @@ const MultiChatPage = (() => {
         };
     }
 
+    // ── Image attachment (mirrors chat.js's attachImage/clearAttachedImage) ──
+    let pendingImageB64 = '';
+
+    function attachImage(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            App.toast('Please select an image file', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            pendingImageB64 = dataUrl.split(',')[1] || '';
+            const preview = document.getElementById('multi-image-attach-preview');
+            if (preview) {
+                preview.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = dataUrl;
+                img.className = 'attach-thumb';
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'attach-remove';
+                removeBtn.title = 'Remove image';
+                removeBtn.textContent = '✕';
+                removeBtn.addEventListener('click', clearAttachedImage);
+                preview.appendChild(img);
+                preview.appendChild(removeBtn);
+                preview.style.display = 'flex';
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function clearAttachedImage() {
+        pendingImageB64 = '';
+        const preview = document.getElementById('multi-image-attach-preview');
+        if (preview) {
+            preview.innerHTML = '';
+            preview.style.display = 'none';
+        }
+        const fileInput = document.getElementById('multi-image-file-input');
+        if (fileInput) fileInput.value = '';
+    }
+
     function sendMessage(content) {
         if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {
             App.toast('Not connected — reload the conversation', 'error');
             return;
         }
-        currentWs.send(JSON.stringify({ type: 'message', content }));
+        const payload = { type: 'message', content };
+        if (pendingImageB64) payload.image = pendingImageB64;
+        currentWs.send(JSON.stringify(payload));
+        clearAttachedImage();
         isStreaming = true;
         pendingAgents = 0; // Reset — server will send agent responses
     }
@@ -110,6 +184,34 @@ const MultiChatPage = (() => {
             currentSettings = msg.settings || currentSettings;
             App.toast('Settings saved', 'success');
         }
+        else if (type === 'show_image') {
+            showRecalledImage(msg.speaker, msg.hash, msg.char_id);
+        }
+    }
+
+    /* A responding agent recalled and chose to show one of its own visual
+       memories — append an image card after its bubble in whichever view
+       is currently active (mirrors chat.js's showRecalledImage). */
+    function showRecalledImage(speaker, hash, charId) {
+        const isUser = speaker === 'You';
+        let container;
+        if (currentViewMode === 'columns') {
+            container = document.getElementById(isUser ? 'col-You' : `col-${speaker}`);
+        } else {
+            container = document.getElementById('multi-message-scroll');
+        }
+        if (!container) return;
+
+        const card = document.createElement('div');
+        card.className = 'recalled-image-card';
+        const img = document.createElement('img');
+        img.src = '/api/memory/visual/' + hash + (charId ? '?char_id=' + encodeURIComponent(charId) : '');
+        img.className = 'recalled-image';
+        img.alt = `${speaker}'s recalled memory image`;
+        img.onerror = () => card.remove();
+        card.appendChild(img);
+        container.appendChild(card);
+        container.scrollTop = container.scrollHeight;
     }
 
     function sendSettings(data) {
@@ -175,7 +277,8 @@ const MultiChatPage = (() => {
                 scroll.appendChild(bubble);
             }
 
-            bubble.querySelector('.message-content').textContent += token;
+            bubble._rawText = (bubble._rawText || '') + token;
+            _updateBubbleContent(bubble, bubble._rawText, true);
             if (bubble.style.display !== 'none') scroll.scrollTop = scroll.scrollHeight;
         }
         else if (currentViewMode === 'columns') {
@@ -190,7 +293,8 @@ const MultiChatPage = (() => {
                 colScroll.appendChild(bubble);
             }
 
-            bubble.querySelector('.message-content').textContent += token;
+            bubble._rawText = (bubble._rawText || '') + token;
+            _updateBubbleContent(bubble, bubble._rawText, true);
             colScroll.scrollTop = colScroll.scrollHeight;
         }
     }
@@ -202,14 +306,16 @@ const MultiChatPage = (() => {
             const scroll = document.getElementById('multi-message-scroll');
             const bubble = scroll?.querySelector(`[data-streaming="${CSS.escape(speaker)}"]`);
             if (bubble) {
-                content = bubble.querySelector('.message-content')?.textContent || '';
+                content = bubble._rawText || bubble.querySelector('.message-content')?.textContent || '';
+                _updateBubbleContent(bubble, content, false);
                 bubble.removeAttribute('data-streaming');
             }
         } else {
             const colScroll = document.getElementById(`col-${speaker}`);
             const bubble = colScroll?.querySelector(`[data-streaming="${CSS.escape(speaker)}"]`);
             if (bubble) {
-                content = bubble.querySelector('.message-content')?.textContent || '';
+                content = bubble._rawText || bubble.querySelector('.message-content')?.textContent || '';
+                _updateBubbleContent(bubble, content, false);
                 bubble.removeAttribute('data-streaming');
             }
         }
@@ -229,8 +335,14 @@ const MultiChatPage = (() => {
         const color = isUser ? 'var(--accent)' : getAgentColor(speaker);
         div.innerHTML = `
             <div class="message-speaker" style="color:${color};">${escapeHtml(speaker)}</div>
-            <div class="message-content">${escapeHtml(content)}</div>
+            <div class="message-content"></div>
         `;
+        div._rawText = content || '';
+        if (isUser) {
+            div.querySelector('.message-content').textContent = content || '';
+        } else {
+            _updateBubbleContent(div, content || '', false);
+        }
         return div;
     }
 
@@ -505,6 +617,13 @@ const MultiChatPage = (() => {
         const addAgentBtn = document.getElementById('btn-add-agent');
         const newConvBtn = document.getElementById('btn-new-multi-conv');
         const chatInput = document.getElementById('multi-chat-input');
+        const attachBtn = document.getElementById('btn-multi-attach-image');
+        const imageFileInput = document.getElementById('multi-image-file-input');
+
+        attachBtn?.addEventListener('click', () => imageFileInput?.click());
+        imageFileInput?.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) attachImage(e.target.files[0]);
+        });
 
         const convs = await loadConversations();
         if (convs.length > 0) {

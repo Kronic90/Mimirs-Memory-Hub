@@ -149,6 +149,12 @@ const AgentsPage = (() => {
         <button id="btn-ae-refresh-models" class="btn btn-secondary btn-sm" title="Refresh model list" style="padding:4px 8px;min-width:auto;">🔄</button>
       </div>
     </div>
+    <div class="form-group" style="flex:1">
+      <label>Vision Model <span class="label-hint">— only used when Backend is Local GGUF</span></label>
+      <select id="ae-vision-model" class="input input-sm">
+        <option value="">Loading…</option>
+      </select>
+    </div>
   </div>
 
   <div class="form-group">
@@ -223,6 +229,33 @@ const AgentsPage = (() => {
 
         // ── Load models for current backend ──────────────────────────
         loadModelsForAgent(agent);
+        loadVisionModelsForAgent(agent);
+    }
+
+    // ── Load per-agent vision model (mmproj) dropdown ──────────────────
+    async function loadVisionModelsForAgent(agent) {
+        const select = document.getElementById('ae-vision-model');
+        if (!select) return;
+        select.innerHTML = '<option value="">(none — text only)</option>';
+        try {
+            let mmprojs = await App.api('/models/mmproj/cache');
+            if (!mmprojs || mmprojs.length === 0) {
+                mmprojs = await App.api('/models/mmproj/scan');
+            }
+            if (mmprojs && mmprojs.length > 0) {
+                mmprojs.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.path;
+                    opt.textContent = m.filename + ' (' + App.formatBytes(m.size) + ')';
+                    select.appendChild(opt);
+                });
+            }
+            if (agent.vision_model) {
+                select.value = agent.vision_model;
+            }
+        } catch {
+            select.innerHTML = '<option value="">(none — text only)</option>';
+        }
     }
 
     // ── Load models for the selected backend ─────────────────────────
@@ -330,6 +363,7 @@ const AgentsPage = (() => {
             preset_type:   document.getElementById('ae-preset-type').value,
             model:         document.getElementById('ae-model').value.trim(),
             backend:       document.getElementById('ae-backend').value,
+            vision_model:  document.getElementById('ae-vision-model').value,
             tts_voice:     document.getElementById('ae-tts-voice').value,
         };
         if (!updates.name) { App.toast('Name cannot be empty', 'error'); return; }

@@ -17,6 +17,12 @@ const ProactivePage = (() => {
         'csv_query', 'screenshot', 'clipboard', 'open_app', 'system_info', 'weather',
     ];
 
+    // Mirrors Project's dataclass defaults in proactive_agent.py — these are
+    // "potentially destructive / noisy" and off by default for a new project.
+    const TOOLS_OFF_BY_DEFAULT = new Set([
+        'screenshot', 'clipboard', 'open_app', 'system_info', 'weather',
+    ]);
+
     const TOOL_LABELS = {
         read_file: '📄 Read File', write_file: '✏️ Write File',
         list_directory: '📁 List Dir', search_files: '🔍 Search Files',
@@ -244,7 +250,9 @@ const ProactivePage = (() => {
         const enabledTools = project ? project.tools_enabled : {};
         toolsEl.innerHTML = '';
         ALL_TOOLS.forEach(tool => {
-            const checked = project ? (enabledTools[tool] !== false) : true;
+            const checked = project
+                ? (enabledTools[tool] !== false)
+                : !TOOLS_OFF_BY_DEFAULT.has(tool);
             const label = document.createElement('label');
             label.className = 'tool-toggle';
             label.innerHTML = `
@@ -355,6 +363,9 @@ const ProactivePage = (() => {
             if (t.status === 'proposed') {
                 actions = `<button class="btn btn-sm btn-primary" onclick="ProactivePage.approveTask('${t.id}')">Approve</button>`;
             }
+            if (t.status === 'paused') {
+                actions += ` <button class="btn btn-sm btn-primary" onclick="ProactivePage.resumeTask('${t.id}')">Resume</button>`;
+            }
             if (['proposed', 'approved', 'paused', 'review'].includes(t.status)) {
                 actions += ` <button class="btn btn-sm btn-secondary" onclick="ProactivePage.removeTask('${t.id}')">✕</button>`;
             }
@@ -420,6 +431,13 @@ const ProactivePage = (() => {
         if (!_selectedProjectId) return;
         await fetch(`/api/agent/projects/${_selectedProjectId}/tasks/${taskId}/approve`, { method: 'POST' });
         App.toast('Task approved', 'success');
+        loadTasks(_selectedProjectId);
+    }
+
+    async function resumeTask(taskId) {
+        if (!_selectedProjectId) return;
+        await fetch(`/api/agent/projects/${_selectedProjectId}/tasks/${taskId}/resume`, { method: 'POST' });
+        App.toast('Task resumed', 'success');
         loadTasks(_selectedProjectId);
     }
 
@@ -518,7 +536,7 @@ const ProactivePage = (() => {
         App.api('/agent/status').then(status => updateStatusUI(status)).catch(() => {});
     }
 
-    return { init, approveTask, removeTask };
+    return { init, approveTask, resumeTask, removeTask };
 })();
 
 window.ProactivePage = ProactivePage;

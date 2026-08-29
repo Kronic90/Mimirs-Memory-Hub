@@ -155,6 +155,23 @@ def _extract_dates(text: str, reference: datetime | None = None
     return sorted(found)
 
 
+def _humanize_age(seconds: float) -> str:
+    """'just now' / '12 minutes ago' / '3 hours ago' / '4 days ago' / etc."""
+    if seconds < 90:
+        return "just now"
+    minutes = seconds / 60
+    if minutes < 90:
+        return f"{int(minutes)} minute{'s' if minutes >= 2 else ''} ago"
+    hours = minutes / 60
+    if hours < 36:
+        return f"{int(hours)} hour{'s' if hours >= 2 else ''} ago"
+    days = hours / 24
+    if days < 14:
+        return f"{int(days)} day{'s' if days >= 2 else ''} ago"
+    weeks = days / 7
+    return f"{int(weeks)} week{'s' if weeks >= 2 else ''} ago"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Visual memory helpers — content-addressable image store
 # ═══════════════════════════════════════════════════════════════════════════

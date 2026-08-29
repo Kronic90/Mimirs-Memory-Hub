@@ -1,6 +1,7 @@
 """Character management for Mimir's Memory Hub."""
 from __future__ import annotations
 import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Optional, Any
@@ -85,13 +86,17 @@ class CharacterManager:
             json.dump(char, f, indent=2)
         return char
 
-    def delete_character(self, char_id: str) -> bool:
-        """Delete a character."""
+    def delete_character(self, char_id: str, profile_dir: Path | None = None) -> bool:
+        """Delete a character, along with its isolated memory directory
+        (if profile_dir is given) so memories don't get orphaned on disk."""
         char_file = self.chars_dir / f"{char_id}.json"
-        if char_file.exists():
-            char_file.unlink()
-            return True
-        return False
+        if not char_file.exists():
+            return False
+        char_file.unlink()
+        if profile_dir is not None:
+            mem_dir = profile_dir / "characters" / char_id
+            shutil.rmtree(mem_dir, ignore_errors=True)
+        return True
 
     def import_sillytavern(self, file_path: str) -> dict:
         """Import a SillyTavern character (.json or .character format)."""

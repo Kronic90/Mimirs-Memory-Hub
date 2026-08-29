@@ -54,6 +54,50 @@ const App = (() => {
         }, 3500);
     }
 
+    // ── Global tooltips ──────────────────────────────────────────
+    // Any element anywhere in the app with data-tip="explanation" gets a
+    // hover tooltip automatically — one delegated listener instead of
+    // wiring show/hide per element. Fixed-position so it can't be clipped
+    // by a scrollable ancestor (see #app-tooltip in style.css).
+    function setupGlobalTooltips() {
+        function ensureTipEl() {
+            let el = document.getElementById('app-tooltip');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'app-tooltip';
+                document.body.appendChild(el);
+            }
+            return el;
+        }
+        function positionTip(target) {
+            const el = ensureTipEl();
+            const rect = target.getBoundingClientRect();
+            const tipRect = el.getBoundingClientRect();
+            let top = rect.bottom + 8;
+            if (top + tipRect.height > window.innerHeight - 8) {
+                top = rect.top - tipRect.height - 8;
+            }
+            let left = rect.left + rect.width / 2 - tipRect.width / 2;
+            left = Math.max(8, Math.min(left, window.innerWidth - tipRect.width - 8));
+            el.style.top = Math.max(8, top) + 'px';
+            el.style.left = left + 'px';
+        }
+        document.addEventListener('mouseover', (e) => {
+            const target = e.target.closest('[data-tip]');
+            if (!target) return;
+            const el = ensureTipEl();
+            el.textContent = target.getAttribute('data-tip');
+            el.classList.add('visible');
+            positionTip(target);
+        });
+        document.addEventListener('mouseout', (e) => {
+            const target = e.target.closest('[data-tip]');
+            if (!target || (e.relatedTarget && target.contains(e.relatedTarget))) return;
+            const el = document.getElementById('app-tooltip');
+            if (el) el.classList.remove('visible');
+        });
+    }
+
     // ── API helpers ──────────────────────────────────────────────
     async function api(path, options = {}) {
         try {
@@ -242,6 +286,8 @@ const App = (() => {
 
     // ── Init ─────────────────────────────────────────────────────
     async function init() {
+        setupGlobalTooltips();
+
         // Nav clicks
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', () => navigate(item.dataset.page));

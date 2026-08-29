@@ -21,6 +21,7 @@ const VisualizePage = (() => {
     const COLORS = {
         episodic:   { fill: '#7c3aed', glow: 'rgba(124,58,237,',  label: 'Episodic' },
         social:     { fill: '#3b82f6', glow: 'rgba(59,130,246,',  label: 'Social' },
+        self:       { fill: '#14b8a6', glow: 'rgba(20,184,166,',  label: 'Self-Identity' },
         huginn:     { fill: '#f59e0b', glow: 'rgba(245,158,11,',  label: 'Huginn' },
         volva:      { fill: '#8b5cf6', glow: 'rgba(139,92,246,',  label: 'Völva' },
         flashbulb:  { fill: '#ef4444', glow: 'rgba(239,68,68,',   label: 'Flashbulb' },
@@ -47,6 +48,7 @@ const VisualizePage = (() => {
         if (node.is_anchor) return COLORS.anchor;
         if (node.source === 'huginn') return COLORS.huginn;
         if (node.source === 'volva') return COLORS.volva;
+        if (node.is_self) return COLORS.self;
         if (node.source === 'social' || node.entity) return COLORS.social;
         if (node.source === 'conversation') return COLORS.conversation;
         return COLORS.episodic;
@@ -59,6 +61,7 @@ const VisualizePage = (() => {
         if (filter === 'anchor') return node.is_anchor;
         if (filter === 'task') return node._type === 'task';
         if (filter === 'social') return node.source === 'social' || !!node.entity;
+        if (filter === 'self') return !!node.is_self;
         if (filter === 'huginn') return node.source === 'huginn';
         if (filter === 'volva') return node.source === 'volva';
         return true;
@@ -96,7 +99,8 @@ const VisualizePage = (() => {
                 clusterAngle = entityAngleMap[n.entity];
             } else if (isSocial) {
                 clusterAngle = 0;
-            } else if (n.source === 'huginn') clusterAngle = Math.PI * 0.4;
+            } else if (n.is_self) clusterAngle = Math.PI * -0.6;
+            else if (n.source === 'huginn') clusterAngle = Math.PI * 0.4;
             else if (n.source === 'volva') clusterAngle = Math.PI * 0.8;
             else if (n.source === 'conversation') clusterAngle = Math.PI * 1.2;
             else clusterAngle = Math.PI * 1.6;
@@ -107,9 +111,10 @@ const VisualizePage = (() => {
             else if (n.is_anchor) radius *= 0.6;
             else radius *= (0.5 + Math.random() * 0.5);
 
-            // Social memories cluster tighter around their entity angle
-            const jitter = isSocial ? 0.3 : 1.0;
-            const posJitter = isSocial ? 30 : 60;
+            // Social and self-identity memories cluster tighter around their angle
+            const isTightCluster = isSocial || n.is_self;
+            const jitter = isTightCluster ? 0.3 : 1.0;
+            const posJitter = isTightCluster ? 30 : 60;
             const angle = clusterAngle + (Math.random() - 0.5) * jitter;
             const x = Math.cos(angle) * radius + (Math.random() - 0.5) * posJitter;
             const y = Math.sin(angle) * radius + (Math.random() - 0.5) * 60;
@@ -323,6 +328,45 @@ const VisualizePage = (() => {
             ctx.fillText(entity, cx, cy - bubbleRadius - 8);
         });
 
+        // Draw self-identity group bubble — same treatment as social entity
+        // bubbles, so it's obvious at a glance whether self-identity memories
+        // are actually being saved and how many there are.
+        const selfMembers = visibleNodes.filter(n => n.is_self);
+        if (selfMembers.length > 0) {
+            let scx = 0, scy = 0;
+            selfMembers.forEach(m => { scx += m.x; scy += m.y; });
+            scx /= selfMembers.length;
+            scy /= selfMembers.length;
+            let sMaxDist = 0;
+            selfMembers.forEach(m => {
+                const d = Math.sqrt((m.x - scx) ** 2 + (m.y - scy) ** 2);
+                if (d > sMaxDist) sMaxDist = d;
+            });
+            const sBubbleRadius = sMaxDist + 40;
+            const sColor = COLORS.self.glow;
+
+            const sGradient = ctx.createRadialGradient(scx, scy, 0, scx, scy, sBubbleRadius);
+            sGradient.addColorStop(0, sColor + '0.08)');
+            sGradient.addColorStop(1, sColor + '0.01)');
+            ctx.beginPath();
+            ctx.arc(scx, scy, sBubbleRadius, 0, Math.PI * 2);
+            ctx.fillStyle = sGradient;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(scx, scy, sBubbleRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = sColor + '0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.font = 'bold 12px system-ui, sans-serif';
+            ctx.fillStyle = sColor + '0.8)';
+            ctx.textAlign = 'center';
+            ctx.fillText(`Self-Identity (${selfMembers.length})`, scx, scy - sBubbleRadius - 8);
+        }
+
         // Draw nodes
         visibleNodes.forEach(node => {
             const color = getNodeColor(node);
@@ -517,7 +561,9 @@ const VisualizePage = (() => {
     // ── Data loading ─────────────────────────────────────────────
     async function loadGraph() {
         try {
-            graphData = await App.api('/memory/graph');
+            const charQuery = window.getVizCharId && window.getVizCharId()
+                ? `?char_id=${encodeURIComponent(window.getVizCharId())}` : '';
+            graphData = await App.api('/memory/graph' + charQuery);
             nodesLayout = layoutNodes(graphData);
             if (!animFrame) draw();
         } catch (e) {

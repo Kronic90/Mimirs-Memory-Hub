@@ -430,8 +430,12 @@ class ProactiveAgent:
             tasks = self._load_tasks(project.id)
             # Priority order: urgent > high > medium > low
             priority_order = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+            # REVIEW is deliberately excluded — it means "done, awaiting user
+            # review," not "needs more work." Including it here caused
+            # finished tasks to be re-observed forever, every tick, with no
+            # token accounting to ever trip the budget cap.
             ready = [t for t in tasks if t.status in (
-                TaskStatus.APPROVED, TaskStatus.IN_PROGRESS, TaskStatus.REVIEW)]
+                TaskStatus.APPROVED, TaskStatus.IN_PROGRESS)]
             ready.sort(key=lambda t: (priority_order.get(t.priority, 9), t.created_at))
 
             if not ready:
@@ -650,9 +654,11 @@ class ProactiveAgent:
                     tool_name = ""  # Skip execution
                 else:
                     # Validate ALL path-like params are within project folder
-                    path_keys = ["path", "filepath", "src", "dest", "path_a", "path_b"]
+                    path_keys = ["path", "filepath", "src", "dest",
+                                "path_a", "path_b", "file_a", "file_b"]
                     path_blocked = False
                     if project.folder:
+                        import os as _os
                         from pathlib import Path as P
                         for pk in path_keys:
                             if pk in params:
@@ -660,7 +666,11 @@ class ProactiveAgent:
                                     # Resolve symlinks to prevent escape
                                     resolved = P(params[pk]).resolve(strict=False)
                                     proj_resolved = P(project.folder).resolve(strict=False)
-                                    if not str(resolved).startswith(str(proj_resolved)):
+                                    # Real boundary check — plain startswith()
+                                    # would treat a sibling dir like
+                                    # ".../myproj_SECRET" as inside ".../myproj".
+                                    if not (resolved == proj_resolved or
+                                            str(resolved).startswith(str(proj_resolved) + _os.sep)):
                                         result = {"error": f"Path '{params[pk]}' is outside project folder '{project.folder}'."}
                                         path_blocked = True
                                         break
@@ -714,7 +724,7 @@ class ProactiveAgent:
             "write_file": "write_file(path, content) — Write content to a file",
             "list_directory": "list_directory(path) — List files/folders in a directory",
             "search_files": "search_files(path, pattern) — Search for files by name pattern",
-            "grep_files": "grep_files(path, pattern) — Search file contents for a pattern",
+            "grep_files": "grep_files(path, query) — Search file contents for a pattern",
             "web_search": "web_search(query) — Search the web",
             "fetch_page": "fetch_page(url) — Fetch a web page's content",
             "http_request": "http_request(method, url, body, headers) — Make an HTTP request",
@@ -722,13 +732,13 @@ class ProactiveAgent:
             "run_code": "run_code(language, code) — Execute code (python, javascript)",
             "datetime": "datetime() — Get current date/time",
             "json_parse": "json_parse(text) — Parse JSON from text",
-            "diff_files": "diff_files(path_a, path_b) — Compare two files",
+            "diff_files": "diff_files(file_a, file_b) — Compare two files",
             "regex_replace": "regex_replace(path, pattern, replacement) — Regex replace in a file",
             "pdf_read": "pdf_read(path) — Read text from a PDF file",
-            "csv_query": "csv_query(path, query) — Query a CSV file",
+            "csv_query": "csv_query(path, filter_column, filter_value, sort_by, max_rows) — Query a CSV file",
             "screenshot": "screenshot() — Take a screenshot",
             "clipboard": "clipboard(action, text) — Read/write clipboard",
-            "open_app": "open_app(name) — Open an application",
+            "open_app": "open_app(target) — Open an application",
             "system_info": "system_info() — Get system information",
             "weather": "weather(location) — Get weather info",
         }

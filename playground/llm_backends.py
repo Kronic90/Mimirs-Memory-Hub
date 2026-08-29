@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import multiprocessing as mp
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator
 
@@ -373,13 +374,26 @@ def is_vl_model(model_path: str) -> bool:
 
 
 class LocalGGUFBackend(LLMBackend):
-    """Run GGUF models locally via llama-cpp-python."""
+    """Run GGUF models locally via llama-cpp-python.
+
+    Model loading and generation both run in a dedicated subprocess (see
+    `local_gguf_worker.py`) rather than in-process, because llama-cpp-python's
+    C extension holds the GIL for extended stretches during both — enough to
+    freeze the entire server (not just chat) for as long as loading/generation
+    takes, even when invoked via `asyncio.to_thread`. A separate OS process
+    can't starve this process's event loop no matter how long it holds its
+    own GIL.
+    """
     name = "local"
 
-    # Class-level cache: keep ONE model loaded at a time
-    _loaded_path: str = ""
-    _loaded_mmproj: str = ""
-    _llm = None
+    # Class-level: one worker process + queue pair, kept alive for the
+    # server's lifetime (mirrors the old "keep ONE model loaded" intent, now
+    # as "keep one worker process alive").
+    _worker: "mp.Process | None" = None
+    _in_q: "mp.Queue | None" = None
+    _out_q: "mp.Queue | None" = None
+    _req_counter: int = 0
+    _last_model_path: str = ""
 
     def __init__(self, n_gpu_layers: int = -1, n_ctx: int = 8192,
                  mmproj_path: str = ""):
@@ -387,29 +401,12 @@ class LocalGGUFBackend(LLMBackend):
         self.n_ctx = n_ctx
         self.mmproj_path = mmproj_path
 
-    def _ensure_model(self, model_path: str):
-        """Load model if not already loaded, or swap if path/mmproj changed."""
-        mmproj = self.mmproj_path or ""
-        if (LocalGGUFBackend._loaded_path == model_path
-                and LocalGGUFBackend._loaded_mmproj == mmproj
-                and LocalGGUFBackend._llm is not None):
-            return LocalGGUFBackend._llm
-
-        # Release old model
-        if LocalGGUFBackend._llm is not None:
-            try:
-                del LocalGGUFBackend._llm
-            except Exception:
-                pass
-            LocalGGUFBackend._llm = None
-            LocalGGUFBackend._loaded_path = ""
-            LocalGGUFBackend._loaded_mmproj = ""
-
-        import gc
-        gc.collect()
-
+    @classmethod
+    def _ensure_worker(cls) -> None:
+        if cls._worker is not None and cls._worker.is_alive():
+            return
         try:
-            from llama_cpp import Llama
+            import llama_cpp  # noqa: F401 — surfaced as a clear error below if missing
         except ImportError:
             raise RuntimeError(
                 "llama-cpp-python is not installed.\n"
@@ -417,24 +414,17 @@ class LocalGGUFBackend(LLMBackend):
                 "  pip install llama-cpp-python\n"
                 "Or switch to Ollama (free, no install needed) in the backend selector."
             )
+        from . import local_gguf_worker
 
-        kwargs: dict = {
-            "model_path": model_path,
-            "n_gpu_layers": self.n_gpu_layers,
-            "n_ctx": self.n_ctx,
-            "verbose": False,
-        }
-        if mmproj:
-            import pathlib
-            if pathlib.Path(mmproj).is_file():
-                kwargs["clip_model_path"] = mmproj
-                # Let llama-cpp-python auto-detect the right chat format
-                # based on the model's metadata (chatml, llama-3, etc.)
-
-        LocalGGUFBackend._llm = Llama(**kwargs)
-        LocalGGUFBackend._loaded_path = model_path
-        LocalGGUFBackend._loaded_mmproj = mmproj
-        return LocalGGUFBackend._llm
+        ctx = mp.get_context("spawn")
+        cls._in_q = ctx.Queue()
+        cls._out_q = ctx.Queue()
+        cls._worker = ctx.Process(
+            target=local_gguf_worker.run_worker,
+            args=(cls._in_q, cls._out_q),
+            daemon=True,
+        )
+        cls._worker.start()
 
     async def generate(
         self,
@@ -452,81 +442,60 @@ class LocalGGUFBackend(LLMBackend):
         if not pathlib.Path(model).is_file():
             raise FileNotFoundError(f"Model file not found: {model}")
 
-        # Load model in thread to avoid blocking event loop
-        llm = await asyncio.to_thread(self._ensure_model, model)
+        # Spawning the worker process (first call only) does real OS process
+        # creation work — keep it off the event loop like everything else.
+        await asyncio.to_thread(self._ensure_worker)
+        LocalGGUFBackend._last_model_path = model
+        LocalGGUFBackend._req_counter += 1
+        req_id = LocalGGUFBackend._req_counter
 
-        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [
-            dict(m) for m in messages
-        ]
-        # Attach images for LLaVA / VL models (requires mmproj)
-        if images and self.mmproj_path:
-            for i in range(len(all_messages) - 1, -1, -1):
-                if all_messages[i]["role"] == "user":
-                    text = all_messages[i]["content"]
-                    all_messages[i]["content"] = (
-                        [{"type": "text", "text": text}]
-                        + [{"type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
-                           for img in images]
-                    )
-                    break
+        LocalGGUFBackend._in_q.put({
+            "id": req_id,
+            "model_path": model,
+            "mmproj_path": self.mmproj_path,
+            "n_gpu_layers": self.n_gpu_layers,
+            "n_ctx": self.n_ctx,
+            "messages": messages,
+            "system_prompt": system_prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "images": images,
+        })
 
-        # Use a queue to bridge sync generator → async generator
-        import queue
-        q: queue.Queue = queue.Queue()
-        _DONE = object()
-
-        def _produce():
-            _in_reasoning = False
-            try:
-                for chunk in llm.create_chat_completion(
-                    messages=all_messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=True,
-                ):
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    token = delta.get("content", "")
-
-                    # Some llama-cpp builds surface reasoning in a separate field
-                    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
-                    if reasoning:
-                        if not _in_reasoning:
-                            q.put("<think>")
-                            _in_reasoning = True
-                        q.put(reasoning)
-                        continue
-
-                    if token:
-                        if _in_reasoning:
-                            q.put("</think>\n")
-                            _in_reasoning = False
-                        q.put(token)
-            except Exception as e:
-                q.put(e)
-            finally:
-                if _in_reasoning:
-                    q.put("</think>\n")
-                q.put(_DONE)
-
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, _produce)
-
+        in_reasoning = False
         while True:
-            item = await asyncio.to_thread(q.get)
-            if item is _DONE:
+            msg = await asyncio.to_thread(LocalGGUFBackend._out_q.get)
+            if msg["id"] != req_id:
+                continue  # stale message from a prior/cancelled request
+            if "error" in msg:
+                if in_reasoning:
+                    yield "</think>\n"
+                raise RuntimeError(msg["error"])
+            if msg.get("done"):
+                if in_reasoning:
+                    yield "</think>\n"
                 break
-            if isinstance(item, Exception):
-                raise item
-            yield item
+            if "reasoning" in msg:
+                if not in_reasoning:
+                    yield "<think>"
+                    in_reasoning = True
+                yield msg["reasoning"]
+                continue
+            if "token" in msg:
+                if in_reasoning:
+                    yield "</think>\n"
+                    in_reasoning = False
+                yield msg["token"]
 
     async def list_models(self) -> list[dict]:
-        """Return currently loaded model if any."""
-        if LocalGGUFBackend._loaded_path:
+        """Report the most recently requested model (the worker's actual
+        loaded-model state lives in its own process and isn't directly
+        introspectable from here)."""
+        if LocalGGUFBackend._last_model_path:
             import pathlib
-            p = pathlib.Path(LocalGGUFBackend._loaded_path)
+            p = pathlib.Path(LocalGGUFBackend._last_model_path)
             return [{
-                "id": LocalGGUFBackend._loaded_path,
+                "id": LocalGGUFBackend._last_model_path,
                 "name": p.stem,
                 "size": p.stat().st_size if p.exists() else 0,
             }]
@@ -613,9 +582,25 @@ class TransformersBackend(LLMBackend):
 
         model_obj, tokenizer = await asyncio.to_thread(self._ensure_model, model)
 
-        all_messages = ([{"role": "system", "content": system_prompt}] if system_prompt else []) + [
-            dict(m) for m in messages
-        ]
+        def _build_messages(merge_system: bool) -> list[dict]:
+            msgs = [dict(m) for m in messages]
+            if not system_prompt:
+                return msgs
+            if not merge_system:
+                return [{"role": "system", "content": system_prompt}] + msgs
+            # Compatibility mode: some chat templates (e.g. Gemma) reject a
+            # separate system-role message outright — fold it into the first
+            # user turn instead.
+            if msgs and msgs[0].get("role") == "user":
+                merged = dict(msgs[0])
+                merged["content"] = f"{system_prompt}\n\n{merged['content']}"
+                return [merged] + msgs[1:]
+            return [{"role": "user", "content": system_prompt}] + msgs
+
+        def _apply_template(merge_system: bool) -> str:
+            return tokenizer.apply_chat_template(
+                _build_messages(merge_system), tokenize=False, add_generation_prompt=True
+            )
 
         import queue
         q: queue.Queue = queue.Queue()
@@ -629,9 +614,15 @@ class TransformersBackend(LLMBackend):
                 # like <|channel|>, <think>, etc. that GPT-OSS models emit.
                 streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=False)
 
-                input_text = tokenizer.apply_chat_template(
-                    all_messages, tokenize=False, add_generation_prompt=True
-                )
+                try:
+                    input_text = _apply_template(merge_system=False)
+                except Exception as e:
+                    msg = str(e).lower()
+                    if not any(h in msg for h in ("alternate", "system role", "system message")):
+                        raise
+                    # This model's chat template doesn't support a separate
+                    # system role — retry with it merged into the first user turn.
+                    input_text = _apply_template(merge_system=True)
                 inputs = tokenizer(input_text, return_tensors="pt").to(model_obj.device)
 
                 import threading
@@ -708,11 +699,10 @@ def create_backend(name: str, cfg: dict) -> LLMBackend:
                 mmproj_path=new_mmproj,
             )
         elif _local_backend.mmproj_path != new_mmproj:
-            # mmproj changed — update and force model reload
+            # mmproj changed — the worker compares (model_path, mmproj_path)
+            # per request and reloads automatically when either differs, so
+            # just updating the instance attribute here is enough.
             _local_backend.mmproj_path = new_mmproj
-            LocalGGUFBackend._llm = None
-            LocalGGUFBackend._loaded_path = ""
-            LocalGGUFBackend._loaded_mmproj = ""
         return _local_backend
     elif name == "ollama":
         return OllamaBackend(base_url=backends_cfg.get("ollama", {}).get("base_url", "http://localhost:11434"))

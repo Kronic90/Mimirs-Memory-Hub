@@ -254,12 +254,16 @@ class MemoryManager:
 
     def remember(self, content: str, emotion: str = "neutral",
                  importance: int = 5, source: str = "playground",
-                 why_saved: str = "") -> dict:
+                 why_saved: str = "",
+                 conversation_snapshot: list[dict] | None = None,
+                 category: str = "") -> dict:
         emotion = normalize_emotion(emotion)
         mem = self._mimir.remember(
             content=content, emotion=emotion,
             importance=importance, source=source,
             why_saved=why_saved,
+            conversation_snapshot=conversation_snapshot,
+            category=category,
         )
         self._invalidate_stats_cache()
         return mem.to_dict()
@@ -528,7 +532,8 @@ class MemoryManager:
 
     def get_context_for_preset(self, preset: dict,
                                conversation_context: str = "",
-                               entity: str = "") -> str:
+                               entity: str = "",
+                               interaction_gap_seconds: float | None = None) -> str:
         """Build memory context tailored to the active preset type."""
         preset_label = preset.get("label", "").lower()
 
@@ -538,6 +543,7 @@ class MemoryManager:
         context = self._mimir.get_context_block(
             current_entity=entity,
             conversation_context=conversation_context,
+            interaction_gap_seconds=interaction_gap_seconds,
         )
 
         extra_parts: list[str] = []
@@ -626,11 +632,35 @@ class MemoryManager:
         memories = self._mimir.recall(context, limit=limit)
         return [m.to_dict() for m in memories]
 
+    def request_deep_remember(self, query: str) -> bool:
+        """Resolve a <deep_remember query="..."/> tag against snapshot-bearing
+        memories; on a match, the full snapshot surfaces in the next
+        get_context_block() call. Returns False if nothing matched."""
+        return self._mimir.request_deep_remember(query)
+
+    def trigger_dream(self) -> bool:
+        """Resolve a <dream/> tag — runs the consolidation cycle (Huginn +
+        Völva + sleep_reset). Rate-limited; returns False if on cooldown."""
+        return self._mimir.trigger_dream()
+
+    def trigger_self_reflect(self) -> str | None:
+        """Resolve a <self_reflect/> tag — genuine LLM self-analysis, stored
+        as a memory. Rate-limited; returns None if on cooldown or no LLM
+        callback is configured."""
+        return self._mimir.trigger_self_reflect()
+
+    def record_interaction(self) -> float | None:
+        """Call once per real user turn. Returns seconds since the previous
+        recorded interaction (None on the very first interaction ever)."""
+        return self._mimir.record_interaction()
+
     def get_context_block(self, entity: str = "",
-                          conversation_context: str = "") -> str:
+                          conversation_context: str = "",
+                          interaction_gap_seconds: float | None = None) -> str:
         return self._mimir.get_context_block(
             current_entity=entity,
             conversation_context=conversation_context,
+            interaction_gap_seconds=interaction_gap_seconds,
         )
 
     # ── lifecycle ─────────────────────────────────────────────────────
@@ -705,10 +735,12 @@ class MemoryManager:
 
     def add_social(self, entity: str, content: str,
                    emotion: str = "neutral", importance: int = 5,
-                   why_saved: str = "") -> dict:
+                   why_saved: str = "",
+                   conversation_snapshot: list[dict] | None = None) -> dict:
         mem = self._mimir.add_social_impression(
             entity=entity, content=content, emotion=emotion,
             importance=importance, why_saved=why_saved,
+            conversation_snapshot=conversation_snapshot,
         )
         return mem.to_dict()
 
@@ -744,11 +776,42 @@ class MemoryManager:
         return {"task_id": t.task_id, "description": t.description,
                 "priority": t.priority, "status": t.status}
 
+    # Matches mimir_modular.constants._DEDUP_THRESHOLD (kept local rather than
+    # imported since Mimir may be backed by the vividmimir package, the local
+    # mimir_modular dev package, or the legacy Mimir.py monolith).
+    _TASK_DEDUP_THRESHOLD = 0.55
+    _TASK_DEDUP_STOP = {"the", "a", "an", "to", "of", "and", "in", "on",
+                        "for", "with", "is", "are", "was", "were"}
+
+    def has_similar_active_task(self, description: str,
+                                 project: str = "") -> dict | None:
+        """Return an existing active task dict if one closely matches the
+        given description in the same project, else None. Used to avoid
+        spawning duplicate tasks when the model repeats itself across turns."""
+        proj = project or self._mimir._active_project
+        new_words = set(description.lower().split()) - self._TASK_DEDUP_STOP
+        if not new_words:
+            return None
+        for t in self._mimir.get_active_tasks():
+            if t.project != proj:
+                continue
+            existing_words = set(t.description.lower().split()) - self._TASK_DEDUP_STOP
+            if not existing_words:
+                continue
+            overlap = len(new_words & existing_words) / len(new_words | existing_words)
+            if overlap >= self._TASK_DEDUP_THRESHOLD:
+                return {"task_id": t.task_id, "description": t.description,
+                        "priority": t.priority, "status": t.status}
+        return None
+
     def complete_task(self, task_id: str, outcome: str = "") -> bool:
         return self._mimir.complete_task(task_id, outcome)
 
     def fail_task(self, task_id: str, reason: str = "") -> bool:
         return self._mimir.fail_task(task_id, reason)
+
+    def delete_task(self, task_id: str) -> bool:
+        return self._mimir.delete_task(task_id)
 
     def get_active_tasks(self) -> list[dict]:
         tasks = self._mimir.get_active_tasks()
@@ -1216,6 +1279,7 @@ class MemoryManager:
                 "is_flashbulb": m._is_flashbulb,
                 "is_anchor": m._anchor,
                 "is_cherished": getattr(m, "_cherished", False),
+                "is_self": getattr(m, "_category", "") == "self",
                 "entity": m.entity or "",
                 "stability": round(m._stability, 1),
                 "access_count": m._access_count,
@@ -1315,6 +1379,11 @@ class MemoryManager:
         )
         if timestamp:
             mem.timestamp = timestamp
+        # Imports are infrequent/bulk, unlike live remember() calls, so it's
+        # worth eagerly rebuilding Yggdrasil here rather than waiting for the
+        # next auto-consolidation interval — otherwise an imported memory can
+        # sit as a disconnected node with no graph edges for a long time.
+        self._mimir._build_yggdrasil()
         self._invalidate_stats_cache()
         return mem.to_dict()
 
@@ -1359,6 +1428,10 @@ class MemoryManager:
             imported += 1
 
         if imported > 0:
+            # One rebuild after the whole batch, not per-item — a batch import
+            # can add dozens of memories at once, well under the auto-rebuild
+            # interval, so without this they'd sit disconnected in the graph.
+            self._mimir._build_yggdrasil()
             self._invalidate_stats_cache()
             self.save()
         return {"imported": imported, "skipped": skipped, "total": len(memories)}

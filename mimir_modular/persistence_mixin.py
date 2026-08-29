@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from pathlib import Path
 
 from .constants import (
@@ -182,7 +183,8 @@ class PersistenceMixin:
             self._data_dir / "meta.json",
             {"mood": list(self._mood),
              "session_count": self._session_count,
-             "active_project": self._active_project})
+             "active_project": self._active_project,
+             "last_interaction_at": self._last_interaction_at})
 
         self._write_json(
             self._data_dir / "tasks.json",
@@ -327,6 +329,7 @@ class PersistenceMixin:
                 self._mood = tuple(mood)
                 self._session_count = data.get("session_count", 0)
                 self._active_project = data.get("active_project", "")
+                self._last_interaction_at = data.get("last_interaction_at", "")
 
         tpath = self._data_dir / "tasks.json"
         if tpath.exists():
@@ -413,3 +416,22 @@ class PersistenceMixin:
                     return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError, Exception):
             return None
+
+    # ──────────────────────────────────────────────────────────────────
+    #  Deep Recall — conversation snapshots (lazily loaded, never touched
+    #  by normal save/load so a large conversation history never slows
+    #  down startup or ordinary memory recall)
+    # ──────────────────────────────────────────────────────────────────
+
+    def _save_snapshot(self, conversation: list[dict]) -> str:
+        """Persist a conversation snapshot; returns its id for Memory._snapshot_id."""
+        snap_id = uuid.uuid4().hex[:16]
+        self._write_json(
+            self._data_dir / "snapshots" / f"{snap_id}.json", conversation)
+        return snap_id
+
+    def _load_snapshot(self, snapshot_id: str) -> list[dict] | None:
+        """Load a conversation snapshot by id, or None if missing/unreadable."""
+        if not snapshot_id:
+            return None
+        return self._read_json(self._data_dir / "snapshots" / f"{snapshot_id}.json")

@@ -370,6 +370,31 @@ class RecallMixin:
         return [self._reflections[idx] for _, idx in scored[:k]]
 
     # ──────────────────────────────────────────────────────────────────
+    #  Deep Recall — resolve a model-requested conversation snapshot
+    # ──────────────────────────────────────────────────────────────────
+
+    def request_deep_remember(self, query: str) -> bool:
+        """Resolve a <deep_remember query="..."/> request against memories
+        that carry a conversation snapshot. On a match, queues the snapshot
+        to be surfaced prominently in the next get_context_block() call.
+        Returns False (and does nothing) if no snapshot-bearing memory
+        matches — e.g. the memory predates this feature, or nothing matched.
+        """
+        candidates = self.recall(query, limit=10)
+        target = next((m for m in candidates if m._snapshot_id), None)
+        if target is None:
+            return False
+        snapshot = self._load_snapshot(target._snapshot_id)
+        if not snapshot:
+            return False
+        # Capped to one — a fresh request replaces any not-yet-surfaced one,
+        # keeping the next prompt's Deep Recall section bounded.
+        self._pending_deep_recalls = [{
+            "query": query, "memory_gist": target.gist, "snapshot": snapshot,
+        }]
+        return True
+
+    # ──────────────────────────────────────────────────────────────────
     #  Core: recall_unified (cross-type retrieval)
     # ──────────────────────────────────────────────────────────────────
 

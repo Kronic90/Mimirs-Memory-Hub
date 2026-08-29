@@ -69,6 +69,14 @@ class TasksMixin:
         """Return all currently active tasks."""
         return [t for t in self._project_tasks if t.status == "active"]
 
+    def delete_task(self, task_id: str) -> bool:
+        """Permanently remove a task, regardless of status."""
+        for i, t in enumerate(self._project_tasks):
+            if t.task_id == task_id:
+                del self._project_tasks[i]
+                return True
+        return False
+
     def log_action(self, task_id: str, action: str,
                    result: str = "", error: str = "",
                    fix: str = "") -> ActionRecord:

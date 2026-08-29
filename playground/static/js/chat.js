@@ -224,23 +224,59 @@ const Chat = (() => {
     const _SHOWIMAGE_RE  = /<showimage\s+hash=["'][^"']+["'](?:\s*\/)?>/gi;
     const _TASK_RE       = /<task(?:[^>]*)>[\s\S]*?<\/task>/gi;
     const _SOLUTION_RE   = /<solution(?:[^>]*)>[\s\S]*?<\/solution>/gi;
-    // Partially-streaming open tags not yet closed
+    const _SOCIAL_RE     = /<social(?:[^>]*)>[\s\S]*?<\/social>/gi;
+    // Cherish and deep_remember are always self-closing (or an empty pair) —
+    // no wrapped content, so there's no "unclosed tag eats the rest of the
+    // message" risk for either.
+    const _CHERISH_RE    = /<cherish\s+(?:[^>]*?)(?:\/>|>\s*<\/cherish>)/gi;
+    const _DEEP_REMEMBER_RE = /<deep_remember\s+(?:[^>]*?)(?:\/>|>\s*<\/deep_remember>)/gi;
+    // dream/self_reflect take no attributes, so no attr-capturing group needed.
+    const _DREAM_RE = /<dream\s*\/>/gi;
+    const _SELF_REFLECT_RE = /<self_reflect\s*\/>/gi;
+    // Partially-streaming open tags not yet closed — everything after the
+    // open tag is presumed to still be the tag's own content-in-progress,
+    // so it's safe to hide while more tokens are still arriving.
     const _REMEMBER_OPEN_RE   = /<remember(?:[^>]*)>[\s\S]*/i;
     const _REMIND_OPEN_RE     = /<remind(?:[^>]*)>[\s\S]*/i;
     const _TASK_OPEN_RE       = /<task(?:[^>]*)>[\s\S]*/i;
     const _SOLUTION_OPEN_RE   = /<solution(?:[^>]*)>[\s\S]*/i;
+    const _SOCIAL_OPEN_RE     = /<social(?:[^>]*)>[\s\S]*/i;
 
-    function stripSpecialTags(text) {
-        return text
+    // Once generation is done, a still-open tag is just a model formatting
+    // slip (forgot the closing tag), not "more content still coming" — strip
+    // only the tag itself so real reply text after it isn't lost too.
+    const _REMEMBER_OPEN_TAG_ONLY_RE = /<remember(?:[^>]*)>/gi;
+    const _REMIND_OPEN_TAG_ONLY_RE   = /<remind(?:[^>]*)>/gi;
+    const _TASK_OPEN_TAG_ONLY_RE     = /<task(?:[^>]*)>/gi;
+    const _SOLUTION_OPEN_TAG_ONLY_RE = /<solution(?:[^>]*)>/gi;
+    const _SOCIAL_OPEN_TAG_ONLY_RE   = /<social(?:[^>]*)>/gi;
+
+    function stripSpecialTags(text, isFinal = false) {
+        let out = text
             .replace(_REMEMBER_RE, '')
             .replace(_REMIND_RE, '')
             .replace(_SHOWIMAGE_RE, '')
             .replace(_TASK_RE, '')
             .replace(_SOLUTION_RE, '')
-            .replace(_REMEMBER_OPEN_RE, '')
-            .replace(_REMIND_OPEN_RE, '')
-            .replace(_TASK_OPEN_RE, '')
-            .replace(_SOLUTION_OPEN_RE, '')
+            .replace(_SOCIAL_RE, '')
+            .replace(_CHERISH_RE, '')
+            .replace(_DEEP_REMEMBER_RE, '')
+            .replace(_DREAM_RE, '')
+            .replace(_SELF_REFLECT_RE, '');
+        out = isFinal
+            ? out
+                .replace(_REMEMBER_OPEN_TAG_ONLY_RE, '')
+                .replace(_REMIND_OPEN_TAG_ONLY_RE, '')
+                .replace(_TASK_OPEN_TAG_ONLY_RE, '')
+                .replace(_SOLUTION_OPEN_TAG_ONLY_RE, '')
+                .replace(_SOCIAL_OPEN_TAG_ONLY_RE, '')
+            : out
+                .replace(_REMEMBER_OPEN_RE, '')
+                .replace(_REMIND_OPEN_RE, '')
+                .replace(_TASK_OPEN_RE, '')
+                .replace(_SOLUTION_OPEN_RE, '')
+                .replace(_SOCIAL_OPEN_RE, '');
+        return out
             // Clean up any stray GPT-OSS channel markers
             .replace(/<\|channel\|>\s*(?:analysis|final)\s*<\|message\|>/gi, '')
             .replace(/<\|end\|>/gi, '')
@@ -584,7 +620,7 @@ const Chat = (() => {
                 document.getElementById('btn-send').disabled = false;
                 // Final synchronous render so no tokens are lost
                 if (currentAssistantEl && currentRaw) {
-                    const raw = stripSpecialTags(currentRaw);
+                    const raw = stripSpecialTags(currentRaw, true);
                     const split = splitThinking(raw);
                     if (split.thinking !== null) {
                         let thinkEl = currentAssistantEl._thinkEl;
@@ -1214,5 +1250,5 @@ const Chat = (() => {
         updateMicVisibility();
     }
 
-    return { init, handleMessage, createMessageEl, newChat };
+    return { init, handleMessage, createMessageEl, newChat, splitThinking, buildThinkBlock };
 })();

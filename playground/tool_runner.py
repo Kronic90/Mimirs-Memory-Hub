@@ -63,7 +63,9 @@ def _check_path_allowed(filepath: str, permissions: dict) -> str | None:
     resolved = str(Path(filepath).resolve())
     for ap in allowed:
         ap_resolved = str(Path(ap).resolve())
-        if resolved.startswith(ap_resolved):
+        # Real boundary check — a plain startswith() would treat a sibling
+        # directory like ".../myproj_SECRET" as inside ".../myproj".
+        if resolved == ap_resolved or resolved.startswith(ap_resolved + os.sep):
             return None
     return f"Path not in allowed directories. Allowed: {allowed}"
 
@@ -528,6 +530,17 @@ def _tool_shell_exec(params: dict, permissions: dict) -> dict:
     for bp in blocked_prefixes:
         if cmd_lower.startswith(bp):
             return {"error": f"Blocked: dangerous command pattern '{bp}'"}
+    allowed_commands = permissions.get("allowed_commands")
+    if allowed_commands:
+        first_token = command.strip().split()[0] if command.strip() else ""
+        executable = Path(first_token).name.lower()
+        # Strip a common extension (.exe, .py, etc.) so "python.exe" still
+        # matches an allowed_commands entry of "python".
+        executable_stem = Path(executable).stem
+        allowed_lower = {a.lower() for a in allowed_commands}
+        if executable not in allowed_lower and executable_stem not in allowed_lower:
+            return {"error": f"Command '{first_token}' is not in the allowed commands list: "
+                              f"{sorted(allowed_commands)}"}
     cwd = params.get("cwd")
     if cwd:
         err = _check_path_allowed(cwd, permissions)

@@ -127,32 +127,44 @@ async def get_repo_files(repo_id: str) -> list[dict]:
 
 async def download_model(repo_id: str, filename: str,
                          dest_dir: str) -> AsyncGenerator[dict, None]:
-    """Download a GGUF file with progress updates."""
+    """Download a GGUF file with progress updates.
+
+    Writes to a .part file and only renames to the final filename on
+    success, so a failed/interrupted download never leaves a truncated
+    file sitting at the "real" path where it would look complete to a
+    later existence check (and a Retry would then wrongly skip it).
+    """
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
     out_path = dest / filename
+    part_path = out_path.with_name(out_path.name + ".part")
 
     url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=15.0),
-                                 follow_redirects=True) as client:
-        async with client.stream("GET", url) as resp:
-            resp.raise_for_status()
-            total = int(resp.headers.get("content-length", 0))
-            downloaded = 0
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=15.0),
+                                     follow_redirects=True) as client:
+            async with client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                total = int(resp.headers.get("content-length", 0))
+                downloaded = 0
 
-            with open(out_path, "wb") as f:
-                async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    yield {
-                        "status": "downloading",
-                        "filename": filename,
-                        "downloaded": downloaded,
-                        "total": total,
-                        "percent": round(downloaded / total * 100, 1) if total else 0,
-                    }
+                with open(part_path, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        yield {
+                            "status": "downloading",
+                            "filename": filename,
+                            "downloaded": downloaded,
+                            "total": total,
+                            "percent": round(downloaded / total * 100, 1) if total else 0,
+                        }
+    except Exception:
+        part_path.unlink(missing_ok=True)
+        raise
 
+    os.replace(part_path, out_path)
     yield {"status": "complete", "filename": filename, "path": str(out_path)}
 
 

@@ -17,7 +17,7 @@ from .constants import (
 )
 from .helpers import (
     _emotion_to_vector, _closest_emotion,
-    _resonance_words, _extract_dates,
+    _resonance_words, _extract_dates, _humanize_age,
 )
 from .models import (
     Memory, Lesson, Attempt, Reminder, ShortTermFact,
@@ -94,6 +94,14 @@ class Mimir(
         self._facts: list[ShortTermFact] = []
         self._mood: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._priming_buffer: dict[str, float] = {}
+        # Deep Recall — resolved snapshot(s) waiting to surface on the next
+        # get_context_block() call; in-memory only, not persisted.
+        self._pending_deep_recalls: list[dict] = []
+        # Model-triggered dream/reflect cooldown tracking — in-memory only.
+        self._last_dream_at: datetime | None = None
+        self._last_reflect_at: datetime | None = None
+        # Time awareness — persisted (see persistence_mixin.py).
+        self._last_interaction_at: str = ""
 
         # ── Task / Project branch ─────────────────────────────────────
         self._active_project: str = ""
@@ -147,6 +155,7 @@ class Mimir(
 
         # ── Embedding engine (VividEmbed) ─────────────────────────────
         self._embed = None
+        self._embed_errors = 0
         if _VividEmbed is not None:
             try:
                 embed_dir = str(self._data_dir / "embed")
@@ -215,6 +224,37 @@ class Mimir(
 
         self._build_yggdrasil()
         self._memories_since_consolidation = 0
+
+    DREAM_COOLDOWN_SECONDS = 1800  # matches the existing automatic wake-up threshold
+
+    def trigger_dream(self) -> bool:
+        """Model-requested consolidation cycle (<dream/> tag). Rate-limited
+        so repeated requests in one session can't repeatedly re-scan the
+        whole memory store. Returns False (does nothing) if still cooling
+        down since the last dream, automatic or model-triggered."""
+        now = datetime.now()
+        if (self._last_dream_at and
+                (now - self._last_dream_at).total_seconds() < self.DREAM_COOLDOWN_SECONDS):
+            return False
+        self._last_dream_at = now
+        # Nominal short gap, not a real multi-hour sleep — this fires
+        # mid-conversation, not after a genuine absence (that path already
+        # exists via _check_startup_wake -> sleep_reset(hours=real_gap)).
+        self.sleep_reset(hours=0.25)
+        return True
+
+    def record_interaction(self) -> float | None:
+        """Call once per real user turn. Returns seconds since the previous
+        recorded interaction (None if this is the very first one ever)."""
+        now = datetime.now()
+        gap = None
+        if self._last_interaction_at:
+            try:
+                gap = (now - datetime.fromisoformat(self._last_interaction_at)).total_seconds()
+            except ValueError:
+                pass
+        self._last_interaction_at = now.isoformat()
+        return gap
 
     # ──────────────────────────────────────────────────────────────────
     #  Emotional pipeline — full NeuroChemistry integration
@@ -372,17 +412,67 @@ class Mimir(
     #  Context block
     # ──────────────────────────────────────────────────────────────────
 
+    def _memory_age_str(self, m: Memory) -> str:
+        try:
+            age = (datetime.now() - datetime.fromisoformat(m.timestamp)).total_seconds()
+            return _humanize_age(max(age, 0.0))
+        except (ValueError, TypeError):
+            return "unknown time"
+
+    def get_self_identity(self, limit: int = 8) -> list[Memory]:
+        """Top self-identity memories by vividness — always shown, not
+        filtered by conversational relevance, since identity should be
+        persistent context rather than something that has to be on-topic
+        to surface."""
+        self_mems = [m for m in self._reflections if m._category == "self"]
+        self_mems.sort(key=lambda m: m.mood_adjusted_vividness(self._mood), reverse=True)
+        return self_mems[:limit]
+
     def get_context_block(self, current_entity: str = "",
-                          conversation_context: str = "") -> str:
+                          conversation_context: str = "",
+                          interaction_gap_seconds: float | None = None) -> str:
         """Build a full memory context block for injection into a prompt."""
         lines: list[str] = []
+
+        lines.append(f"(Right now it's {datetime.now().strftime('%A, %B %d, %Y, %H:%M')})")
+        if interaction_gap_seconds is not None and interaction_gap_seconds >= 1800:
+            gap_phrase = _humanize_age(interaction_gap_seconds).removesuffix(" ago")
+            lines.append(f"(It's been {gap_phrase} since we last spoke.)")
 
         label = self.mood_label
         if label != "neutral":
             lines.append(f"(Feeling: {label})")
+        lines.append("")
+
+        self_identity = self.get_self_identity()
+        if self_identity:
+            lines.append("=== WHO I AM ===")
+            for m in self_identity:
+                lines.append(f"— {m.gist} ({m.emotion}, {self._memory_age_str(m)})")
             lines.append("")
 
-        active = self.get_active_self(context=conversation_context)
+        if self._pending_deep_recalls:
+            for recall_entry in self._pending_deep_recalls:
+                lines.append("=== DEEP RECALL ===")
+                lines.append(
+                    f'(You asked to recall more about: '
+                    f'"{recall_entry["query"]}" — {recall_entry["memory_gist"]})')
+                transcript_lines = []
+                for turn in recall_entry["snapshot"]:
+                    role = turn.get("role", "user")
+                    speaker = "You" if role == "assistant" else "User"
+                    transcript_lines.append(f'{speaker}: {turn.get("content", "")}')
+                transcript = "\n".join(transcript_lines)
+                if len(transcript) > 2000:
+                    transcript = "…" + transcript[-2000:]
+                lines.append(transcript)
+                lines.append("")
+            self._pending_deep_recalls = []
+
+        # Self-identity memories already surfaced above in WHO I AM — exclude
+        # them here so nothing shows up twice.
+        active = [m for m in self.get_active_self(context=conversation_context)
+                  if m._category != "self"]
         fg_count = max(3, len(active) // 2)
         foreground = active[:fg_count]
         background = active[fg_count:]
@@ -391,7 +481,7 @@ class Mimir(
             lines.append("=== THINGS ON MY MIND ===")
             for m in foreground:
                 lines.append(
-                    f"— {m.gist} ({m.emotion})")
+                    f"— {m.gist} ({m.emotion}, {self._memory_age_str(m)})")
             lines.append("")
 
         if background:
@@ -401,7 +491,7 @@ class Mimir(
                 if len(content) > 80:
                     cut = content[:80].rfind(" ")
                     content = content[:max(cut, 30)] + "…"
-                lines.append(f"· {content} [{m.emotion}]")
+                lines.append(f"· {content} [{m.emotion}, {self._memory_age_str(m)}]")
             lines.append("")
 
         if current_entity:
@@ -492,7 +582,8 @@ class Mimir(
                 clarity = m.visual_clarity
                 tag = "[vivid]" if clarity == "vivid" else "[fading]"
                 lines.append(
-                    f"— {m._visual_description} {tag} ({m.emotion})")
+                    f"— {m._visual_description} {tag} ({m.emotion}) "
+                    f"[hash={m._visual_hash}]")
             lines.append("")
 
         drifted = [m for m in self._reflections if m.has_drifted]
@@ -1112,6 +1203,8 @@ class Mimir(
                 1 for m in self._reflections if m._anchor),
             "cherished_count": sum(
                 1 for m in self._reflections if m._cherished),
+            "self_count": sum(
+                1 for m in self._reflections if m._category == "self"),
             "embed_synced": sum(
                 1 for m in self._reflections if m._embed_uid),
             "social_entities": list(self._social.keys()),
@@ -1128,6 +1221,7 @@ class Mimir(
             "mood": self.mood_label,
             "chemistry_active": self._chemistry.enabled,
             "embed_active": self._embed is not None,
+            "embed_errors": self._embed_errors,
             "dampening_active": self.is_dampened,
             "audit_events": len(self._audit.get_recent(100)),
             "dated_memories": sum(

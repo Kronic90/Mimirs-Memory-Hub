@@ -27,6 +27,7 @@ class MCPServer:
 
     def __init__(self, name: str, config: dict):
         self.name = name
+        self.config = dict(config)  # kept to detect config changes on reload
         self.transport = config.get("transport", "stdio")
         self.command = config.get("command", "")          # stdio
         self.args = config.get("args", [])                # stdio
@@ -140,6 +141,9 @@ class MCPServer:
     async def _call_stdio(self, tool_name: str, arguments: dict) -> dict:
         """Call a tool via stdio JSON-RPC."""
         if not self._process or self._process.poll() is not None:
+            # The child process died — reflect that in .connected instead of
+            # reporting "connected" forever until someone manually reconnects.
+            self._connected = False
             return {"error": "MCP server process not running"}
 
         resp = await self._send_jsonrpc("tools/call", {
@@ -324,6 +328,14 @@ class MCPManager:
                     await self._servers[name].disconnect()
                     del self._servers[name]
                 continue
+            # If a server with this name already exists but its config
+            # changed (command/args/env for stdio, url/headers for sse),
+            # drop the stale connection so the block below reconnects it
+            # fresh — otherwise an edited server just keeps running with
+            # its old settings until an explicit "Reconnect" is clicked.
+            if name in self._servers and self._servers[name].config != cfg:
+                await self._servers[name].disconnect()
+                del self._servers[name]
             if name not in self._servers:
                 server = MCPServer(name, cfg)
                 ok = await server.connect()

@@ -37,8 +37,21 @@ class WriteMixin:
 
     def remember(self, content: str, emotion: str = "neutral",
                  importance: int = 5, source: str = "reflection",
-                 why_saved: str = "") -> Memory:
-        """Store an episodic memory."""
+                 why_saved: str = "",
+                 conversation_snapshot: list[dict] | None = None,
+                 category: str = "") -> Memory:
+        """Store an episodic memory.
+
+        *conversation_snapshot*, if given, is the surrounding conversation at
+        the moment this memory was formed — persisted separately (never
+        loaded during normal recall) and made available later via Deep
+        Recall if the model explicitly asks to revisit this memory in full.
+
+        *category*, if given, marks who this memory is about — currently
+        only "self" is meaningful (the model's own personality/identity,
+        surfaced in its own dedicated context section rather than competing
+        in the general memory pool).
+        """
         # Chemistry modulation
         mods = self._chemistry.get_modifiers()
         effective_importance = importance
@@ -84,11 +97,16 @@ class WriteMixin:
                 merged._cherished = existing._cherished
                 merged._mentioned_dates = (
                     existing._mentioned_dates or _extract_dates(content))
+                merged._snapshot_id = existing._snapshot_id
+                if conversation_snapshot:
+                    merged._snapshot_id = self._save_snapshot(conversation_snapshot)
+                merged._category = category or existing._category
                 if self._embed is not None and existing._embed_uid:
                     try:
                         self._embed.remove(existing._embed_uid)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self._embed_errors += 1
+                        print(f"[VividEmbed] remove failed: {e}")
                 self._reflections[i] = merged
                 self._rebuild_index()
                 if self._embed is not None:
@@ -98,8 +116,9 @@ class WriteMixin:
                             importance=merged.importance,
                             stability=merged._stability)
                         merged._embed_uid = entry.uid
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self._embed_errors += 1
+                        print(f"[VividEmbed] indexing failed: {e}")
                 return merged
 
         mem = Memory(content=content, emotion=emotion,
@@ -108,6 +127,9 @@ class WriteMixin:
 
         mem._novelty_score = novelty
         mem._encoding_mood = self._mood
+        mem._category = category
+        if conversation_snapshot:
+            mem._snapshot_id = self._save_snapshot(conversation_snapshot)
 
         # ── Narrative arc position (Freytag 1863) ─────────────────────
         mem._arc_position = _infer_arc_position(content, emotion)
@@ -173,8 +195,9 @@ class WriteMixin:
                     importance=effective_importance,
                     stability=mem._stability)
                 mem._embed_uid = entry.uid
-            except Exception:
-                pass
+            except Exception as e:
+                self._embed_errors += 1
+                print(f"[VividEmbed] indexing failed: {e}")
 
         # ── LLM-inferred relational reasoning ─────────────────────────
         if self._llm_fn and len(self._reflections) >= 5:
@@ -311,7 +334,9 @@ class WriteMixin:
     def add_social_impression(self, entity: str, content: str,
                               emotion: str = "neutral",
                               importance: int = 5,
-                              why_saved: str = "") -> Memory:
+                              why_saved: str = "",
+                              conversation_snapshot: list[dict] | None = None
+                              ) -> Memory:
         """Store a memory about someone through the full pipeline.
 
         Social memories go through the same VividnessMem → VividEmbed →
@@ -333,6 +358,7 @@ class WriteMixin:
             importance=boosted_imp,
             source="social",
             why_saved=why_saved,
+            conversation_snapshot=conversation_snapshot,
         )
 
         # Tag with entity and link into the social graph

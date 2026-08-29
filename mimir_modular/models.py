@@ -48,6 +48,10 @@ class Memory:
         "_mentioned_dates",
         # VividEmbed sync
         "_embed_uid",
+        # Deep Recall — conversation snapshot pointer
+        "_snapshot_id",
+        # Who this memory is about — "" (unspecified) or "self"
+        "_category",
         # Visual memory (Kosslyn 1980)
         "_visual_hash", "_visual_description", "_visual_dimensions",
         # Intentional reframe tracking
@@ -85,6 +89,10 @@ class Memory:
         self._mentioned_dates: list[str] = []
         # VividEmbed sync
         self._embed_uid: str = ""
+        # Deep Recall — conversation snapshot pointer
+        self._snapshot_id: str = ""
+        # Who this memory is about — "" (unspecified) or "self"
+        self._category: str = ""
         # Visual memory (Kosslyn 1980)
         self._visual_hash: str = ""
         self._visual_description: str = ""
@@ -287,6 +295,10 @@ class Memory:
             d["mentioned_dates"] = self._mentioned_dates
         if self._embed_uid:
             d["embed_uid"] = self._embed_uid
+        if self._snapshot_id:
+            d["snapshot_id"] = self._snapshot_id
+        if self._category:
+            d["category"] = self._category
         if self._visual_hash:
             d["visual_hash"] = self._visual_hash
             d["visual_description"] = self._visual_description
@@ -337,6 +349,9 @@ class Memory:
         obj._mentioned_dates = d.get("mentioned_dates", [])
         # VividEmbed sync
         obj._embed_uid = d.get("embed_uid", "")
+        # Deep Recall — conversation snapshot pointer
+        obj._snapshot_id = d.get("snapshot_id", "")
+        obj._category = d.get("category", "")
         # Visual memory
         obj._visual_hash = d.get("visual_hash", "")
         obj._visual_description = d.get("visual_description", "")

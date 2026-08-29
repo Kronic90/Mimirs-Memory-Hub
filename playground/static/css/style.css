@@ -92,8 +92,6 @@ a:hover { text-decoration: underline; }
     align-items: center;
     justify-content: center;
     padding: 4px 12px 16px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 8px;
 }
 .logo-img {
     width: 100%;
@@ -101,6 +99,14 @@ a:hover { text-decoration: underline; }
     height: auto;
     object-fit: contain;
     filter: brightness(1.6) contrast(1.1);
+}
+.sidebar-header-links {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    padding: 0 12px 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
 }
 
 .nav-items {
@@ -136,6 +142,18 @@ a:hover { text-decoration: underline; }
 .sidebar-footer {
     padding: 12px 20px;
     border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.sidebar-footer-link {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+.sidebar-footer-link:hover {
+    color: var(--accent);
 }
 .sidebar-version {
     font-size: 11px;
@@ -1016,6 +1034,7 @@ details[open] .think-chevron { transform: rotate(90deg); }
 }
 .dot-episodic   { background: #7c3aed; }
 .dot-social     { background: #3b82f6; }
+.dot-self       { background: #14b8a6; }
 .dot-huginn     { background: #f59e0b; }
 .dot-volva      { background: #8b5cf6; }
 .dot-flashbulb  { background: #ef4444; }
@@ -1611,6 +1630,7 @@ details[open] .think-chevron { transform: rotate(90deg); }
 
 .dot-episodic   { background: #7c3aed; }
 .dot-social     { background: #3b82f6; }
+.dot-self       { background: #14b8a6; }
 .dot-huginn     { background: #f59e0b; }
 .dot-volva      { background: #8b5cf6; }
 .dot-flashbulb  { background: #ef4444; }
@@ -2588,11 +2608,41 @@ details[open] .think-chevron { transform: rotate(90deg); }
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
+    position: relative;
+    cursor: default;
 }
 .stat-icon { font-size: 18px; }
 .stat-info { display: flex; flex-direction: column; }
 .stat-value { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.2; }
 .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+
+/* App-wide hover tooltip for any element with a data-tip="..." attribute —
+   plain-English explanations for people who didn't build this and don't
+   know what "Yggdrasil" or "Huginn" means. Wired via event delegation in
+   app.js (setupGlobalTooltips), position:fixed so it always escapes
+   scrollable ancestors (e.g. .memory-dashboard's overflow-y: auto) rather
+   than getting clipped regardless of z-index. */
+#app-tooltip {
+    position: fixed;
+    max-width: 240px;
+    padding: 8px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--text);
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 10000;
+}
+#app-tooltip.visible {
+    opacity: 1;
+}
 
 /* ── Message actions ────────────────────────────────────────────── */
 

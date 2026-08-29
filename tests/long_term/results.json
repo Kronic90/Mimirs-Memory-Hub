@@ -1,13 +1,13 @@
 {
-  "timestamp": "2026-04-07T09:42:43.995909",
+  "timestamp": "2026-04-08T08:56:07.340997",
   "total_test_functions": 80,
-  "total_assertions_passed": 399,
-  "total_assertions_failed": 14,
+  "total_assertions_passed": 402,
+  "total_assertions_failed": 11,
   "total_errors": 0,
-  "overall_pass_rate": "96.6%",
+  "overall_pass_rate": "97.3%",
   "recall_tests": 152,
-  "recall_accuracy": "90.8%",
-  "total_elapsed_seconds": 211.04,
+  "recall_accuracy": "92.8%",
+  "total_elapsed_seconds": 174.85,
   "suites": [
     {
       "suite_name": "Memory Lifecycle",
@@ -18,7 +18,7 @@
           "passed": 5,
           "failed": 0,
           "total": 5,
-          "elapsed": 23.849,
+          "elapsed": 10.049,
           "details": {
             "summary": {
               "test_name": "memory_crud",
@@ -82,7 +82,7 @@
           "passed": 9,
           "failed": 1,
           "total": 10,
-          "elapsed": 0.127,
+          "elapsed": 0.118,
           "details": {
             "summary": {
               "test_name": "recall_accuracy",
@@ -262,7 +262,7 @@
           "passed": 4,
           "failed": 0,
           "total": 4,
-          "elapsed": 0.02,
+          "elapsed": 0.018,
           "details": {
             "summary": {
               "test_name": "vividness_decay",
@@ -279,21 +279,21 @@
               {
                 "name": "initial_vividness",
                 "passed": true,
-                "message": "Initial vividness: 7.999999991108025",
+                "message": "Initial vividness: 7.999999988425154",
                 "details": {},
                 "timestamp": ""
               },
               {
                 "name": "30day_vividness",
                 "passed": true,
-                "message": "30-day vividness: 7.999999991108025",
+                "message": "30-day vividness: 7.999999988425154",
                 "details": {},
                 "timestamp": ""
               },
               {
                 "name": "90day_vividness",
                 "passed": true,
-                "message": "90-day vividness: 7.999999991108025",
+                "message": "90-day vividness: 7.999999988425154",
                 "details": {},
                 "timestamp": ""
               },
@@ -319,7 +319,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.181,
+          "elapsed": 0.196,
           "details": {
             "summary": {
               "test_name": "cherished_protection",
@@ -371,7 +371,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.391,
+          "elapsed": 0.336,
           "details": {
             "summary": {
               "test_name": "anchor_stability",
@@ -423,7 +423,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.037,
+          "elapsed": 0.029,
           "details": {
             "summary": {
               "test_name": "dedup",
@@ -459,7 +459,7 @@
           "passed": 12,
           "failed": 0,
           "total": 12,
-          "elapsed": 0.004,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "emotion_detection",
@@ -671,7 +671,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.003,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "social",
@@ -738,7 +738,7 @@
               {
                 "name": "lesson_created",
                 "passed": true,
-                "message": "Lesson: {'id': 'f360731c-1258-4479-8925-f93c8aabbf08', 'topic': 'Debugging async code', 'context_trigger': 'encountering async bugs', 'strategy': 'Always check for unhandled promises and race conditions', 'importance': 8, 'failures': 0}",
+                "message": "Lesson: {'id': '375a3ad5-dfe5-4a85-85bb-a75e0dc38ca5', 'topic': 'Debugging async code', 'context_trigger': 'encountering async bugs', 'strategy': 'Always check for unhandled promises and race conditions', 'importance': 8, 'failures': 0}",
                 "details": {},
                 "timestamp": ""
               },
@@ -764,7 +764,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.003,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "reminders",
@@ -807,7 +807,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.026,
+          "elapsed": 0.02,
           "details": {
             "summary": {
               "test_name": "tasks",
@@ -824,14 +824,14 @@
               {
                 "name": "tasks_created",
                 "passed": true,
-                "message": "Task1: {'task_id': '89743ac62d13', 'description': 'Write documentation', 'priority': 8, 'status': 'active'}, Task2: {'task_id': 'a037c6e13405', 'description': 'Fix bug #123', 'priority': 9, 'status': 'active'}",
+                "message": "Task1: {'task_id': '7c82962b056a', 'description': 'Write documentation', 'priority': 8, 'status': 'active'}, Task2: {'task_id': 'f75a41326cf7', 'description': 'Fix bug #123', 'priority': 9, 'status': 'active'}",
                 "details": {},
                 "timestamp": ""
               },
               {
                 "name": "task_completed",
                 "passed": true,
-                "message": "Completed {'task_id': '89743ac62d13', 'description': 'Write documentation', 'priority': 8, 'status': 'active'}",
+                "message": "Completed {'task_id': '7c82962b056a', 'description': 'Write documentation', 'priority': 8, 'status': 'active'}",
                 "details": {},
                 "timestamp": ""
               },
@@ -857,7 +857,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.03,
+          "elapsed": 0.027,
           "details": {
             "summary": {
               "test_name": "import_export",
@@ -893,7 +893,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.271,
+          "elapsed": 0.217,
           "details": {
             "summary": {
               "test_name": "consolidation",
@@ -945,7 +945,7 @@
           "passed": 25,
           "failed": 0,
           "total": 25,
-          "elapsed": 0.216,
+          "elapsed": 0.188,
           "details": {
             "summary": {
               "test_name": "long_term_recall",
@@ -1927,7 +1927,7 @@
       "passed": 83,
       "failed": 1,
       "errors": 0,
-      "elapsed": 25.16
+      "elapsed": 11.21
     },
     {
       "suite_name": "Neurochemistry",
@@ -2016,7 +2016,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.105,
+          "elapsed": 0.096,
           "details": {
             "summary": {
               "test_name": "chem_positive",
@@ -2128,7 +2128,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.151,
+          "elapsed": 0.147,
           "details": {
             "summary": {
               "test_name": "chem_sleep",
@@ -2184,7 +2184,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.183,
+          "elapsed": 0.164,
           "details": {
             "summary": {
               "test_name": "mood_ema",
@@ -2264,7 +2264,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.86,
+          "elapsed": 0.822,
           "details": {
             "summary": {
               "test_name": "chem_year_stability",
@@ -2313,7 +2313,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.2,
+          "elapsed": 0.19,
           "details": {
             "summary": {
               "test_name": "chem_mixed",
@@ -2409,7 +2409,7 @@
       "passed": 24,
       "failed": 0,
       "errors": 0,
-      "elapsed": 1.71
+      "elapsed": 1.62
     },
     {
       "suite_name": "Tag Parsing",
@@ -2534,7 +2534,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.004,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "tag_multi_remember",
@@ -2620,7 +2620,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.004,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "tag_social",
@@ -2734,7 +2734,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.004,
+          "elapsed": 0.001,
           "details": {
             "summary": {
               "test_name": "tag_solution",
@@ -2784,7 +2784,7 @@
           "passed": 4,
           "failed": 0,
           "total": 4,
-          "elapsed": 0.002,
+          "elapsed": 0.004,
           "details": {
             "summary": {
               "test_name": "tag_strip",
@@ -2841,7 +2841,7 @@
           "passed": 5,
           "failed": 0,
           "total": 5,
-          "elapsed": 0.0,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "tag_mixed",
@@ -2905,7 +2905,7 @@
           "passed": 7,
           "failed": 0,
           "total": 7,
-          "elapsed": 0.0,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "tag_malformed",
@@ -2983,7 +2983,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.047,
+          "elapsed": 0.04,
           "details": {
             "summary": {
               "test_name": "tag_process_turn",
@@ -3033,7 +3033,7 @@
       "passed": 41,
       "failed": 0,
       "errors": 0,
-      "elapsed": 0.07
+      "elapsed": 0.06
     },
     {
       "suite_name": "Presets",
@@ -3044,7 +3044,7 @@
           "passed": 6,
           "failed": 0,
           "total": 6,
-          "elapsed": 0.006,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "presets_exist",
@@ -3115,7 +3115,7 @@
           "passed": 5,
           "failed": 0,
           "total": 5,
-          "elapsed": 0.004,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "presets_chemistry",
@@ -3179,7 +3179,7 @@
           "passed": 5,
           "failed": 0,
           "total": 5,
-          "elapsed": 0.003,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "presets_weights",
@@ -3243,7 +3243,7 @@
           "passed": 5,
           "failed": 0,
           "total": 5,
-          "elapsed": 0.152,
+          "elapsed": 0.144,
           "details": {
             "summary": {
               "test_name": "presets_context",
@@ -3307,7 +3307,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.028,
+          "elapsed": 0.033,
           "details": {
             "summary": {
               "test_name": "preset_companion_turn",
@@ -3357,7 +3357,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.022,
+          "elapsed": 0.036,
           "details": {
             "summary": {
               "test_name": "preset_agent_turn",
@@ -3393,7 +3393,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.109,
+          "elapsed": 0.105,
           "details": {
             "summary": {
               "test_name": "preset_character_emotion",
@@ -3442,7 +3442,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.019,
+          "elapsed": 0.022,
           "details": {
             "summary": {
               "test_name": "preset_writer_tasks",
@@ -3478,7 +3478,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.0,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "preset_fallback",
@@ -3523,7 +3523,7 @@
           "passed": 4,
           "failed": 0,
           "total": 4,
-          "elapsed": 0.041,
+          "elapsed": 0.028,
           "details": {
             "summary": {
               "test_name": "process_turn_valid",
@@ -3580,7 +3580,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.041,
+          "elapsed": 0.036,
           "details": {
             "summary": {
               "test_name": "process_turn_stores",
@@ -3715,7 +3715,7 @@
           "passed": 14,
           "failed": 0,
           "total": 14,
-          "elapsed": 0.006,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "emotion_accuracy",
@@ -3842,7 +3842,7 @@
           "passed": 10,
           "failed": 0,
           "total": 10,
-          "elapsed": 0.002,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "emotion_normalization",
@@ -3941,7 +3941,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.054,
+          "elapsed": 0.05,
           "details": {
             "summary": {
               "test_name": "context_generation",
@@ -3984,7 +3984,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.108,
+          "elapsed": 0.092,
           "details": {
             "summary": {
               "test_name": "multi_day_continuity",
@@ -4059,7 +4059,7 @@
           "passed": 13,
           "failed": 0,
           "total": 13,
-          "elapsed": 0.283,
+          "elapsed": 0.277,
           "details": {
             "summary": {
               "test_name": "emotional_variety",
@@ -4204,7 +4204,7 @@
           "passed": 12,
           "failed": 0,
           "total": 12,
-          "elapsed": 0.246,
+          "elapsed": 0.247,
           "details": {
             "summary": {
               "test_name": "topic_breadth",
@@ -4317,7 +4317,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.089,
+          "elapsed": 0.084,
           "details": {
             "summary": {
               "test_name": "social_impressions",
@@ -4377,7 +4377,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.122,
+          "elapsed": 0.121,
           "details": {
             "summary": {
               "test_name": "deep_anchoring",
@@ -4452,7 +4452,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.001,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "reminder_flow",
@@ -4502,7 +4502,7 @@
           "passed": 4,
           "failed": 0,
           "total": 4,
-          "elapsed": 0.031,
+          "elapsed": 0.027,
           "details": {
             "summary": {
               "test_name": "task_lifecycle",
@@ -4519,7 +4519,7 @@
               {
                 "name": "task_created",
                 "passed": true,
-                "message": "Task ID: e32675ddb0e1",
+                "message": "Task ID: 6c737dab6bf2",
                 "details": {},
                 "timestamp": ""
               },
@@ -4559,7 +4559,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 0.41,
+          "elapsed": 0.402,
           "details": {
             "summary": {
               "test_name": "sleep_survival",
@@ -4634,7 +4634,7 @@
           "passed": 3,
           "failed": 0,
           "total": 3,
-          "elapsed": 2.102,
+          "elapsed": 1.981,
           "details": {
             "summary": {
               "test_name": "high_volume",
@@ -4688,7 +4688,7 @@
       "passed": 81,
       "failed": 0,
       "errors": 0,
-      "elapsed": 3.63
+      "elapsed": 3.44
     },
     {
       "suite_name": "API Endpoints",
@@ -4699,7 +4699,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.782,
+          "elapsed": 0.585,
           "details": {
             "summary": {
               "test_name": "api_settings",
@@ -4820,7 +4820,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.014,
+          "elapsed": 0.01,
           "details": {
             "summary": {
               "test_name": "api_memory_stats",
@@ -4906,7 +4906,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.042,
+          "elapsed": 0.04,
           "details": {
             "summary": {
               "test_name": "api_memory_remember",
@@ -4942,7 +4942,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.004,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "api_memory_browse",
@@ -4978,7 +4978,7 @@
           "passed": 2,
           "failed": 0,
           "total": 2,
-          "elapsed": 0.004,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "api_memory_mood",
@@ -5021,7 +5021,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.004,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "api_memory_chemistry",
@@ -5129,7 +5129,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.004,
+          "elapsed": 0.003,
           "details": {
             "summary": {
               "test_name": "api_memory_filters",
@@ -5244,7 +5244,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.0,
+          "elapsed": 0.005,
           "details": {
             "summary": {
               "test_name": "api_tts_status",
@@ -5280,7 +5280,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.015,
+          "elapsed": 0.005,
           "details": {
             "summary": {
               "test_name": "api_stt_status",
@@ -5316,7 +5316,7 @@
           "passed": 1,
           "failed": 0,
           "total": 1,
-          "elapsed": 0.006,
+          "elapsed": 0.002,
           "details": {
             "summary": {
               "test_name": "api_tasks",
@@ -5350,7 +5350,7 @@
       "passed": 27,
       "failed": 0,
       "errors": 0,
-      "elapsed": 0.9
+      "elapsed": 0.68
     },
     {
       "suite_name": "Year Simulations",
@@ -5358,19 +5358,19 @@
         {
           "test_name": "Companion Year",
           "status": "FAIL",
-          "passed": 35,
-          "failed": 4,
+          "passed": 36,
+          "failed": 3,
           "total": 39,
-          "elapsed": 73.002,
+          "elapsed": 54.115,
           "details": {
             "summary": {
               "test_name": "companion_year",
               "total": 39,
-              "passed": 35,
-              "failed": 4,
-              "pass_rate": "89.7%",
+              "passed": 36,
+              "failed": 3,
+              "pass_rate": "92.3%",
               "recall_tests": 27,
-              "recall_rate": "85.2%",
+              "recall_rate": "88.9%",
               "checkpoints": [
                 "day_0_start",
                 "week_1",
@@ -5396,7 +5396,7 @@
               {
                 "name": "week1_name_recall",
                 "passed": true,
-                "message": "Found 'Scott' at rank 1",
+                "message": "Found 'Scott' at rank 0",
                 "details": {},
                 "timestamp": "2025-01-05 21:00:00"
               },
@@ -5439,30 +5439,30 @@
               {
                 "name": "month1_japan_recall",
                 "passed": true,
-                "message": "Found 'Japan' at rank 1",
+                "message": "Found 'Japan' at rank 0",
                 "details": {},
                 "timestamp": "2025-01-21 15:00:00"
               },
               {
                 "name": "month1_grandfather_recall",
                 "passed": true,
-                "message": "Found 'kind' at rank 2",
+                "message": "Found 'kind' at rank 1",
                 "details": {},
                 "timestamp": "2025-01-21 15:00:00"
               },
               {
                 "name": "month1_sarah_social",
                 "passed": true,
-                "message": "Found 'Sarah' at rank 2",
+                "message": "Found 'Sarah' at rank 1",
                 "details": {},
                 "timestamp": "2025-01-21 15:00:00"
               },
               {
                 "name": "month1_memory_count",
                 "passed": true,
-                "message": "Memory count: 21 (expected 15-999999)",
+                "message": "Memory count: 22 (expected 15-999999)",
                 "details": {
-                  "count": 21
+                  "count": 22
                 },
                 "timestamp": "2025-01-21 15:00:00"
               },
@@ -5516,14 +5516,14 @@
               {
                 "name": "month6_name_recall",
                 "passed": true,
-                "message": "Found 'Scott' at rank 1",
+                "message": "Found 'Scott' at rank 0",
                 "details": {},
                 "timestamp": "2025-05-19 15:00:00"
               },
               {
                 "name": "month6_baby_recall",
                 "passed": true,
-                "message": "Found 'baby' at rank 1",
+                "message": "Found 'baby' at rank 2",
                 "details": {},
                 "timestamp": "2025-05-19 15:00:00"
               },
@@ -5573,7 +5573,7 @@
               {
                 "name": "month9_pet_recall",
                 "passed": true,
-                "message": "Found 'pet' at rank 1",
+                "message": "Found 'pet' at rank 0",
                 "details": {},
                 "timestamp": "2025-07-27 20:00:00"
               },
@@ -5600,7 +5600,7 @@
               {
                 "name": "FINAL_name",
                 "passed": true,
-                "message": "Found 'Scott' at rank 1",
+                "message": "Found 'Scott' at rank 0",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
@@ -5621,28 +5621,28 @@
               {
                 "name": "FINAL_grandfather_cherished",
                 "passed": true,
-                "message": "Found 'kind' at rank 2",
+                "message": "Found 'kind' at rank 1",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
               {
                 "name": "FINAL_marathon",
                 "passed": true,
-                "message": "Found 'marathon' at rank 3",
+                "message": "Found 'marathon' at rank 0",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
               {
                 "name": "FINAL_stress_period",
-                "passed": false,
-                "message": "Could not find 'deadline' in top 5 results",
+                "passed": true,
+                "message": "Found 'deadline' at rank 0",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
               {
                 "name": "FINAL_pet_loss",
                 "passed": true,
-                "message": "Found 'pet' at rank 1",
+                "message": "Found 'pet' at rank 0",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
@@ -5656,7 +5656,7 @@
               {
                 "name": "FINAL_sarah",
                 "passed": true,
-                "message": "Found 'Sarah' at rank 3",
+                "message": "Found 'Sarah' at rank 2",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
@@ -5670,7 +5670,7 @@
               {
                 "name": "FINAL_thanksgiving",
                 "passed": true,
-                "message": "Found 'Thanksgiving' at rank 0",
+                "message": "Found 'Thanksgiving' at rank 1",
                 "details": {},
                 "timestamp": "2025-10-08 20:00:00"
               },
@@ -5690,9 +5690,9 @@
               {
                 "name": "FINAL_memory_count",
                 "passed": true,
-                "message": "Memory count: 44 (expected 40-999999)",
+                "message": "Memory count: 43 (expected 40-999999)",
                 "details": {
-                  "count": 44
+                  "count": 43
                 },
                 "timestamp": "2025-10-08 20:00:00"
               },
@@ -5877,7 +5877,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.769,
+                  "avg_novelty": 0.728,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -5890,8 +5890,8 @@
                   "arc_positions": {
                     "setup": 1,
                     "rising": 2,
-                    "resolution": 2,
-                    "unclassified": 4,
+                    "resolution": 1,
+                    "unclassified": 5,
                     "climax": 2
                   },
                   "gist_memories": 0,
@@ -5946,11 +5946,11 @@
                 "elapsed_days": 9.75,
                 "turn_count": 21,
                 "stats": {
-                  "total_reflections": 14,
+                  "total_reflections": 15,
                   "flashbulb_count": 4,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 14,
+                  "embed_synced": 15,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -5968,16 +5968,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 112,
+                  "volva_insights": 3,
+                  "yggdrasil_edges": 120,
                   "yggdrasil_roots": 5,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 112
+                    "temporal": 120
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.74,
+                  "avg_novelty": 0.782,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -5990,8 +5990,8 @@
                   "arc_positions": {
                     "setup": 1,
                     "rising": 2,
-                    "resolution": 2,
-                    "unclassified": 6,
+                    "resolution": 4,
+                    "unclassified": 5,
                     "climax": 3
                   },
                   "gist_memories": 0,
@@ -6046,11 +6046,11 @@
                 "elapsed_days": 15.0,
                 "turn_count": 31,
                 "stats": {
-                  "total_reflections": 18,
+                  "total_reflections": 17,
                   "flashbulb_count": 4,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 18,
+                  "embed_synced": 17,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -6068,16 +6068,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 144,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 136,
                   "yggdrasil_roots": 5,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 144
+                    "temporal": 136
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.807,
+                  "avg_novelty": 0.799,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6090,7 +6090,7 @@
                   "arc_positions": {
                     "setup": 1,
                     "rising": 3,
-                    "resolution": 5,
+                    "resolution": 4,
                     "unclassified": 5,
                     "climax": 3,
                     "falling": 1
@@ -6147,11 +6147,11 @@
                 "elapsed_days": 20.25,
                 "turn_count": 42,
                 "stats": {
-                  "total_reflections": 21,
+                  "total_reflections": 22,
                   "flashbulb_count": 5,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 21,
+                  "embed_synced": 22,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -6169,16 +6169,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 168,
+                  "volva_insights": 3,
+                  "yggdrasil_edges": 176,
                   "yggdrasil_roots": 6,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 168
+                    "temporal": 176
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.823,
+                  "avg_novelty": 0.807,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6192,7 +6192,7 @@
                     "setup": 1,
                     "rising": 4,
                     "resolution": 5,
-                    "unclassified": 5,
+                    "unclassified": 6,
                     "climax": 5,
                     "falling": 1
                   },
@@ -6279,7 +6279,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.743,
+                  "avg_novelty": 0.761,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6292,8 +6292,8 @@
                   "arc_positions": {
                     "setup": 1,
                     "rising": 4,
-                    "resolution": 4,
-                    "unclassified": 11,
+                    "resolution": 5,
+                    "unclassified": 10,
                     "climax": 5,
                     "falling": 1
                   },
@@ -6380,7 +6380,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.767,
+                  "avg_novelty": 0.781,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6393,8 +6393,8 @@
                   "arc_positions": {
                     "setup": 3,
                     "rising": 5,
-                    "resolution": 5,
-                    "unclassified": 11,
+                    "resolution": 6,
+                    "unclassified": 10,
                     "climax": 5,
                     "falling": 1
                   },
@@ -6450,11 +6450,11 @@
                 "elapsed_days": 98.25,
                 "turn_count": 114,
                 "stats": {
-                  "total_reflections": 31,
+                  "total_reflections": 33,
                   "flashbulb_count": 6,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 31,
+                  "embed_synced": 33,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -6472,16 +6472,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 248,
+                  "volva_insights": 4,
+                  "yggdrasil_edges": 264,
                   "yggdrasil_roots": 9,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 248
+                    "temporal": 264
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.73,
+                  "avg_novelty": 0.743,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6494,7 +6494,7 @@
                   "arc_positions": {
                     "setup": 3,
                     "rising": 4,
-                    "resolution": 5,
+                    "resolution": 7,
                     "unclassified": 14,
                     "climax": 4,
                     "falling": 1
@@ -6582,7 +6582,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.686,
+                  "avg_novelty": 0.699,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6595,8 +6595,8 @@
                   "arc_positions": {
                     "setup": 3,
                     "rising": 4,
-                    "resolution": 4,
-                    "unclassified": 19,
+                    "resolution": 5,
+                    "unclassified": 18,
                     "climax": 3,
                     "falling": 1
                   },
@@ -6753,11 +6753,11 @@
                 "elapsed_days": 151.08333333333334,
                 "turn_count": 186,
                 "stats": {
-                  "total_reflections": 36,
+                  "total_reflections": 37,
                   "flashbulb_count": 9,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 36,
+                  "embed_synced": 37,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -6775,16 +6775,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 288,
+                  "volva_insights": 4,
+                  "yggdrasil_edges": 296,
                   "yggdrasil_roots": 12,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 288
+                    "temporal": 296
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.699,
+                  "avg_novelty": 0.693,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6798,7 +6798,7 @@
                     "setup": 3,
                     "rising": 4,
                     "resolution": 5,
-                    "unclassified": 19,
+                    "unclassified": 20,
                     "climax": 4,
                     "falling": 1
                   },
@@ -6885,7 +6885,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.68,
+                  "avg_novelty": 0.705,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6898,8 +6898,8 @@
                   "arc_positions": {
                     "setup": 3,
                     "rising": 4,
-                    "resolution": 3,
-                    "unclassified": 21,
+                    "resolution": 5,
+                    "unclassified": 19,
                     "climax": 5,
                     "falling": 1
                   },
@@ -6955,11 +6955,11 @@
                 "elapsed_days": 207.45833333333334,
                 "turn_count": 206,
                 "stats": {
-                  "total_reflections": 39,
+                  "total_reflections": 38,
                   "flashbulb_count": 10,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 39,
+                  "embed_synced": 38,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -6977,16 +6977,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 312,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 304,
                   "yggdrasil_roots": 14,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 312
+                    "temporal": 304
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.716,
+                  "avg_novelty": 0.697,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -6999,8 +6999,8 @@
                   "arc_positions": {
                     "setup": 4,
                     "rising": 5,
-                    "resolution": 5,
-                    "unclassified": 19,
+                    "resolution": 3,
+                    "unclassified": 20,
                     "climax": 5,
                     "falling": 1
                   },
@@ -7056,11 +7056,11 @@
                 "elapsed_days": 237.45833333333334,
                 "turn_count": 221,
                 "stats": {
-                  "total_reflections": 39,
+                  "total_reflections": 42,
                   "flashbulb_count": 10,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 39,
+                  "embed_synced": 42,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -7078,16 +7078,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 312,
+                  "volva_insights": 5,
+                  "yggdrasil_edges": 336,
                   "yggdrasil_roots": 14,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 312
+                    "temporal": 336
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.702,
+                  "avg_novelty": 0.718,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -7100,7 +7100,7 @@
                   "arc_positions": {
                     "setup": 5,
                     "rising": 5,
-                    "resolution": 3,
+                    "resolution": 6,
                     "unclassified": 20,
                     "climax": 5,
                     "falling": 1
@@ -7188,7 +7188,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.717,
+                  "avg_novelty": 0.718,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -7258,11 +7258,11 @@
                 "elapsed_days": 280.4583333333333,
                 "turn_count": 242,
                 "stats": {
-                  "total_reflections": 44,
+                  "total_reflections": 43,
                   "flashbulb_count": 12,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 44,
+                  "embed_synced": 43,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -7280,16 +7280,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 352,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 344,
                   "yggdrasil_roots": 16,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 352
+                    "temporal": 344
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.747,
+                  "avg_novelty": 0.732,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -7302,8 +7302,8 @@
                   "arc_positions": {
                     "setup": 6,
                     "rising": 6,
-                    "resolution": 6,
-                    "unclassified": 18,
+                    "resolution": 4,
+                    "unclassified": 19,
                     "climax": 7,
                     "falling": 1
                   },
@@ -7359,11 +7359,11 @@
                 "elapsed_days": 280.4583333333333,
                 "turn_count": 242,
                 "stats": {
-                  "total_reflections": 44,
+                  "total_reflections": 43,
                   "flashbulb_count": 12,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 44,
+                  "embed_synced": 43,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -7381,16 +7381,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 352,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 344,
                   "yggdrasil_roots": 16,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 352
+                    "temporal": 344
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.747,
+                  "avg_novelty": 0.732,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -7403,8 +7403,8 @@
                   "arc_positions": {
                     "setup": 6,
                     "rising": 6,
-                    "resolution": 6,
-                    "unclassified": 18,
+                    "resolution": 4,
+                    "unclassified": 19,
                     "climax": 7,
                     "falling": 1
                   },
@@ -7471,19 +7471,19 @@
               },
               {
                 "day": 0,
-                "total": 14,
+                "total": 15,
                 "cherished": 0,
                 "anchored": 0
               },
               {
                 "day": 0,
-                "total": 18,
+                "total": 17,
                 "cherished": 0,
                 "anchored": 0
               },
               {
                 "day": 0,
-                "total": 21,
+                "total": 22,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -7501,7 +7501,7 @@
               },
               {
                 "day": 12,
-                "total": 31,
+                "total": 33,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -7519,7 +7519,7 @@
               },
               {
                 "day": 20,
-                "total": 36,
+                "total": 37,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -7531,13 +7531,13 @@
               },
               {
                 "day": 42,
-                "total": 39,
+                "total": 38,
                 "cherished": 0,
                 "anchored": 0
               },
               {
                 "day": 47,
-                "total": 39,
+                "total": 42,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -7549,13 +7549,13 @@
               },
               {
                 "day": 60,
-                "total": 44,
+                "total": 43,
                 "cherished": 0,
                 "anchored": 0
               },
               {
                 "day": 60,
-                "total": 44,
+                "total": 43,
                 "cherished": 0,
                 "anchored": 0
               }
@@ -7720,7 +7720,7 @@
                 "query": "What is the user's name?",
                 "expected": "Scott",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 4.5
               },
@@ -7744,7 +7744,7 @@
                 "query": "Japan trip",
                 "expected": "Japan",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 20.25
               },
@@ -7752,7 +7752,7 @@
                 "query": "grandfather's teaching",
                 "expected": "kind",
                 "found": true,
-                "rank": 2,
+                "rank": 1,
                 "score": 1.0,
                 "age_days": 20.25
               },
@@ -7760,7 +7760,7 @@
                 "query": "Who is Sarah?",
                 "expected": "Sarah",
                 "found": true,
-                "rank": 2,
+                "rank": 1,
                 "score": 1.0,
                 "age_days": 20.25
               },
@@ -7792,7 +7792,7 @@
                 "query": "user's name",
                 "expected": "Scott",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 138.25
               },
@@ -7800,7 +7800,7 @@
                 "query": "expecting baby",
                 "expected": "baby",
                 "found": true,
-                "rank": 1,
+                "rank": 2,
                 "score": 1.0,
                 "age_days": 138.25
               },
@@ -7832,7 +7832,7 @@
                 "query": "pet passed away",
                 "expected": "pet",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 207.45833333333334
               },
@@ -7848,7 +7848,7 @@
                 "query": "user's name",
                 "expected": "Scott",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 280.4583333333333
               },
@@ -7872,7 +7872,7 @@
                 "query": "grandfather teaching kindness",
                 "expected": "kind",
                 "found": true,
-                "rank": 2,
+                "rank": 1,
                 "score": 1.0,
                 "age_days": 280.4583333333333
               },
@@ -7880,23 +7880,23 @@
                 "query": "first marathon",
                 "expected": "marathon",
                 "found": true,
-                "rank": 3,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 280.4583333333333
               },
               {
                 "query": "work deadline stress",
                 "expected": "deadline",
-                "found": false,
-                "rank": -1,
-                "score": 0.0,
+                "found": true,
+                "rank": 0,
+                "score": 1.0,
                 "age_days": 280.4583333333333
               },
               {
                 "query": "pet passed away",
                 "expected": "pet",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 280.4583333333333
               },
@@ -7912,7 +7912,7 @@
                 "query": "friend Sarah",
                 "expected": "Sarah",
                 "found": true,
-                "rank": 3,
+                "rank": 2,
                 "score": 1.0,
                 "age_days": 280.4583333333333
               },
@@ -7928,31 +7928,31 @@
                 "query": "Thanksgiving family",
                 "expected": "Thanksgiving",
                 "found": true,
-                "rank": 0,
+                "rank": 1,
                 "score": 1.0,
                 "age_days": 280.4583333333333
               }
             ]
           },
-          "recall_rate": 0.8518518518518519,
+          "recall_rate": 0.8888888888888888,
           "errors": []
         },
         {
           "test_name": "Agent Year",
           "status": "FAIL",
-          "passed": 13,
-          "failed": 5,
+          "passed": 15,
+          "failed": 3,
           "total": 18,
-          "elapsed": 33.919,
+          "elapsed": 33.235,
           "details": {
             "summary": {
               "test_name": "agent_year",
               "total": 18,
-              "passed": 13,
-              "failed": 5,
-              "pass_rate": "72.2%",
+              "passed": 15,
+              "failed": 3,
+              "pass_rate": "83.3%",
               "recall_tests": 14,
-              "recall_rate": "64.3%",
+              "recall_rate": "78.6%",
               "checkpoints": [
                 "day_0_start",
                 "week_2",
@@ -8017,9 +8017,9 @@
               {
                 "name": "month6_memory_count",
                 "passed": true,
-                "message": "Memory count: 23 (expected 15-999999)",
+                "message": "Memory count: 21 (expected 15-999999)",
                 "details": {
-                  "count": 23
+                  "count": 21
                 },
                 "timestamp": "2025-05-08 05:00:00"
               },
@@ -8039,15 +8039,15 @@
               },
               {
                 "name": "FINAL_mlserving",
-                "passed": false,
-                "message": "Could not find 'ML' in top 5 results",
+                "passed": true,
+                "message": "Found 'ML' at rank 4",
                 "details": {},
                 "timestamp": "2025-09-27 17:00:00"
               },
               {
                 "name": "FINAL_pydantic_solution",
-                "passed": false,
-                "message": "Could not find 'Pydantic' in top 5 results",
+                "passed": true,
+                "message": "Found 'Pydantic' at rank 4",
                 "details": {},
                 "timestamp": "2025-09-27 17:00:00"
               },
@@ -8068,7 +8068,7 @@
               {
                 "name": "FINAL_bigquery_detail",
                 "passed": true,
-                "message": "Found 'BigQuery' at rank 4",
+                "message": "Found 'BigQuery' at rank 3",
                 "details": {},
                 "timestamp": "2025-09-27 17:00:00"
               },
@@ -8238,7 +8238,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.857,
+                  "avg_novelty": 0.923,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8250,9 +8250,9 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 2,
-                    "resolution": 6,
+                    "resolution": 8,
                     "rising": 1,
-                    "unclassified": 3,
+                    "unclassified": 1,
                     "climax": 1
                   },
                   "gist_memories": 0,
@@ -8307,11 +8307,11 @@
                 "elapsed_days": 31.833333333333332,
                 "turn_count": 17,
                 "stats": {
-                  "total_reflections": 16,
+                  "total_reflections": 18,
                   "flashbulb_count": 0,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 16,
+                  "embed_synced": 18,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -8329,16 +8329,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 128,
+                  "volva_insights": 4,
+                  "yggdrasil_edges": 144,
                   "yggdrasil_roots": 2,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 128
+                    "temporal": 144
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.875,
+                  "avg_novelty": 0.884,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8350,7 +8350,7 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 4,
-                    "resolution": 7,
+                    "resolution": 9,
                     "rising": 1,
                     "unclassified": 3,
                     "climax": 1
@@ -8407,11 +8407,11 @@
                 "elapsed_days": 55.583333333333336,
                 "turn_count": 25,
                 "stats": {
-                  "total_reflections": 20,
+                  "total_reflections": 19,
                   "flashbulb_count": 0,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 20,
+                  "embed_synced": 19,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -8429,16 +8429,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 4,
-                  "yggdrasil_edges": 160,
+                  "volva_insights": 3,
+                  "yggdrasil_edges": 152,
                   "yggdrasil_roots": 2,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 160
+                    "temporal": 152
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.845,
+                  "avg_novelty": 0.84,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8450,7 +8450,7 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 4,
-                    "resolution": 9,
+                    "resolution": 8,
                     "rising": 1,
                     "unclassified": 5,
                     "climax": 1
@@ -8538,7 +8538,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.867,
+                  "avg_novelty": 0.868,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8638,7 +8638,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.87,
+                  "avg_novelty": 0.871,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8707,11 +8707,11 @@
                 "elapsed_days": 126.83333333333333,
                 "turn_count": 49,
                 "stats": {
-                  "total_reflections": 23,
+                  "total_reflections": 21,
                   "flashbulb_count": 0,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 23,
+                  "embed_synced": 21,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -8729,16 +8729,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 4,
-                  "yggdrasil_edges": 184,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 168,
                   "yggdrasil_roots": 2,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 184
+                    "temporal": 168
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.856,
+                  "avg_novelty": 0.87,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8750,9 +8750,9 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 4,
-                    "resolution": 12,
+                    "resolution": 11,
                     "rising": 1,
-                    "unclassified": 5,
+                    "unclassified": 4,
                     "climax": 1
                   },
                   "gist_memories": 0,
@@ -8838,7 +8838,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.836,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -8938,7 +8938,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.836,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -9038,7 +9038,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.815,
+                  "avg_novelty": 0.816,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -9138,7 +9138,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.836,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -9238,7 +9238,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.856,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -9250,9 +9250,9 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 2,
-                    "resolution": 12,
+                    "resolution": 13,
                     "rising": 2,
-                    "unclassified": 6,
+                    "unclassified": 5,
                     "climax": 1
                   },
                   "gist_memories": 0,
@@ -9338,7 +9338,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.829,
+                  "avg_novelty": 0.83,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -9438,7 +9438,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.829,
+                  "avg_novelty": 0.83,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -9518,13 +9518,13 @@
               },
               {
                 "day": 14,
-                "total": 16,
+                "total": 18,
                 "cherished": 0,
                 "anchored": 0
               },
               {
                 "day": 19,
-                "total": 20,
+                "total": 19,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -9542,7 +9542,7 @@
               },
               {
                 "day": 34,
-                "total": 23,
+                "total": 21,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -9785,17 +9785,17 @@
               {
                 "query": "MLServing",
                 "expected": "ML",
-                "found": false,
-                "rank": -1,
-                "score": 0.0,
+                "found": true,
+                "rank": 4,
+                "score": 1.0,
                 "age_days": 269.3333333333333
               },
               {
                 "query": "data validation approach",
                 "expected": "Pydantic",
-                "found": false,
-                "rank": -1,
-                "score": 0.0,
+                "found": true,
+                "rank": 4,
+                "score": 1.0,
                 "age_days": 269.3333333333333
               },
               {
@@ -9818,7 +9818,7 @@
                 "query": "ETL data sources",
                 "expected": "BigQuery",
                 "found": true,
-                "rank": 4,
+                "rank": 3,
                 "score": 1.0,
                 "age_days": 269.3333333333333
               },
@@ -9832,7 +9832,7 @@
               }
             ]
           },
-          "recall_rate": 0.6428571428571429,
+          "recall_rate": 0.7857142857142857,
           "errors": []
         },
         {
@@ -9841,7 +9841,7 @@
           "passed": 18,
           "failed": 3,
           "total": 21,
-          "elapsed": 20.56,
+          "elapsed": 19.042,
           "details": {
             "summary": {
               "test_name": "character_year",
@@ -9886,7 +9886,7 @@
               {
                 "name": "arc2_aldric_frozen",
                 "passed": true,
-                "message": "Found 'crystal' at rank 3",
+                "message": "Found 'crystal' at rank 2",
                 "details": {},
                 "timestamp": "2025-03-12 10:00:00"
               },
@@ -10256,11 +10256,11 @@
                 "elapsed_days": 70.04166666666667,
                 "turn_count": 10,
                 "stats": {
-                  "total_reflections": 14,
+                  "total_reflections": 13,
                   "flashbulb_count": 5,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 14,
+                  "embed_synced": 13,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -10278,16 +10278,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 104,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 96,
                   "yggdrasil_roots": 5,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 104
+                    "temporal": 96
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.875,
+                  "avg_novelty": 0.838,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -10299,8 +10299,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 8,
-                    "resolution": 4,
-                    "unclassified": 2
+                    "resolution": 2,
+                    "unclassified": 3
                   },
                   "gist_memories": 0,
                   "chunk_memories": 0,
@@ -10354,11 +10354,11 @@
                 "elapsed_days": 142.04166666666666,
                 "turn_count": 13,
                 "stats": {
-                  "total_reflections": 17,
+                  "total_reflections": 16,
                   "flashbulb_count": 5,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 17,
+                  "embed_synced": 16,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -10376,16 +10376,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 3,
-                  "yggdrasil_edges": 104,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 96,
                   "yggdrasil_roots": 5,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 104
+                    "temporal": 96
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.886,
+                  "avg_novelty": 0.855,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -10397,8 +10397,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 9,
-                    "resolution": 5,
-                    "unclassified": 2,
+                    "resolution": 3,
+                    "unclassified": 3,
                     "falling": 1
                   },
                   "gist_memories": 0,
@@ -10484,7 +10484,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.845,
+                  "avg_novelty": 0.869,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -10496,8 +10496,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 10,
-                    "resolution": 3,
-                    "unclassified": 4,
+                    "resolution": 4,
+                    "unclassified": 3,
                     "falling": 1,
                     "setup": 1
                   },
@@ -10584,7 +10584,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.843,
+                  "avg_novelty": 0.823,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -10596,8 +10596,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 12,
-                    "resolution": 4,
-                    "unclassified": 5,
+                    "resolution": 3,
+                    "unclassified": 6,
                     "falling": 1,
                     "setup": 1
                   },
@@ -10664,13 +10664,13 @@
               },
               {
                 "day": 69,
-                "total": 14,
+                "total": 13,
                 "cherished": 0,
                 "anchored": 0
               },
               {
                 "day": 141,
-                "total": 17,
+                "total": 16,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -10772,7 +10772,7 @@
                 "query": "Aldric frozen crystal",
                 "expected": "crystal",
                 "found": true,
-                "rank": 3,
+                "rank": 2,
                 "score": 1.0,
                 "age_days": 70.04166666666667
               },
@@ -10883,7 +10883,7 @@
           "passed": 20,
           "failed": 0,
           "total": 20,
-          "elapsed": 10.8,
+          "elapsed": 10.417,
           "details": {
             "summary": {
               "test_name": "writer_year",
@@ -10956,7 +10956,7 @@
               {
                 "name": "FINAL_maya",
                 "passed": true,
-                "message": "Found 'Maya' at rank 1",
+                "message": "Found 'Maya' at rank 0",
                 "details": {},
                 "timestamp": "2025-11-28 00:00:00"
               },
@@ -10984,14 +10984,14 @@
               {
                 "name": "FINAL_sable",
                 "passed": true,
-                "message": "Found 'Sable' at rank 1",
+                "message": "Found 'Sable' at rank 2",
                 "details": {},
                 "timestamp": "2025-11-28 00:00:00"
               },
               {
                 "name": "FINAL_fuel",
                 "passed": true,
-                "message": "Found 'fuel' at rank 1",
+                "message": "Found 'fuel' at rank 0",
                 "details": {},
                 "timestamp": "2025-11-28 00:00:00"
               },
@@ -11005,7 +11005,7 @@
               {
                 "name": "FINAL_completion",
                 "passed": true,
-                "message": "Found '91,000' at rank 2",
+                "message": "Found '91,000' at rank 3",
                 "details": {},
                 "timestamp": "2025-11-28 00:00:00"
               },
@@ -11182,7 +11182,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.732,
+                  "avg_novelty": 0.778,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -11194,8 +11194,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 3,
-                    "resolution": 2,
-                    "unclassified": 4
+                    "resolution": 3,
+                    "unclassified": 3
                   },
                   "gist_memories": 0,
                   "chunk_memories": 0,
@@ -11280,7 +11280,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.799,
+                  "avg_novelty": 0.831,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -11292,8 +11292,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 4,
-                    "resolution": 4,
-                    "unclassified": 4,
+                    "resolution": 5,
+                    "unclassified": 3,
                     "rising": 1
                   },
                   "gist_memories": 0,
@@ -11379,7 +11379,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.833,
+                  "avg_novelty": 0.858,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -11391,8 +11391,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 4,
-                    "resolution": 7,
-                    "unclassified": 4,
+                    "resolution": 8,
+                    "unclassified": 3,
                     "rising": 1,
                     "setup": 1
                   },
@@ -11479,7 +11479,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.847,
+                  "avg_novelty": 0.868,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -11491,8 +11491,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 4,
-                    "resolution": 9,
-                    "unclassified": 4,
+                    "resolution": 10,
+                    "unclassified": 3,
                     "rising": 1,
                     "setup": 2
                   },
@@ -11579,7 +11579,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.859,
+                  "avg_novelty": 0.84,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -11591,8 +11591,8 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "climax": 4,
-                    "resolution": 10,
-                    "unclassified": 4,
+                    "resolution": 9,
+                    "unclassified": 5,
                     "rising": 2,
                     "setup": 2
                   },
@@ -11799,7 +11799,7 @@
                 "query": "protagonist engineer",
                 "expected": "Maya",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 330.625
               },
@@ -11831,7 +11831,7 @@
                 "query": "Dr. Sable neural",
                 "expected": "Sable",
                 "found": true,
-                "rank": 1,
+                "rank": 2,
                 "score": 1.0,
                 "age_days": 330.625
               },
@@ -11839,7 +11839,7 @@
                 "query": "midpoint fuel twist",
                 "expected": "fuel",
                 "found": true,
-                "rank": 1,
+                "rank": 0,
                 "score": 1.0,
                 "age_days": 330.625
               },
@@ -11855,7 +11855,7 @@
                 "query": "novel completed words",
                 "expected": "91,000",
                 "found": true,
-                "rank": 2,
+                "rank": 3,
                 "score": 1.0,
                 "age_days": 330.625
               },
@@ -11886,7 +11886,7 @@
           "passed": 13,
           "failed": 1,
           "total": 14,
-          "elapsed": 40.304,
+          "elapsed": 40.031,
           "details": {
             "summary": {
               "test_name": "assistant_year",
@@ -11978,7 +11978,7 @@
               {
                 "name": "FINAL_company_decision",
                 "passed": true,
-                "message": "Found 'culture' at rank 0",
+                "message": "Found 'culture' at rank 1",
                 "details": {},
                 "timestamp": "2026-01-20 12:00:00"
               },
@@ -11992,9 +11992,9 @@
               {
                 "name": "FINAL_memory_count",
                 "passed": true,
-                "message": "Memory count: 25 (expected 15-999999)",
+                "message": "Memory count: 24 (expected 15-999999)",
                 "details": {
-                  "count": 25
+                  "count": 24
                 },
                 "timestamp": "2026-01-20 12:00:00"
               },
@@ -12316,11 +12316,11 @@
                 "elapsed_days": 59.375,
                 "turn_count": 22,
                 "stats": {
-                  "total_reflections": 16,
+                  "total_reflections": 15,
                   "flashbulb_count": 0,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 16,
+                  "embed_synced": 15,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -12338,16 +12338,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 128,
+                  "volva_insights": 1,
+                  "yggdrasil_edges": 120,
                   "yggdrasil_roots": 0,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 128
+                    "temporal": 120
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.84,
+                  "avg_novelty": 0.832,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -12359,7 +12359,7 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 1,
-                    "resolution": 10,
+                    "resolution": 9,
                     "unclassified": 3,
                     "rising": 1,
                     "climax": 1
@@ -12547,7 +12547,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.834,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -12647,7 +12647,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.834,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -12747,7 +12747,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.834,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -12816,11 +12816,11 @@
                 "elapsed_days": 305.375,
                 "turn_count": 53,
                 "stats": {
-                  "total_reflections": 22,
+                  "total_reflections": 23,
                   "flashbulb_count": 0,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 22,
+                  "embed_synced": 23,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -12838,16 +12838,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 1,
-                  "yggdrasil_edges": 176,
+                  "volva_insights": 2,
+                  "yggdrasil_edges": 184,
                   "yggdrasil_roots": 0,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 176
+                    "temporal": 184
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.84,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -12859,7 +12859,7 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 2,
-                    "resolution": 11,
+                    "resolution": 12,
                     "unclassified": 4,
                     "rising": 3,
                     "climax": 2
@@ -12947,7 +12947,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.835,
+                  "avg_novelty": 0.834,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -13016,11 +13016,11 @@
                 "elapsed_days": 384.125,
                 "turn_count": 73,
                 "stats": {
-                  "total_reflections": 25,
+                  "total_reflections": 24,
                   "flashbulb_count": 0,
                   "anchor_count": 0,
                   "cherished_count": 0,
-                  "embed_synced": 25,
+                  "embed_synced": 24,
                   "social_entities": [],
                   "total_social": 0,
                   "total_lessons": 0,
@@ -13038,16 +13038,16 @@
                   "visual_memories": 0,
                   "visual_enabled": true,
                   "huginn_insights": 1,
-                  "volva_insights": 2,
-                  "yggdrasil_edges": 200,
+                  "volva_insights": 1,
+                  "yggdrasil_edges": 192,
                   "yggdrasil_roots": 0,
                   "yggdrasil_inferred_edges": 0,
                   "yggdrasil_edge_types": {
-                    "temporal": 200
+                    "temporal": 192
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.832,
+                  "avg_novelty": 0.824,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -13059,7 +13059,7 @@
                   "total_artifacts": 0,
                   "arc_positions": {
                     "setup": 2,
-                    "resolution": 12,
+                    "resolution": 11,
                     "unclassified": 5,
                     "rising": 4,
                     "climax": 2
@@ -13133,7 +13133,7 @@
               },
               {
                 "day": 26,
-                "total": 16,
+                "total": 15,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -13163,7 +13163,7 @@
               },
               {
                 "day": 182,
-                "total": 22,
+                "total": 23,
                 "cherished": 0,
                 "anchored": 0
               },
@@ -13175,7 +13175,7 @@
               },
               {
                 "day": 182,
-                "total": 25,
+                "total": 24,
                 "cherished": 0,
                 "anchored": 0
               }
@@ -13358,7 +13358,7 @@
                 "query": "stayed at company culture",
                 "expected": "culture",
                 "found": true,
-                "rank": 0,
+                "rank": 1,
                 "score": 1.0,
                 "age_days": 384.125
               },
@@ -13381,7 +13381,7 @@
           "passed": 15,
           "failed": 0,
           "total": 15,
-          "elapsed": 0.645,
+          "elapsed": 0.65,
           "details": {
             "summary": {
               "test_name": "multi_agent",
@@ -13784,7 +13784,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.807,
+                  "avg_novelty": 0.846,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -13795,10 +13795,10 @@
                   "total_solutions": 0,
                   "total_artifacts": 0,
                   "arc_positions": {
-                    "resolution": 3,
+                    "resolution": 4,
                     "climax": 2,
                     "rising": 2,
-                    "unclassified": 4
+                    "unclassified": 3
                   },
                   "gist_memories": 0,
                   "chunk_memories": 0,
@@ -13883,7 +13883,7 @@
                   },
                   "drifted_memories": 0,
                   "max_drift": 0.0,
-                  "avg_novelty": 0.833,
+                  "avg_novelty": 0.867,
                   "total_facts": 0,
                   "live_facts": 0,
                   "active_project": "",
@@ -13894,10 +13894,10 @@
                   "total_solutions": 0,
                   "total_artifacts": 0,
                   "arc_positions": {
-                    "resolution": 3,
+                    "resolution": 4,
                     "climax": 2,
                     "rising": 4,
-                    "unclassified": 4
+                    "unclassified": 3
                   },
                   "gist_memories": 0,
                   "chunk_memories": 0,
@@ -14090,10 +14090,10 @@
           "errors": []
         }
       ],
-      "passed": 114,
-      "failed": 13,
+      "passed": 117,
+      "failed": 10,
       "errors": 0,
-      "elapsed": 179.23
+      "elapsed": 157.49
     }
   ]
 }
