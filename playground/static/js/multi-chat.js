@@ -187,6 +187,28 @@ const MultiChatPage = (() => {
         else if (type === 'show_image') {
             showRecalledImage(msg.speaker, msg.hash, msg.char_id);
         }
+        else if (type === 'memory_activity') {
+            attachMemoryActivity(msg.speaker, msg);
+        }
+    }
+
+    /* Sent while the agent's bubble is still streaming (before agent_done),
+       so it's still findable via the same [data-streaming] selector
+       streamToken/finalizeAgent use — works across all three view modes. */
+    function attachMemoryActivity(speaker, activity) {
+        if (!window.Chat || !Chat.renderMemoryActivity) return;
+        const strip = Chat.renderMemoryActivity(activity);
+        if (!strip) return;
+
+        let bubble = null;
+        if (currentViewMode === 'columns') {
+            const colScroll = document.getElementById(`col-${speaker}`);
+            bubble = colScroll?.querySelector(`[data-streaming="${CSS.escape(speaker)}"]`);
+        } else {
+            const scroll = document.getElementById('multi-message-scroll');
+            bubble = scroll?.querySelector(`[data-streaming="${CSS.escape(speaker)}"]`);
+        }
+        if (bubble) bubble.parentNode.insertBefore(strip, bubble.nextSibling);
     }
 
     /* A responding agent recalled and chose to show one of its own visual

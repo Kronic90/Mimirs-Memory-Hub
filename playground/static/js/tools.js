@@ -11,6 +11,7 @@ const ToolsPage = (() => {
             document.getElementById('perm-file-access').checked = !!perms.file_access;
             document.getElementById('perm-web-search').checked = !!perms.web_search;
             document.getElementById('perm-code-exec').checked = !!perms.code_execution;
+            document.getElementById('perm-mcp-tools').checked = !!perms.mcp_tools;
             document.getElementById('perm-allowed-paths').value = (perms.allowed_paths || []).join('\n');
             document.getElementById('perm-allowed-sites').value = (perms.allowed_sites || []).join('\n');
         } catch { /* defaults are fine */ }
@@ -21,6 +22,7 @@ const ToolsPage = (() => {
             file_access: document.getElementById('perm-file-access').checked,
             web_search: document.getElementById('perm-web-search').checked,
             code_execution: document.getElementById('perm-code-exec').checked,
+            mcp_tools: document.getElementById('perm-mcp-tools').checked,
             allowed_paths: document.getElementById('perm-allowed-paths').value
                 .split('\n').map(s => s.trim()).filter(Boolean),
             allowed_sites: document.getElementById('perm-allowed-sites').value
@@ -134,7 +136,7 @@ const ToolsPage = (() => {
                         <strong>${_esc(s.name)}</strong>
                         <span style="opacity:0.6;font-size:0.85em;margin-left:6px;">${s.transport}</span>
                         ${s.connected ? `<span style="opacity:0.6;font-size:0.85em;margin-left:6px;">${s.tool_count} tools</span>` : ''}
-                        ${s.tools?.length ? `<div style="margin-top:4px;font-size:0.8em;opacity:0.5;">${s.tools.join(', ')}</div>` : ''}
+                        ${s.tools?.length ? `<div style="margin-top:4px;font-size:0.8em;opacity:0.5;">${s.tools.map(_esc).join(', ')}</div>` : ''}
                     </div>
                     <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8em;" onclick="ToolsPage._reconnectMCP('${_esc(s.name)}')">↻</button>
                     <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.8em;color:var(--error);" onclick="ToolsPage._removeMCP('${_esc(s.name)}')">✕</button>

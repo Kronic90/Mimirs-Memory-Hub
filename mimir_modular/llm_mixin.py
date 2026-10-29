@@ -73,17 +73,16 @@ class LLMMixin:
                 continue
             mem = recent[idx]
             if op == "PROMOTE":
-                mem._importance = min(10, mem.importance + 2)
+                mem.importance = min(10, mem.importance + 2)
                 changes["promoted"] += 1
             elif op == "DEMOTE":
-                mem._importance = max(1, mem.importance - 2)
+                mem.importance = max(1, mem.importance - 2)
                 changes["demoted"] += 1
             elif op == "FORGET":
-                mem._importance = 0
+                mem.importance = 0
                 changes["forgotten"] += 1
             elif op == "UPDATE" and len(parts) == 3:
-                mem._content = parts[2]
-                mem._content_words = None
+                mem.content = parts[2]
                 changes["updated"] += 1
         return changes
 

@@ -2397,6 +2397,48 @@ details[open] .think-chevron { transform: rotate(90deg); }
 }
 
 /* ================================================================
+   Live memory activity strip — memories forming/fading inline in the
+   conversation itself, not just in the separate Visualize tab.
+   ================================================================ */
+
+.memory-activity-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0 2px;
+}
+
+.memory-chip {
+    --chip-color: #7c3aed;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: capitalize;
+    color: var(--chip-color);
+    background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--chip-color) 45%, transparent);
+    cursor: default;
+    transition: transform 0.15s;
+}
+.memory-chip:hover {
+    transform: translateY(-1px);
+}
+.memory-chip.new {
+    font-weight: 700;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--chip-color) 40%, transparent);
+}
+.memory-chip.flashbulb {
+    animation: memChipPulse 1.6s ease-in-out 2;
+}
+@keyframes memChipPulse {
+    0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--chip-color) 35%, transparent); }
+    50%      { box-shadow: 0 0 16px color-mix(in srgb, var(--chip-color) 75%, transparent); }
+}
+
+/* ================================================================
    Reminder pip — subtle chat notification
    ================================================================ */
 

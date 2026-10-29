@@ -34,7 +34,7 @@ function _charQuery() {
 window.getVizCharId = () => _selectedVizCharId;
 
 async function setupVizAgentSelect() {
-    const sel = document.getElementById('viz-agent-select');
+    const sel = document.getElementById('viz-character-select');
     if (!sel) return;
     try {
         const [charsRes, settings] = await Promise.all([
@@ -665,7 +665,7 @@ function renderCherishedWall(memories) {
             <div class="cherished-card-meta">
                 <div class="cherished-card-stat">💎 Vividness: ${mem.vividness.toFixed(1)}/10</div>
                 <div class="cherished-card-stat">⭐ Importance: ${mem.importance}/10</div>
-                <div class="cherished-card-stat">😊 ${mem.emotion}</div>
+                <div class="cherished-card-stat">😊 ${escapeHtml(mem.emotion)}</div>
             </div>
         `;
         wall.appendChild(card);
@@ -821,13 +821,13 @@ async function loadTopicClusters() {
                     </div>
                     <div class="cluster-meta">
                         <span>Keywords: ${cluster.keywords.map(k => `<code>${escapeHtml(k)}</code>`).join(' ')}</span>
-                        <span>Emotion: ${cluster.dominant_emotion}</span>
+                        <span>Emotion: ${escapeHtml(cluster.dominant_emotion)}</span>
                         <span>Avg importance: ${cluster.avg_importance}</span>
                     </div>
                     <div class="cluster-memories">`;
             for (const mem of cluster.memories.slice(0, 5)) {
                 html += `<div class="cluster-mem">
-                    <span class="cluster-mem-emotion">${mem.emotion}</span>
+                    <span class="cluster-mem-emotion">${escapeHtml(mem.emotion)}</span>
                     <span class="cluster-mem-content">${escapeHtml(mem.content)}</span>
                 </div>`;
             }
@@ -897,7 +897,7 @@ async function loadMemoryAttic() {
                             <span>Imp: ${m.importance}</span>
                             <span>Viv: ${m.vividness}</span>
                             <span>Accessed: ${m.access_count}x</span>
-                            <span>Hints: ${m.hint_keywords.join(', ')}</span>
+                            <span>Hints: ${m.hint_keywords.map(escapeHtml).join(', ')}</span>
                         </div>
                         <button class="btn btn-sm btn-secondary"
                             onclick="nudgeDormant(${m.index})">💡 Nudge</button>

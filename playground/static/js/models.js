@@ -590,7 +590,6 @@ const ModelsPage = (() => {
                 }
                 if (!backends[name]) backends[name] = {};
                 backends[name].api_key = val;
-                console.log(`✓ Added ${name}: ${val.substring(0,8)}...${val.substring(val.length-4)}`);
             }
         }
         

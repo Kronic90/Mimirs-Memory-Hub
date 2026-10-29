@@ -359,9 +359,10 @@ const Chat = (() => {
     // ── Render markdown safely ───────────────────────────────────
     function renderMarkdown(text) {
         if (typeof marked !== 'undefined') {
-            let html = marked.parse(text);
-            html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-            html = html.replace(/\son\w+\s*=/gi, ' data-removed=');
+            const html = marked.parse(text);
+            if (typeof DOMPurify !== 'undefined') {
+                return DOMPurify.sanitize(html);
+            }
             return html;
         }
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -386,6 +387,48 @@ const Chat = (() => {
         wrap.appendChild(summary);
         wrap.appendChild(body);
         return wrap;
+    }
+
+    // ── Live memory activity strip ─────────────────────────────────
+    // Shows what just got remembered and what was recalled into context
+    // for this reply, right in the conversation thread — reused by both
+    // single-chat and multi-chat (Chat.renderMemoryActivity).
+    const _MEM_EMOTION_COLORS = {
+        happy: '#fbbf24', joyful: '#fbbf24', excited: '#f97316',
+        sad: '#60a5fa', lonely: '#60a5fa',
+        angry: '#ef4444', frustrated: '#ef4444',
+        anxious: '#a78bfa', curious: '#34d399',
+        warm: '#fb923c', grateful: '#fb923c', peaceful: '#5eead4',
+    };
+    const _MEM_DEFAULT_COLOR = '#7c3aed';
+
+    function _memoryChip(mem, isNew) {
+        const chip = document.createElement('span');
+        chip.className = 'memory-chip' + (isNew ? ' new' : '') + (mem.is_flashbulb ? ' flashbulb' : '');
+        const color = _MEM_EMOTION_COLORS[(mem.emotion || '').toLowerCase()] || _MEM_DEFAULT_COLOR;
+        chip.style.setProperty('--chip-color', color);
+        if (isNew) {
+            const scale = 0.75 + Math.min((mem.importance || 5) / 10, 1) * 0.5;
+            chip.style.fontSize = (12 * scale) + 'px';
+        } else {
+            const vividness = Math.min((mem.vividness ?? 5) / 10, 1);
+            chip.style.opacity = String(0.35 + vividness * 0.65);
+        }
+        chip.textContent = (isNew ? '✨ ' : '') + (mem.emotion || 'neutral');
+        chip.setAttribute('data-tip', mem.content || '(no content)');
+        return chip;
+    }
+
+    function renderMemoryActivity(activity) {
+        const formed = activity.formed || [];
+        const recalled = activity.recalled || [];
+        if (!formed.length && !recalled.length) return null;
+
+        const strip = document.createElement('div');
+        strip.className = 'memory-activity-strip';
+        formed.forEach(m => strip.appendChild(_memoryChip(m, true)));
+        recalled.forEach(m => strip.appendChild(_memoryChip(m, false)));
+        return strip;
     }
 
     // ── Create message element ───────────────────────────────────
@@ -684,6 +727,13 @@ const Chat = (() => {
 
             case 'show_image':
                 showRecalledImage(msg.hash);
+                break;
+
+            case 'memory_activity':
+                if (currentAssistantEl) {
+                    const strip = renderMemoryActivity(msg);
+                    if (strip) currentAssistantEl.parentNode.insertBefore(strip, currentAssistantEl.nextSibling);
+                }
                 break;
 
             case 'reminder_set':
@@ -1250,5 +1300,5 @@ const Chat = (() => {
         updateMicVisibility();
     }
 
-    return { init, handleMessage, createMessageEl, newChat, splitThinking, buildThinkBlock };
+    return { init, handleMessage, createMessageEl, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
 })();

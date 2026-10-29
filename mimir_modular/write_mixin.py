@@ -15,6 +15,7 @@ from .constants import (
     STABILITY_CAP, INITIAL_STABILITY,
     ANCHOR_STABILITY_FLOOR,
     AUTO_CONSOLIDATION_INTERVAL,
+    YGGDRASIL_EARLY_SESSION_MAX, YGGDRASIL_EARLY_REBUILD_EVERY,
     PROSPECTIVE_IMPORTANCE_MIN,
     VISUAL_QUALITY_FADED,
 )
@@ -158,11 +159,11 @@ class WriteMixin:
                 continue
             if overlap >= PATTERN_SEP_THRESHOLD and overlap < 1.0:
                 if mem.importance >= other.importance:
-                    mem._importance = min(10, mem.importance + PATTERN_SEP_NUDGE)
-                    other._importance = max(1, other.importance - PATTERN_SEP_NUDGE)
+                    mem.importance = min(10, mem.importance + PATTERN_SEP_NUDGE)
+                    other.importance = max(1, other.importance - PATTERN_SEP_NUDGE)
                 else:
-                    other._importance = min(10, other.importance + PATTERN_SEP_NUDGE)
-                    mem._importance = max(1, mem.importance - PATTERN_SEP_NUDGE)
+                    other.importance = min(10, other.importance + PATTERN_SEP_NUDGE)
+                    mem.importance = max(1, mem.importance - PATTERN_SEP_NUDGE)
 
         # ── Temporal date extraction (Tulving 1972) ───────────────────
         mem._mentioned_dates = _extract_dates(content)
@@ -210,6 +211,12 @@ class WriteMixin:
             self.muninn()
             self._compress_to_gist()
             self.chunk_memories()
+            self._build_yggdrasil()
+        elif (len(self._reflections) <= YGGDRASIL_EARLY_SESSION_MAX
+              and len(self._reflections) % YGGDRASIL_EARLY_REBUILD_EVERY == 0):
+            # Keep the graph connected during an early/short session
+            # instead of leaving it empty until the first full
+            # consolidation pass or a sleep cycle (see constants.py).
             self._build_yggdrasil()
 
         return mem

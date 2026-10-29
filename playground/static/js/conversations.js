@@ -88,7 +88,7 @@ const ConversationsPage = (() => {
         list.innerHTML = filtered.map(conv => {
             const isMulti = conv.type === 'multi';
             const badge = isMulti
-                ? '<span class="conv-type-badge multi">Multi-Agent</span>'
+                ? '<span class="conv-type-badge multi">Group Chat</span>'
                 : '<span class="conv-type-badge chat">Chat</span>';
             const participants = isMulti && conv.participants
                 ? conv.participants.map(p => `<span class="participant-badge">${escapeHtml(p.name)}</span>`).join('')

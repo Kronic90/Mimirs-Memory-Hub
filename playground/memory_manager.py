@@ -40,26 +40,61 @@ except ModuleNotFoundError:
 
 # ── lightweight keyword-based emotion detector ────────────────────────
 
+# Covers all ~47 emotions presets.py's _REMEMBER_FMT advertises to the
+# model, so detect_emotions() (the auto-detect fallback used when no
+# explicit <remember emotion="..."> tag is present) can actually produce
+# any of them rather than silently collapsing most to "neutral". Where two
+# canonical emotions are near-synonyms (e.g. reflective/thoughtful/
+# contemplative), keywords are kept distinct per bucket rather than
+# merged, so a bucket can still win on word choice even though the
+# emotions themselves are close in meaning.
 _EMOTION_KEYWORDS: dict[str, list[str]] = {
-    "happy":        ["happy", "glad", "great", "awesome", "wonderful", "amazing", "love it", "fantastic", "yay"],
-    "excited":      ["excited", "thrilled", "pumped", "can't wait", "omg", "wow"],
-    "grateful":     ["thank", "thanks", "grateful", "appreciate", "thankful"],
-    "amused":       ["lol", "haha", "funny", "hilarious", "lmao", "laughing", "rofl"],
-    "curious":      ["curious", "wonder", "how does", "what if", "why does", "interesting", "tell me"],
-    "sad":          ["sad", "depressed", "unhappy", "heartbroken", "miss you", "crying", "cried"],
-    "anxious":      ["anxious", "worried", "nervous", "scared", "afraid", "panic", "stress"],
-    "frustrated":   ["frustrated", "annoying", "annoyed", "ugh", "damn", "stupid", "broken"],
-    "angry":        ["angry", "furious", "pissed", "hate", "rage", "mad at"],
-    "confused":     ["confused", "don't understand", "lost", "what do you mean", "huh", "unclear"],
-    "nostalgic":    ["remember when", "used to", "nostalgia", "back in", "good old", "miss the"],
-    "hopeful":      ["hope", "hopefully", "looking forward", "optimistic", "fingers crossed"],
-    "proud":        ["proud", "accomplished", "nailed it", "did it", "achievement"],
-    "lonely":       ["lonely", "alone", "nobody", "no one", "isolated"],
-    "inspired":     ["inspired", "motivation", "inspired by", "creative", "idea"],
-    "peaceful":     ["calm", "peaceful", "relaxed", "chill", "serene", "at ease"],
-    "hurt":         ["hurt", "betrayed", "let down", "disappointed in"],
-    "warm":         ["sweet", "kind", "caring", "love you", "heart", "wholesome"],
-    "reflective":   ["thinking about", "reflecting", "looking back", "pondering"],
+    "happy":         ["happy", "glad", "great", "awesome", "wonderful", "amazing", "love it", "fantastic", "yay"],
+    "joyful":        ["joyful", "joy", "overjoyed", "pure happiness"],
+    "delighted":     ["delighted", "delightful", "so pleased", "charmed"],
+    "excited":       ["excited", "pumped", "can't wait", "omg", "wow"],
+    "enthusiastic":  ["enthusiastic", "enthusiasm", "psyched", "stoked"],
+    "amused":        ["amused", "lol", "haha", "funny", "hilarious", "lmao", "laughing", "rofl"],
+    "playful":       ["playful", "teasing", "joking around", "being silly", "goofing around"],
+    "proud":         ["proud", "accomplished", "nailed it", "did it", "achievement"],
+    "triumphant":    ["triumphant", "triumph", "victorious", "we won", "crushed it"],
+    "inspired":      ["inspired", "inspired by", "spark of an idea"],
+    "motivated":     ["motivated", "motivation", "determined", "driven", "let's do this"],
+    "grateful":      ["thank", "thanks", "thankful", "grateful"],
+    "warm":          ["warm", "sweet", "kind", "caring", "love you", "heart", "wholesome"],
+    "appreciative":  ["appreciate", "appreciative", "means a lot", "grateful for you"],
+    "tender":        ["tender", "tenderly", "gentle with", "soft spot for"],
+    "affectionate":  ["affectionate", "affection", "cuddle", "adore you"],
+    "hopeful":       ["hopeful", "hope", "hopefully", "looking forward", "optimistic", "fingers crossed"],
+    "peaceful":      ["calm", "peaceful", "relaxed", "chill", "at ease"],
+    "serene":        ["serene", "serenity", "still and quiet", "zen"],
+    "content":       ["content", "satisfied", "comfortable with how things are"],
+    "curious":       ["curious", "wonder", "how does", "what if", "why does", "interesting", "tell me"],
+    "fascinated":    ["fascinated", "fascinating", "captivated", "intrigued"],
+    "thoughtful":    ["thoughtful", "mulling over", "thinking it through"],
+    "reflective":    ["reflective", "thinking about", "reflecting", "looking back"],
+    "contemplative": ["contemplative", "contemplating", "deep in thought", "sitting with this"],
+    "understanding": ["understanding", "that makes sense", "i get it", "see where you're coming from"],
+    "nostalgic":     ["nostalgic", "remember when", "used to", "nostalgia", "back in", "good old", "miss the"],
+    "bittersweet":   ["bittersweet", "mixed feelings", "happy and sad at the same time"],
+    "wistful":       ["wistful", "longing for", "if only"],
+    "sad":           ["sad", "miss you", "crying", "cried"],
+    "lonely":        ["lonely", "alone", "nobody", "no one"],
+    "melancholy":    ["melancholy", "melancholic", "a quiet sadness", "blue today"],
+    "disappointed":  ["disappointed", "let down", "expected more", "bummer"],
+    "guilty":        ["guilty", "guilt", "my fault", "shouldn't have done that"],
+    "insecure":      ["insecure", "not good enough", "self-doubt", "second-guessing myself"],
+    "vulnerable":    ["vulnerable", "exposed", "opening up about", "hard to admit"],
+    "anxious":       ["anxious", "worried", "nervous", "panic", "stress"],
+    "overwhelmed":   ["overwhelmed", "too much", "can't keep up", "drowning in", "swamped"],
+    "angry":         ["angry", "furious", "pissed", "hate", "rage", "mad at"],
+    "frustrated":    ["frustrated", "annoying", "annoyed", "ugh", "damn", "stupid", "broken"],
+    "hurt":          ["hurt", "betrayed"],
+    "confused":      ["confused", "don't understand", "lost", "what do you mean", "huh", "unclear"],
+    "embarrassed":   ["embarrassed", "embarrassing", "so awkward", "cringe", "mortified"],
+    "jealous":       ["jealous", "envious", "envy", "wish i had that"],
+    "afraid":        ["afraid", "scared", "terrified", "frightened", "fear"],
+    "resentful":     ["resentful", "resentment", "still bitter about", "can't forgive"],
 }
 
 # Pre-compiled negation pattern — catches "not", "n't", "never", "no" etc.
@@ -70,27 +105,36 @@ _NEGATION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Normalise emotion aliases → canonical label
+# Normalise emotion aliases → canonical label.
+#
+# IMPORTANT: every key here must be a word that is NOT itself one of the
+# ~47 canonical emotions the system prompts advertise to the model
+# (see presets.py's _REMEMBER_FMT). The engine (vividmimir/constants.py's
+# EMOTION_VECTORS) already has correct, distinct arousal/valence vectors
+# for the full canonical set — aliasing one canonical emotion onto another
+# (e.g. "joyful" -> "happy") silently throws that distinction away before
+# it ever reaches the engine, which previously caused memories tagged with
+# a high-arousal canonical emotion (e.g. "joyful", arousal 0.6) to lose
+# flashbulb protection because they got rewritten to a lower-arousal one
+# ("happy", arousal 0.4) before the flashbulb threshold check ever saw the
+# original label. Only genuinely non-canonical, free-form synonyms a model
+# might use (e.g. "cheerful", "thrilled", "scared") belong in this table.
 _EMOTION_ALIASES: dict[str, str] = {
-    "cheerful": "happy", "joyful": "happy", "elated": "happy",
-    "thrilled": "excited", "enthusiastic": "excited",
+    "cheerful": "happy", "elated": "happy", "ecstatic": "happy",
+    "thrilled": "excited", "amazed": "excited", "astonished": "excited",
     "worried": "anxious", "nervous": "anxious", "stressed": "anxious",
+    "scared": "afraid", "terrified": "afraid", "frightened": "afraid",
     "annoyed": "frustrated", "irritated": "frustrated",
     "furious": "angry", "enraged": "angry", "livid": "angry",
-    "depressed": "sad", "unhappy": "sad", "gloomy": "sad",
-    "thankful": "grateful", "appreciative": "grateful",
-    "scared": "anxious", "afraid": "anxious", "terrified": "anxious",
-    "content": "peaceful", "serene": "peaceful", "tranquil": "peaceful",
-    "motivated": "inspired", "creative": "inspired",
-    "kind": "warm", "caring": "warm", "affectionate": "warm",
-    "tender": "warm", "sweet": "warm",
-    "wistful": "nostalgic", "bittersweet": "nostalgic",
-    "amazed": "excited", "astonished": "excited",
-    "delighted": "happy", "ecstatic": "happy",
-    "melancholy": "sad", "heartbroken": "sad",
-    "betrayed": "hurt", "disappointed": "hurt",
+    "depressed": "sad", "unhappy": "sad", "heartbroken": "sad",
+    "thankful": "grateful",
+    "tranquil": "peaceful", "calm": "peaceful",
+    "creative": "inspired",
+    "kind": "warm", "caring": "warm", "sweet": "warm", "fond": "warm",
     "bewildered": "confused", "perplexed": "confused",
     "isolated": "lonely", "abandoned": "lonely",
+    "ashamed": "guilty",
+    "betrayed": "hurt",
 }
 
 
@@ -125,18 +169,73 @@ def detect_emotions(text: str, top_k: int = 3) -> list[str]:
     return [normalize_emotion(e) for e in ranked[:top_k]]
 
 
+# Phrase tiers for estimate_importance(). Kept as substring lists (not a
+# full NLP model) by design, but deliberately broad — the original 7-phrase
+# list only caught a narrow literal pattern ("i feel", "i love", "i hate",
+# "my family", "my life", "i'm scared", "i'm worried"), so something like
+# "I told him my dad passed away last year and it still hurts" scored
+# identically to "Just a short hello, nothing much happened". This matters
+# most for memory IMPORT (pasting old chat history from elsewhere, e.g. a
+# Character.ai export) since that's the one path with no live model
+# turn-by-turn judging importance — this heuristic is all it gets.
+_IMPORTANCE_MAJOR_EVENT_PHRASES = [
+    "passed away", "passed last", " died ", "death of", "lost my", "lost him",
+    "lost her", "funeral", "diagnosed with", "diagnosis", "miscarriage",
+    "divorce", "broke up with", "break up", "breakup", "assaulted", "suicide",
+    "cancer", "hospitalized", "surgery", "car accident", "fired from",
+    "lost my job", "lost his job", "lost her job", "eviction", "homeless",
+]
+_IMPORTANCE_MILESTONE_PHRASES = [
+    "i feel", "i love", "i hate", "my family", "my life",
+    "i'm scared", "i'm worried", "i am scared", "i am worried",
+    "promoted", "promotion", "got engaged", "proposed to", "the wedding",
+    "got married", "pregnant", "newborn", "graduated", "graduation",
+    "moved in together", "moving to", "new job",
+    "my dad", "my mom", "my mother", "my father", "my brother", "my sister",
+    "my partner", "my boyfriend", "my girlfriend", "my husband", "my wife",
+    "my son", "my daughter", "my grandfather", "my grandmother",
+    "i'm proud", "i'm grateful", "i'm anxious", "i'm terrified",
+    "i'm heartbroken", "i'm devastated", "always remember", "never forget",
+    "means everything", "means so much", "changed my life",
+    "biggest mistake", "proudest moment",
+]
+_IMPORTANCE_MINOR_DISCLOSURE_PHRASES = [
+    "excited about", "nervous about", "worried about", "reminds me of",
+]
+# Emotions that mark a turn as emotionally loaded enough to be worth extra
+# weight even when no specific phrase above matched (e.g. third-person/
+# narrative-style pasted text, which won't contain first-person "i feel").
+_IMPORTANCE_SIGNIFICANT_EMOTIONS = {
+    "sad", "angry", "afraid", "guilty", "vulnerable", "overwhelmed", "hurt",
+    "resentful", "embarrassed", "insecure", "proud", "triumphant", "joyful",
+    "nostalgic", "bittersweet", "melancholy", "disappointed", "jealous",
+    "grateful",
+}
+
+
 def estimate_importance(user_text: str, response_text: str) -> int:
     """Heuristic importance scoring (1-10)."""
     score = 5
-    lower = user_text.lower()
-    # Personal revelations
-    if any(w in lower for w in ["i feel", "i love", "i hate", "my family",
-                                 "my life", "i'm scared", "i'm worried"]):
+    lower = f" {user_text.lower()} "
+
+    if any(w in lower for w in _IMPORTANCE_MAJOR_EVENT_PHRASES):
+        score += 3
+    elif any(w in lower for w in _IMPORTANCE_MILESTONE_PHRASES):
         score += 2
+    elif any(w in lower for w in _IMPORTANCE_MINOR_DISCLOSURE_PHRASES):
+        score += 1
+
     # Questions about the AI itself
     if any(w in lower for w in ["do you remember", "what do you think",
                                  "how do you feel"]):
         score += 1
+
+    # Emotional-content signal — catches significant content that doesn't
+    # match a literal phrase above (e.g. pasted narrative-style text).
+    detected = detect_emotions(f"{user_text} {response_text}")
+    if detected and detected[0] in _IMPORTANCE_SIGNIFICANT_EMOTIONS:
+        score += 2
+
     # Very short / trivial
     if len(user_text) < 20:
         score -= 1
@@ -252,11 +351,14 @@ class MemoryManager:
 
     # ── store ─────────────────────────────────────────────────────────
 
-    def remember(self, content: str, emotion: str = "neutral",
-                 importance: int = 5, source: str = "playground",
-                 why_saved: str = "",
-                 conversation_snapshot: list[dict] | None = None,
-                 category: str = "") -> dict:
+    def _remember_obj(self, content: str, emotion: str = "neutral",
+                       importance: int = 5, source: str = "playground",
+                       why_saved: str = "",
+                       conversation_snapshot: list[dict] | None = None,
+                       category: str = ""):
+        """Like remember(), but returns the live Memory object rather than
+        a dict snapshot — for internal callers (e.g. process_turn's entity
+        linking) that need to mutate the memory right after creation."""
         emotion = normalize_emotion(emotion)
         mem = self._mimir.remember(
             content=content, emotion=emotion,
@@ -266,7 +368,17 @@ class MemoryManager:
             category=category,
         )
         self._invalidate_stats_cache()
-        return mem.to_dict()
+        return mem
+
+    def remember(self, content: str, emotion: str = "neutral",
+                 importance: int = 5, source: str = "playground",
+                 why_saved: str = "",
+                 conversation_snapshot: list[dict] | None = None,
+                 category: str = "") -> dict:
+        return self._remember_obj(
+            content, emotion, importance, source,
+            why_saved, conversation_snapshot, category,
+        ).to_dict()
 
     def remember_exchange(self, user_msg: str, assistant_msg: str,
                           emotion: str = "neutral",
@@ -448,7 +560,7 @@ class MemoryManager:
             else:
                 assistant_brief = assistant_msg
             mem_content += f"\nI responded: {assistant_brief}"
-            mem = self.remember(
+            mem = self._remember_obj(
                 content=mem_content,
                 emotion=primary_emotion,
                 importance=importance,
@@ -631,6 +743,26 @@ class MemoryManager:
     def recall(self, context: str, limit: int = 10) -> list[dict]:
         memories = self._mimir.recall(context, limit=limit)
         return [m.to_dict() for m in memories]
+
+    def recall_for_display(self, context: str, limit: int = 5) -> list[dict]:
+        """Lean recall for the live in-chat memory activity strip.
+
+        Memory.to_dict() doesn't include vividness (it's a computed
+        property, not a stored field) — this builds a small dict per
+        memory that does, mirroring how get_graph() builds its node dicts.
+        """
+        memories = self._mimir.recall(context, limit=limit)
+        return [
+            {
+                "content": m.gist[:200],
+                "emotion": m.emotion,
+                "importance": m.importance,
+                "vividness": round(m.vividness, 2),
+                "is_flashbulb": m._is_flashbulb,
+                "category": m._category or "",
+            }
+            for m in memories
+        ]
 
     def request_deep_remember(self, query: str) -> bool:
         """Resolve a <deep_remember query="..."/> tag against snapshot-bearing
@@ -1116,16 +1248,16 @@ class MemoryManager:
                     to_forget_real.append(real_idx)
                     counts["forgotten"] += 1
                 elif op_type == "PROMOTE":
-                    mem._importance = min(10, mem.importance + 2)
+                    mem.importance = min(10, mem.importance + 2)
                     counts["promoted"] += 1
                 elif op_type == "DEMOTE":
-                    mem._importance = max(1, mem.importance - 2)
+                    mem.importance = max(1, mem.importance - 2)
                     counts["demoted"] += 1
                 elif op_type == "UPDATE":
                     if "emotion" in op:
                         mem.emotion = str(op["emotion"])
                     if "importance" in op:
-                        mem._importance = max(1, min(10, int(op["importance"])))
+                        mem.importance = max(1, min(10, int(op["importance"])))
                     counts["updated"] += 1
 
             # Remove forgotten in reverse order to preserve indices
@@ -1217,6 +1349,37 @@ class MemoryManager:
                 mem.emotion = new_emotion  # graceful fallback
         self.save()
         return mem.to_dict()
+
+    def resolve_treasure_query(self, query: str, min_confidence: float = 0.1) -> int | None:
+        """Find the reflection index a <treasure query="..."/> tag refers to.
+
+        Uses recall()'s top result, but — unlike a bare recall — requires a
+        minimum lexical overlap between the query and the candidate's own
+        content before accepting it. Without this, a <treasure> query with
+        no good match in the store (a mis-phrased or hallucinated query)
+        would otherwise silently cherish/anchor whatever recall ranked #1,
+        with no indication to the user that the "wrong" memory got marked
+        precious. 0.1 matches the existing confidence bar used for attic
+        rediscovery-by-query (core.py's recall_from_attic).
+        """
+        if not query:
+            return None
+        matches = self._mimir.recall(query, limit=1)
+        if not matches:
+            return None
+        target = matches[0]
+        try:
+            from vividmimir.helpers import _content_words, _overlap_ratio
+        except ImportError:
+            from mimir_modular.helpers import _content_words, _overlap_ratio
+        query_words = _content_words(query.lower())
+        overlap = _overlap_ratio(query_words, target.content_words)
+        if overlap < min_confidence:
+            return None
+        for idx, m in enumerate(self._mimir._reflections):
+            if m is target:
+                return idx
+        return None
 
     def toggle_cherish(self, index: int) -> bool | None:
         """Toggle cherished status on a memory."""

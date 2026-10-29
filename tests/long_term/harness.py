@@ -47,6 +47,15 @@ except ImportError:
 #  Time-Warp Engine
 # ═══════════════════════════════════════════════════════════════
 
+# Every vividmimir/mimir_modular submodule that computes memory age via
+# `datetime.now()` (imported as `from datetime import datetime`, so the
+# name lives in each module's own namespace and must be patched there).
+_ENGINE_SUBMODULES = (
+    "core", "models", "helpers", "write_mixin", "recall_mixin",
+    "neuroscience_mixin", "yggdrasil_mixin", "llm_mixin", "persistence_mixin",
+)
+
+
 class TimeWarp:
     """Monkey-patchable clock that lets tests jump forward in time."""
 
@@ -72,18 +81,52 @@ class TimeWarp:
     def time(self) -> float:
         return self.timestamp
 
-    def _patched_datetime_now(self, tz=None):
-        return self.now
+    def _make_fake_datetime(self):
+        warp = self
+
+        class _FakeDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return warp.now
+
+        return _FakeDateTime
 
     @contextmanager
     def patched(self):
-        """Context manager that patches time.time and datetime references."""
+        """Context manager that patches time.time AND datetime.now() across
+        every engine submodule, for the duration of the block.
+
+        Patching only time.time (the original implementation of this
+        method) left the engine's actual age-dependent math untouched:
+        vividness decay, stability, gist compression, Yggdrasil temporal
+        edges, and consolidation cadence are all computed from
+        `datetime.now()` in vividmimir/mimir_modular, never from
+        `time.time()`. A test calling advance_days(400) and then checking
+        vividness would see no change at all — the clock the engine
+        actually reads was never moved — which made every long-horizon
+        decay/consolidation assertion in this suite silently meaningless.
+        """
         original_time = time.time
         time.time = self.time
+        fake_cls = self._make_fake_datetime()
+        patched_mods: dict[str, object] = {}
+        for pkg in ("vividmimir", "mimir_modular"):
+            for sub in _ENGINE_SUBMODULES:
+                modname = f"{pkg}.{sub}"
+                try:
+                    __import__(modname)
+                except ImportError:
+                    continue
+                mod = sys.modules.get(modname)
+                if mod is not None and hasattr(mod, "datetime"):
+                    patched_mods[modname] = mod.datetime
+                    mod.datetime = fake_cls
         try:
             yield self
         finally:
             time.time = original_time
+            for modname, orig in patched_mods.items():
+                sys.modules[modname].datetime = orig
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -30,7 +30,7 @@ const App = (() => {
         if (page === 'tools') ToolsPage.init();
         if (page === 'import') ImportPage.init();
         if (page === 'settings') SettingsPage.init();
-        if (page === 'agents') AgentsPage.init();
+        if (page === 'characters') AgentsPage.init();
         if (page === 'proactive') ProactivePage.init();
         if (page === 'conversations') ConversationsPage.init();
         if (page === 'multi-chat') MultiChatPage.init();
@@ -265,7 +265,7 @@ const App = (() => {
 
     // ── Load agent dropdown in chat header ───────────────────────
     async function loadAgentDropdown() {
-        const select = document.getElementById('agent-select');
+        const select = document.getElementById('character-select');
         if (!select) return;
         const activeId = state.settings.active_character_id || '';
         try {
@@ -336,7 +336,7 @@ const App = (() => {
                 await apiPost('/models/mmproj/set', { path });
             }
         });
-        document.getElementById('agent-select').addEventListener('change', async (e) => {
+        document.getElementById('character-select').addEventListener('change', async (e) => {
             const agentId = e.target.value;
             if (agentId) {
                 await apiPost('/characters/' + agentId + '/activate', {});

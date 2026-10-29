@@ -1,8 +1,8 @@
 ﻿# Mimir's Memory Hub
 
-**A local AI chat app where your AI actually remembers you.**
+**A local AI companion that actually remembers you.**
 
-Mimir's Memory Hub is a free, open-source AI companion that runs on your machine. Connect any local model or cloud API and start talking to an AI that builds a genuine, persistent memory of every conversation — one that fades, strengthens, dreams, and evolves the way a human mind does.
+Mimir's Memory Hub is a free, open-source AI companion platform that runs on your machine. Connect any local model or cloud API and start talking to a character that builds a genuine, persistent memory of every conversation — one that fades, strengthens, dreams, and evolves the way a human mind does. It's a memory and companion platform first — optional tool/agent capabilities exist for people who want them, but they're off by default and never required for the character/companion experience.
 
 No subscriptions. No data leaving your machine (unless you choose a cloud API). No conversation limits. No forgetting.
 
@@ -49,9 +49,10 @@ Most AI chat apps give the AI a simple sliding context window — it forgets eve
 - **Neurochemistry simulation** — dopamine, serotonin, oxytocin, norepinephrine, and cortisol modulate encoding, recall, and emotional responses
 - **Consolidation and dreams** — a sleep cycle merges, prunes, and synthesizes memories, producing dream-like cross-theme insights
 - **Multiple characters** — create distinct AI personalities, each with their own completely separate memory
-- **Multi-agent conversations** — get multiple characters talking together in one conversation
-- **21 built-in tools** — web search, file I/O, code execution, MCP server connections, and more
+- **Group chats** — get multiple characters talking together with you in one conversation
 - **10 LLM backends** — run fully local, connect to cloud APIs, or use your own endpoint
+
+Beyond the companion/character experience, Mimir also offers **optional** agent-style capabilities (21 built-in tools, MCP server connections, autonomous task mode) for anyone who wants an assistant rather than — or alongside — a companion. These are opt-in, off by default, and have no effect on how your characters remember or behave unless you deliberately switch a character into the Agent/Assistant preset.
 
 ---
 
@@ -63,11 +64,9 @@ Most AI chat apps give the AI a simple sliding context window — it forgets eve
 | 🧠 **Persistent memory** | Every conversation is stored, emotionally tagged, and recalled in future sessions |
 | 👤 **Characters** | Create custom AI personas with names, personalities, backstories, and avatars |
 | 🃏 **SillyTavern import** | Import character cards directly — PNG, JSON, single files, or entire folders |
-| 🤝 **Multi-agent chat** | Multiple characters in one conversation with 3 turn modes (address by name, sequential, all respond) |
+| 🤝 **Group chats** | Multiple characters in one conversation with 3 turn modes (address by name, sequential, all respond) |
 | 📊 **Memory browser** | Search, filter, edit, cherish, pin, or delete individual memories |
 | 📈 **8 Visualizations** | Neural graph, 3D constellation, mood timeline, neurochemistry, relationships, topic clusters, cherished wall, memory attic |
-| 🔧 **21 Agent tools** | File I/O, web search, code execution, page fetching, reminders, and more |
-| 🔌 **MCP support** | Connect external tool servers via the Model Context Protocol |
 | 🖥️ **10 LLM backends** | Ollama, Local GGUF, Transformers/SafeTensors (GPU), OpenAI, Anthropic, Google, OpenRouter, vLLM, OpenAI-Compatible, Custom |
 | 🎤 **Voice I/O** | Text-to-speech (Edge TTS, Piper, Kokoro) and speech-to-text (Whisper) |
 | 🖼️ **Vision** | Send images to VL models, with automatic BLIP captioning as a fallback |
@@ -76,6 +75,9 @@ Most AI chat apps give the AI a simple sliding context window — it forgets eve
 | 📊 **Token tracking** | Real-time token count and cost estimation in the chat header |
 | 🎨 **Light & dark themes** | Full light theme support alongside the default dark theme |
 | 🧪 **Connection test** | One-click backend connection test from Settings |
+| — | — |
+| 🔧 **21 optional tools** *(Agent/Assistant presets only)* | File I/O, web search, code execution, page fetching, reminders, and more — opt-in, never used by companion/character presets |
+| 🔌 **MCP support** *(optional)* | Connect external tool servers via the Model Context Protocol |
 
 ---
 
@@ -298,7 +300,7 @@ Configure tool permissions, allowed paths, and allowed domains from the **Tools*
 
 ## Testing & Known Limitations
 
-We believe in being transparent about what works and what doesn't. The project includes a comprehensive automated test suite that simulates a full year of usage across every preset mode — companion, agent, character roleplay, creative writing, personal assistant, and multi-agent conversations.
+We believe in being transparent about what works and what doesn't. The project includes a comprehensive automated test suite that simulates a full year of usage across every preset mode — companion, agent, character roleplay, creative writing, personal assistant, and group conversations.
 
 ### Test Suite Overview
 
@@ -312,8 +314,10 @@ The test framework lives in `tests/long_term/` and runs 80 individual tests cove
 | Presets (all 6 presets, chemistry toggles, emotion weights, context gen) | 9 | 29 | 100% |
 | Conversation Quality (process turn, emotion detection, multi-day, high volume) | 15 | 81 | 100% |
 | API Endpoints (all 16 server endpoints) | 16 | 27 | 100% |
-| Year-Long Simulations (6 full-year scenarios with time-warped clocks) | 6 | 127 | 89.8% |
-| **Total** | **80** | **413** | **96.6%** |
+| Year-Long Simulations (6 full-year scenarios with time-warped clocks) | 6 | 127 | 82.7% |
+| **Total** | **80** | **413** | **94.4%** |
+
+These numbers come from the test clock genuinely driving the engine's own age-based decay math (a harness bug that let the clock advance without the engine ever seeing it was found and fixed — see Known Limitations below), not from a model simulating what might happen. The time-warped clock fully stands in for real time, so a "full year" run finishes in about two minutes.
 
 ### What Works Well
 
@@ -326,23 +330,23 @@ The test framework lives in `tests/long_term/` and runs 80 individual tests cove
 - **Cherished & anchored memory protection** — protected memories survive consolidation and pruning
 - **Consolidation (sleep)** — Huginn, Muninn, and Völva stages complete without errors, duplicates are merged, insights are generated
 - **Creative writing scenario** — perfect 20/20 assertions over a full simulated year of novel collaboration
-- **Multi-agent memory isolation** — characters maintain fully separate memory stores with zero cross-contamination
+- **Multi-character memory isolation** — characters maintain fully separate memory stores with zero cross-contamination
 
 ### Known Limitations
 
-**Long-term recall accuracy degrades for specific details.** Over a simulated year, recall accuracy averages **90.8%** — the system reliably remembers broad themes and emotional arcs, but can lose specific details (names, job titles, technical specifics) after 3–6 months of simulated time. This is the main area for improvement.
+**Long-term recall accuracy degrades for specific details.** Over a simulated year, recall accuracy now measures **84.9%** — the system reliably remembers broad themes and emotional arcs, but specific details (exact names, numbers, technical specifics) can drop out of the top recall results by the 6–12 month mark, even though the general topic is still retained. This figure was re-measured after fixing a bug in the test harness itself (it was advancing a simulated clock that the memory engine's own age calculations weren't actually reading, so every long-horizon decay/recall check had silently been running against zero elapsed time) — the previous 90.8% figure was measured against that broken clock and wasn't actually testing long-term decay at all. 84.9% is the first number anyone has gotten by actually letting a year pass.
 
 Specific patterns observed in year-long simulations:
 
 - **Companion mode**: After ~3 months, specific facts like job title or hobby names may not surface in recall, though the emotional context of those conversations is retained
-- **Agent mode**: Cross-referencing between projects works well short-term, but specific technical solutions (e.g., which JWT library was chosen, exact CI/CD pipeline details) can fall out of recall after ~12 months
-- **Character roleplay**: Long narrative arcs are mostly preserved, but minor plot details from early sessions (specific battle outcomes, secondary character introductions) can be lost
+- **Agent mode**: Cross-referencing between projects works well short-term, but specific technical solutions (e.g., which JWT library was chosen, exact CI/CD pipeline details) can fall out of recall after ~6 months
+- **Character roleplay**: Long narrative arcs are mostly preserved, but minor plot details and proper nouns from early sessions (specific locations, secondary character names) can be lost by the 12-month mark
 - **Assistant mode**: Conference topics and career milestones from 6–12 months ago may not surface without explicit prompting
 
-**These are not bugs** — the system is working as designed (memories fade naturally via the Ebbinghaus curve). The question is whether the current decay rates and recall boosting mechanisms are tuned aggressively enough for users who expect perfect long-term recall. This is an active area of development.
+**These are not bugs** — the system is working as designed (memories fade naturally via the Ebbinghaus curve), and separately, low-importance/never-revisited memories lose the bulk of their vividness within the first *week*, not months — the "months" timeline above is specifically about when a *name or number* drops out of the top-5 recall results, not when a memory disappears outright; the gist of it is retained far longer. The open question is whether the current decay rates and recall-boosting mechanisms are tuned aggressively enough for users who expect to be able to ask "what was that again?" a year later and get the exact detail back. This is an active area of development.
 
 **Other known limitations:**
-- Emotion detection covers a broad set of labels but doesn't catch every nuanced phrasing (e.g., "I feel so drained" may not map to a specific emotion)
+- Emotion detection (the keyword-based auto-detector used when no explicit emotion tag is given) now covers the full advertised emotion vocabulary, but as a keyword heuristic it still won't catch every nuanced phrasing (e.g., "I feel so drained" may not map to a specific emotion)
 - The reminder system relies on real clock time, so time-warped testing can't fully validate reminder delivery
 - Memory consolidation (sleep) is most effective when run periodically — if you never run it, the memory store grows unbounded and recall latency may increase over very long usage
 
@@ -446,14 +450,14 @@ Each character has completely separate memory — their experiences don't bleed 
 - **SillyTavern characters** — go to Characters → Bulk Import, enter the path to your ST `Characters` folder
 - **Memory import** — go to the **Import** page, paste text or upload files in any format. Mimir will parse them automatically, with optional AI enrichment to add emotion, importance, and context
 
-### Multi-agent conversations
+### Group chats
 1. Go to **Multi-Chat** (sidebar)
 2. Click **New Conversation** and give it a title
-3. Click **+ Add Agent** to add characters
+3. Click **+ Character** to add characters
 4. Use the ⚙️ gear button to set turn order:
-   - **Address by Name** — only agents you mention by name respond
-   - **Sequential** — agents take turns one at a time, round-robin
-   - **All Respond** — every agent responds each round
+   - **Address by Name** — only characters you mention by name respond
+   - **Sequential** — characters take turns one at a time, round-robin
+   - **All Respond** — every character responds each round
 
 ### Browse and manage memory
 1. Go to **Memory** (sidebar)
@@ -536,7 +540,7 @@ playground_data/
 │           ├── solutions.json      ← Solution patterns
 │           └── inferred_edges.json ← Yggdrasil graph edges
 ├── characters/            ← Character files
-├── conversations/         ← Multi-agent conversation history
+├── conversations/         ← Group chat conversation history
 └── models/                ← Downloaded models (GGUF, SafeTensors)
 ```
 

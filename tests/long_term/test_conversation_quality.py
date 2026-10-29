@@ -145,12 +145,17 @@ def test_emotion_normalization_coverage():
             "happy": "happy",
             "sad": "sad",
             "angry": "angry",
-            "scared": "anxious",
+            # scared/terrified alias to "afraid" (not "anxious") -- acute
+            # fear is semantically closer to afraid than to anxious/worry,
+            # and afraid is itself one of the 47 canonical emotions
+            # advertised to the model, so it must survive normalization
+            # unchanged (see memory_manager._EMOTION_ALIASES).
+            "scared": "afraid",
             "furious": "angry",
             "grateful": "grateful",
             "lonely": "lonely",
             "excited": "excited",
-            "terrified": "anxious",
+            "terrified": "afraid",
             "proud": "proud",
         }
         for alias, expected in alias_map.items():

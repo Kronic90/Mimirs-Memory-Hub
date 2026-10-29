@@ -134,9 +134,13 @@ async def download_model(repo_id: str, filename: str,
     file sitting at the "real" path where it would look complete to a
     later existence check (and a Retry would then wrongly skip it).
     """
+    safe_name = Path(filename).name
+    if not safe_name or safe_name in (".", "..") or safe_name != filename:
+        raise ValueError(f"Invalid filename: {filename!r}")
+
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
-    out_path = dest / filename
+    out_path = dest / safe_name
     part_path = out_path.with_name(out_path.name + ".part")
 
     url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
@@ -307,7 +311,10 @@ def list_local_models(models_dir: str) -> list[dict]:
 
 def delete_local_model(models_dir: str, filename: str) -> bool:
     """Delete a downloaded GGUF file."""
-    p = Path(models_dir) / filename
+    safe_name = Path(filename).name
+    if not safe_name or safe_name != filename:
+        return False
+    p = Path(models_dir) / safe_name
     if p.exists() and p.suffix == ".gguf":
         p.unlink()
         return True

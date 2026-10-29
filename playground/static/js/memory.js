@@ -17,7 +17,7 @@ const MemoryPage = (() => {
 
     // ── Load agent dropdown for memory page ──────────────────────
     async function loadAgentDropdown() {
-        const select = document.getElementById('memory-agent-select');
+        const select = document.getElementById('memory-character-select');
         if (!select) return;
         try {
             const [data, settings] = await Promise.all([
@@ -728,7 +728,7 @@ const MemoryPage = (() => {
                 document.getElementById(id).addEventListener('change', () => browseMemories(0));
             });
             // Agent dropdown for per-agent memory viewing
-            const agentSel = document.getElementById('memory-agent-select');
+            const agentSel = document.getElementById('memory-character-select');
             if (agentSel) {
                 agentSel.addEventListener('change', () => {
                     selectedCharId = agentSel.value;

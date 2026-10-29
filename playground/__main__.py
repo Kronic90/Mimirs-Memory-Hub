@@ -18,6 +18,7 @@ def main():
 
     host = "127.0.0.1"
     port = 19009
+    os.environ["MIMIR_PORT"] = str(port)
 
     def _open_browser():
         import time

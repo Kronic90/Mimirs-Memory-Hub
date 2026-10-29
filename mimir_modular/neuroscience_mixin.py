@@ -742,7 +742,6 @@ class NeuroscienceMixin:
                 continue
             preserved = " ".join(words[:GIST_PRESERVE_WORDS])
             m.content = f"[gist — {m.emotion}] {preserved}…"
-            m._content_words = None
             compressed += 1
         if compressed:
             self._rebuild_index()
@@ -969,9 +968,22 @@ class NeuroscienceMixin:
                     m for m in real_mems if m.timestamp[:10] == day]
                 if len(same_day) >= 3:
                     emotions = set(m.emotion for m in same_day)
+                    # Pull a short, real snippet from each same-day memory
+                    # so the dream actually names what happened, instead of
+                    # a content-free "a lot happened" sentence that reads
+                    # the same regardless of what the memories were about.
+                    topics = []
+                    for m in same_day[:3]:
+                        snippet = m.content.split("\n")[0].strip()
+                        if len(snippet) > 40:
+                            snippet = snippet[:40].rsplit(" ", 1)[0]
+                        if snippet:
+                            topics.append(snippet)
+                    topics_str = "; ".join(topics) if topics else "several things"
                     content = (
                         f"Dream insight: a lot happened on {day} — "
-                        f"I felt {', '.join(sorted(emotions))}. "
+                        f"{topics_str}. I felt "
+                        f"{', '.join(sorted(emotions))}. "
                         f"That was a significant day.")
                     if not any(day in m.content
                                for m in self._reflections

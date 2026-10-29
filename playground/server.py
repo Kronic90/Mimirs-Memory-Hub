@@ -41,6 +41,37 @@ app = FastAPI(title="Mimir's Memory Hub", version="0.5.0")
 _static = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
+# ── Origin validation ──────────────────────────────────────────────
+# Mimir has no login/session system by design (local-first, single-user,
+# Ollama-style "just run it" product) — but with zero access control at
+# all, any OTHER website open in the same browser could script a request
+# or WebSocket connection straight to this server and drive it as the
+# logged-in local user (classic CSWSH/CSRF against a localhost service).
+# Browsers can't be made to omit/spoof the Origin header from page script,
+# so checking it is a real, standard defense against exactly that threat —
+# and it's invisible to the legitimate page (same-origin requests always
+# carry a matching Origin) and to non-browser tools (curl/scripts send no
+# Origin header at all, so they're unaffected).
+_MIMIR_PORT = _os.environ.get("MIMIR_PORT", "19009")
+_ALLOWED_ORIGINS = {
+    f"http://127.0.0.1:{_MIMIR_PORT}",
+    f"http://localhost:{_MIMIR_PORT}",
+}
+
+
+def _origin_ok(origin: str | None) -> bool:
+    """True if there's no Origin header (non-browser client) or it matches
+    this server's own origin. False only for a genuinely cross-origin
+    browser-issued request/connection."""
+    return not origin or origin in _ALLOWED_ORIGINS
+
+
+@app.middleware("http")
+async def check_origin(request: Request, call_next):
+    if not _origin_ok(request.headers.get("origin")):
+        return JSONResponse({"error": "Cross-origin request blocked"}, status_code=403)
+    return await call_next(request)
+
 
 # Prevent browser from caching stale JS/CSS/HTML
 @app.middleware("http")
@@ -649,7 +680,7 @@ async def index():
 async def get_settings():
     data = _cfg.to_dict()
     # Mask API keys for frontend display
-    for name in ("openai", "anthropic", "google", "custom"):
+    for name in ("openai", "anthropic", "google", "custom", "openrouter", "vllm", "openai_compat"):
         key = data.get("backends", {}).get(name, {}).get("api_key", "")
         if key and len(key) > 8:
             data["backends"][name]["api_key"] = key[:4] + "•" * (len(key) - 8) + key[-4:]
@@ -675,7 +706,7 @@ async def update_settings(request: Request):
                 status_code=400)
 
     # Never overwrite real API keys with masked values from the frontend
-    for name in ("openai", "anthropic", "google", "custom"):
+    for name in ("openai", "anthropic", "google", "custom", "openrouter", "vllm", "openai_compat"):
         incoming_key = patch.get("backends", {}).get(name, {}).get("api_key")
         if incoming_key is not None and "\u2022" in incoming_key:
             # This is a masked display value — drop it so the real key is preserved
@@ -957,6 +988,19 @@ async def system_update_backend(request: Request):
     wheel_url = body.get("wheel_url", "")
     if not wheel_url:
         return JSONResponse({"ok": False, "error": "wheel_url is required"}, status_code=400)
+
+    # Only ever install a wheel from this module's own curated, known-good
+    # list — never an arbitrary caller-supplied URL. Without this, this
+    # endpoint was a straight line from "any URL" to "pip install + import
+    # it" (the import in verify_backend_in_subprocess executes the wheel's
+    # own code), i.e. unauthenticated remote code execution.
+    _known_good_urls = {c["url"] for c in gpu_diagnostics.COMPATIBLE_WHEELS.values()}
+    if wheel_url not in _known_good_urls:
+        return JSONResponse({
+            "ok": False,
+            "error": "wheel_url is not one of the known-good builds — refusing to install "
+                     "an arbitrary URL. Use the candidate returned by /api/system/backend-candidate.",
+        }, status_code=400)
 
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
     backup = await asyncio.to_thread(gpu_diagnostics.backup_current_backend, _BACKUP_ROOT)
@@ -1292,6 +1336,7 @@ async def get_tool_permissions():
         "file_access": False,
         "web_search": False,
         "code_execution": False,
+        "mcp_tools": False,
         "allowed_sites": [],
         "allowed_paths": [],
         "allowed_commands": [],
@@ -1337,8 +1382,13 @@ async def execute_tool(request: Request):
     params = body.get("params", {})
     perms = _cfg.get("tool_permissions", {})
 
-    # Route MCP tools to the MCP manager
+    # Route MCP tools to the MCP manager — gated the same way the built-in
+    # tools are. MCP servers are "just a URL" the user adds; their tools
+    # previously ran with no permission check at all, unlike every local
+    # tool, which made them MORE trusted than the sandboxed ones.
     if tool_name.startswith("mcp_"):
+        if not perms.get("mcp_tools"):
+            return JSONResponse({"error": "MCP tool execution not enabled. Enable it in Tools settings."})
         result = await _mcp.call_tool(tool_name, params)
         return JSONResponse(result)
 
@@ -2089,6 +2139,8 @@ async def list_characters():
 @app.get("/api/characters/{char_id}")
 async def get_character(char_id: str):
     """Load a character."""
+    if not _re.match(r'^[\w]+$', char_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     char = _characters.get_character(char_id)
     if not char:
         return JSONResponse({"error": "Not found"}, status_code=404)
@@ -2108,6 +2160,8 @@ async def create_character(request: Request):
 @app.put("/api/characters/{char_id}")
 async def update_character(char_id: str, request: Request):
     """Update a character."""
+    if not _re.match(r'^[\w]+$', char_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     body = await request.json()
     char = _characters.update_character(char_id, body)
     if not char:
@@ -2115,9 +2169,31 @@ async def update_character(char_id: str, request: Request):
     return JSONResponse(char)
 
 
+@app.delete("/api/characters/activate")
+async def deactivate_character():
+    """Clear the active character — revert to global persona.
+
+    Must be registered BEFORE the /api/characters/{char_id} DELETE route
+    below — Starlette matches routes in declaration order, so with the
+    wildcard route first, DELETE /api/characters/activate was being
+    swallowed by delete_character(char_id="activate") and always
+    returning 404 instead of ever actually deactivating.
+    """
+    global _memory, _conversation, _current_conv_id, _negative_mood_streak
+    _cfg.update({"active_character_id": ""})
+    _memory = None  # Force re-create with global settings on next turn
+    _auto_save_conversation()
+    _conversation.clear()
+    _current_conv_id = None
+    _negative_mood_streak = 0
+    return JSONResponse({"ok": True})
+
+
 @app.delete("/api/characters/{char_id}")
 async def delete_character(char_id: str):
     """Delete a character."""
+    if not _re.match(r'^[\w]+$', char_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     # If this was the active character, clear active_character_id
     if _cfg.get("active_character_id", "") == char_id:
         global _char_memories
@@ -2132,23 +2208,23 @@ async def delete_character(char_id: str):
 @app.post("/api/characters/{char_id}/activate")
 async def activate_character(char_id: str):
     """Set a character as the active persona (isolated memory)."""
+    if not _re.match(r'^[\w]+$', char_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     char = _characters.get_character(char_id)
     if not char:
         return JSONResponse({"error": "Not found"}, status_code=404)
-    global _memory, _char_memories
+    global _memory, _char_memories, _conversation, _current_conv_id, _negative_mood_streak
     _cfg.update({"active_character_id": char_id})
     # Clear global memory so next turn uses character-specific memory
     _memory = None
+    # Also clear the raw turn history — otherwise the new character inherits
+    # the previous character/preset's conversation (including any agent-mode
+    # tool calls/task tags), bleeding its tone and behaviour into this one.
+    _auto_save_conversation()  # save the outgoing conversation before switching
+    _conversation.clear()
+    _current_conv_id = None
+    _negative_mood_streak = 0
     return JSONResponse({"ok": True, "character": char})
-
-
-@app.delete("/api/characters/activate")
-async def deactivate_character():
-    """Clear the active character — revert to global persona."""
-    global _memory
-    _cfg.update({"active_character_id": ""})
-    _memory = None  # Force re-create with global settings on next turn
-    return JSONResponse({"ok": True})
 
 
 # ── STT endpoint ─────────────────────────────────────────────────────────────
@@ -2290,6 +2366,8 @@ async def create_multi_conversation(request: Request):
 @app.get("/api/multi-conversations/{conv_id}")
 async def get_multi_conversation(conv_id: str):
     """Load a multi-agent conversation."""
+    if not _re.match(r'^[\w]+$', conv_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     conv = _conversations.get_conversation(conv_id)
     if not conv:
         return JSONResponse({"error": "Not found"}, status_code=404)
@@ -2299,6 +2377,8 @@ async def get_multi_conversation(conv_id: str):
 @app.put("/api/multi-conversations/{conv_id}")
 async def update_multi_conversation(conv_id: str, request: Request):
     """Update conversation metadata."""
+    if not _re.match(r'^[\w]+$', conv_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     body = await request.json()
     result = _conversations.update_conversation(conv_id, body)
     if not result:
@@ -2309,6 +2389,8 @@ async def update_multi_conversation(conv_id: str, request: Request):
 @app.delete("/api/multi-conversations/{conv_id}")
 async def delete_multi_conversation(conv_id: str):
     """Delete a multi-agent conversation."""
+    if not _re.match(r'^[\w]+$', conv_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     ok = _conversations.delete_conversation(conv_id)
     if ok:
         return JSONResponse({"ok": True})
@@ -2318,6 +2400,8 @@ async def delete_multi_conversation(conv_id: str):
 @app.post("/api/multi-conversations/{conv_id}/message")
 async def add_message_to_conversation(conv_id: str, request: Request):
     """Add a message to conversation history."""
+    if not _re.match(r'^[\w]+$', conv_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
     body = await request.json()
     speaker = body.get("speaker", "user")
     content = body.get("content", "")
@@ -2337,6 +2421,9 @@ async def add_message_to_conversation(conv_id: str, request: Request):
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
     global _conversation
+    if not _origin_ok(ws.headers.get("origin")):
+        await ws.close(code=4403)
+        return
     await ws.accept()
 
     # Send wake-up notification if a consolidation cycle just ran
@@ -2645,8 +2732,8 @@ async def chat_ws(ws: WebSocket):
                 clean_response = _strip_self_reflect_tags(clean_response)
                 remember_tags  = _parse_remember_tags(response_text) if memory_enabled else []
                 remind_tags    = _parse_remind_tags(response_text) if memory_enabled else []
-                task_tags      = _parse_task_tags(response_text) if memory_enabled else []
-                solution_tags  = _parse_solution_tags(response_text) if memory_enabled else []
+                task_tags      = _parse_task_tags(response_text) if memory_enabled and preset_name in ("agent", "assistant") else []
+                solution_tags  = _parse_solution_tags(response_text) if memory_enabled and preset_name in ("agent", "assistant") else []
                 social_tags    = _parse_social_tags(response_text) if memory_enabled else []
                 cherish_tags   = _parse_cherish_tags(response_text) if memory_enabled else []
                 deep_remember_tags = _parse_deep_remember_tags(response_text) if memory_enabled else []
@@ -2721,6 +2808,7 @@ async def chat_ws(ws: WebSocket):
 
                 async def _bg_memory_ops():
                     """Run all memory operations in background so UI stays responsive."""
+                    _formed: list[dict] = []
                     try:
                         if not memory_enabled:
                             return
@@ -2730,13 +2818,15 @@ async def chat_ws(ws: WebSocket):
                                 continue
                             if (entry.get("source") == "visual"
                                     and _bg_pending_img is not None):
-                                mem.remember_visual(
+                                vresult = mem.remember_visual(
                                     image_bytes=_bg_pending_img,
                                     description=entry["content"],
                                     emotion=entry["emotion"],
                                     importance=entry["importance"],
                                     why_saved=entry["why"],
                                 )
+                                if vresult:
+                                    _formed.append(vresult)
                             else:
                                 result = mem.remember(
                                     content=entry["content"],
@@ -2747,6 +2837,8 @@ async def chat_ws(ws: WebSocket):
                                     conversation_snapshot=_bg_conversation_snapshot,
                                     category="self" if entry.get("is_self") else "",
                                 )
+                                if result:
+                                    _formed.append(result)
                                 # Apply cherish/anchor if the model requested it
                                 if result and (entry.get("cherish") or entry.get("anchor")):
                                     try:
@@ -2761,30 +2853,28 @@ async def chat_ws(ws: WebSocket):
                         # Process retroactive cherish/anchor on existing memories
                         for ct in _bg_cherish_tags:
                             try:
-                                matches = mem._mimir.recall(ct["query"], limit=1)
-                                if matches:
-                                    # Find the index of this memory
-                                    target = matches[0]
-                                    for idx, m in enumerate(mem._mimir._reflections):
-                                        if m is target:
-                                            if not getattr(m, '_cherished', False):
-                                                mem.toggle_cherish(idx)
-                                            if ct.get("anchor") and not getattr(m, '_anchor', False):
-                                                mem.toggle_anchor(idx)
-                                            break
+                                idx = mem.resolve_treasure_query(ct["query"])
+                                if idx is not None:
+                                    m = mem._mimir._reflections[idx]
+                                    if not getattr(m, '_cherished', False):
+                                        mem.toggle_cherish(idx)
+                                    if ct.get("anchor") and not getattr(m, '_anchor', False):
+                                        mem.toggle_anchor(idx)
                             except Exception:
                                 pass
 
                         # Save social impressions
                         for si in _bg_social_tags:
                             try:
-                                mem.add_social(
+                                sresult = mem.add_social(
                                     entity=si["entity"],
                                     content=si["content"],
                                     emotion=si["emotion"],
                                     importance=si["importance"],
                                     conversation_snapshot=_bg_conversation_snapshot,
                                 )
+                                if sresult:
+                                    _formed.append(sresult)
                             except Exception:
                                 pass
 
@@ -2808,6 +2898,29 @@ async def chat_ws(ws: WebSocket):
                         if _bg_self_reflect_requested:
                             try:
                                 await asyncio.to_thread(mem.trigger_self_reflect)
+                            except Exception:
+                                pass
+
+                        # Live in-chat memory activity strip — newly formed
+                        # memories this turn plus what was recalled into
+                        # context, so vividness/fading is visible inline
+                        # instead of only in the separate Visualize tab.
+                        # Computed here (post-response, in the background
+                        # task, off the event loop via to_thread) rather
+                        # than before generation — it doesn't gate the
+                        # reply, so it must never add to time-to-first-token.
+                        try:
+                            _bg_recalled = await asyncio.to_thread(
+                                mem.recall_for_display, _bg_user_text, 5)
+                        except Exception:
+                            _bg_recalled = []
+                        if _formed or _bg_recalled:
+                            try:
+                                await _bg_ws.send_json({
+                                    "type": "memory_activity",
+                                    "formed": _formed,
+                                    "recalled": _bg_recalled,
+                                })
                             except Exception:
                                 pass
 
@@ -2889,11 +3002,19 @@ async def chat_ws(ws: WebSocket):
                         for cb in _bg_code_blocks:
                             try:
                                 from playground.tool_runner import run_tool
-                                # Agent auto-grants code_execution + agent_files path
+                                # Respect the user's actual Tools settings —
+                                # only additively widen allowed_paths to the
+                                # agent's own sandbox dir. Previously this
+                                # force-granted code_execution/file_access
+                                # unconditionally, bypassing the permission
+                                # system entirely regardless of what the user
+                                # had configured (or left fully disabled).
+                                tool_perms = _cfg.get("tool_permissions", {})
                                 agent_perms = {
-                                    "code_execution": True,
-                                    "file_access": True,
-                                    "allowed_paths": [str(agent_dir)],
+                                    **tool_perms,
+                                    "allowed_paths": list(set(
+                                        tool_perms.get("allowed_paths", []) + [str(agent_dir)]
+                                    )),
                                 }
                                 result = await asyncio.to_thread(
                                     run_tool, "run_code",
@@ -2927,18 +3048,21 @@ async def chat_ws(ws: WebSocket):
                                     "params": tool_params,
                                 })
 
-                                # Route MCP tools to MCP manager
+                                # Route MCP tools to MCP manager — same
+                                # permission gate as /api/tools/execute.
                                 if tool_name.startswith("mcp_"):
-                                    result = await _mcp.call_tool(tool_name, tool_params)
+                                    if not _cfg.get("tool_permissions", {}).get("mcp_tools"):
+                                        result = {"error": "MCP tool execution not enabled. Enable it in Tools settings."}
+                                    else:
+                                        result = await _mcp.call_tool(tool_name, tool_params)
                                 else:
                                     from playground.tool_runner import run_tool
                                     tool_perms = _cfg.get("tool_permissions", {})
-                                    # Agent auto-grants file + code within agent_files
+                                    # Respect the user's actual Tools settings
+                                    # (see matching fix + comment above) —
+                                    # only additively widen allowed_paths.
                                     agent_perms = {
                                         **tool_perms,
-                                        "code_execution": True,
-                                        "file_access": True,
-                                        "web_search": tool_perms.get("web_search", False),
                                         "allowed_paths": list(set(
                                             tool_perms.get("allowed_paths", []) + [str(agent_dir)]
                                         )),
@@ -3156,6 +3280,12 @@ async def chat_ws(ws: WebSocket):
 @app.websocket("/ws/multi-chat/{conv_id}")
 async def multi_chat_ws(ws: WebSocket, conv_id: str):
     """WebSocket for multi-agent conversations with streaming responses."""
+    if not _origin_ok(ws.headers.get("origin")):
+        await ws.close(code=4403)
+        return
+    if not _re.match(r'^[\w]+$', conv_id):
+        await ws.close(code=4403)
+        return
     await ws.accept()
 
     # Load conversation
@@ -3456,6 +3586,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         # single-chat (remember/visual, treasure, social,
                         # recall, dream, self_reflect, reminders), all scoped
                         # to this agent's own isolated memory.
+                        agent_formed: list[dict] = []
                         if memory_enabled and char_id:
                             try:
                                 agent_mem = _ensure_memory(char_id=char_id)
@@ -3465,44 +3596,47 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                     if not isinstance(tag, dict) or not tag.get("content"):
                                         continue
                                     if tag.get("source") == "visual" and agent_can_see and pending_image_bytes:
-                                        agent_mem.remember_visual(
+                                        vresult = agent_mem.remember_visual(
                                             image_bytes=pending_image_bytes,
                                             description=tag["content"][:500],
                                             emotion=tag.get("emotion", "neutral"),
                                             importance=tag.get("importance", 5),
                                         )
+                                        if vresult:
+                                            agent_formed.append(vresult)
                                     else:
-                                        agent_mem.remember(
+                                        result = agent_mem.remember(
                                             content=tag["content"][:500],
                                             emotion=tag.get("emotion", "neutral"),
                                             importance=tag.get("importance", 5),
                                             source="multi_agent_conversation",
                                             category="self" if tag.get("is_self") else "",
                                         )
+                                        if result:
+                                            agent_formed.append(result)
 
                                 # Retroactive treasure/cherish on existing memories
                                 for ct in _parse_cherish_tags(response_text):
                                     try:
-                                        matches = agent_mem._mimir.recall(ct["query"], limit=1)
-                                        if matches:
-                                            target = matches[0]
-                                            for idx, m in enumerate(agent_mem._mimir._reflections):
-                                                if m is target:
-                                                    if not getattr(m, '_cherished', False):
-                                                        agent_mem.toggle_cherish(idx)
-                                                    if ct.get("anchor") and not getattr(m, '_anchor', False):
-                                                        agent_mem.toggle_anchor(idx)
-                                                    break
+                                        idx = agent_mem.resolve_treasure_query(ct["query"])
+                                        if idx is not None:
+                                            m = agent_mem._mimir._reflections[idx]
+                                            if not getattr(m, '_cherished', False):
+                                                agent_mem.toggle_cherish(idx)
+                                            if ct.get("anchor") and not getattr(m, '_anchor', False):
+                                                agent_mem.toggle_anchor(idx)
                                     except Exception:
                                         pass
 
                                 # Social impressions
                                 for si in _parse_social_tags(response_text):
                                     try:
-                                        agent_mem.add_social(
+                                        sresult = agent_mem.add_social(
                                             entity=si["entity"], content=si["content"],
                                             emotion=si["emotion"], importance=si["importance"],
                                         )
+                                        if sresult:
+                                            agent_formed.append(sresult)
                                     except Exception:
                                         pass
 
@@ -3543,6 +3677,8 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         clean_response = _strip_remember_tags(response_text)
                         clean_response = _strip_remind_tags(clean_response)
                         clean_response = _strip_showimage_tags(clean_response)
+                        clean_response = _strip_task_tags(clean_response)
+                        clean_response = _strip_solution_tags(clean_response)
                         clean_response = _strip_social_tags(clean_response)
                         clean_response = _strip_cherish_tags(clean_response)
                         clean_response = _strip_deep_remember_tags(clean_response)
@@ -3553,6 +3689,29 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         for h in showimage_hashes:
                             await ws.send_json({"type": "show_image", "speaker": agent_name,
                                                  "hash": h, "char_id": char_id or ""})
+
+                        # Live in-chat memory activity strip — same event as
+                        # single-chat, with a speaker so the frontend can
+                        # attach it to this agent's bubble specifically.
+                        # Computed post-response (off the event loop via
+                        # to_thread) rather than before generation — it
+                        # doesn't gate this agent's reply, and multi-chat is
+                        # already sequential per-agent so this must not add
+                        # to the next agent's wait either.
+                        agent_recalled: list[dict] = []
+                        if memory_enabled and char_id:
+                            try:
+                                agent_recalled = await asyncio.to_thread(
+                                    _ensure_memory(char_id=char_id).recall_for_display, user_text, 5)
+                            except Exception:
+                                pass
+                        if agent_formed or agent_recalled:
+                            await ws.send_json({
+                                "type": "memory_activity",
+                                "speaker": agent_name,
+                                "formed": agent_formed,
+                                "recalled": agent_recalled,
+                            })
 
                         agent_entry = {"speaker": agent_name, "speaker_id": char_id or "",
                                        "content": clean_response}
@@ -3677,6 +3836,8 @@ async def mcp_call_tool(request: Request):
     arguments = body.get("arguments", {})
     if not tool_name:
         return JSONResponse({"error": "tool name required"}, status_code=400)
+    if not _cfg.get("tool_permissions", {}).get("mcp_tools"):
+        return JSONResponse({"error": "MCP tool execution not enabled. Enable it in Tools settings."})
     result = await _mcp.call_tool(tool_name, arguments)
     return JSONResponse(result)
 
@@ -3821,6 +3982,9 @@ def _wire_proactive_agent():
 # Agent WebSocket — live updates
 @app.websocket("/ws/agent")
 async def agent_ws(websocket: WebSocket):
+    if not _origin_ok(websocket.headers.get("origin")):
+        await websocket.close(code=4403)
+        return
     await websocket.accept()
     _agent_ws_connections.append(websocket)
     # Send current status on connect

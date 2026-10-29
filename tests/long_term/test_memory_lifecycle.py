@@ -261,8 +261,9 @@ def test_emotion_normalization():
             ("angry", "angry"),
             ("grateful", "grateful"),
             ("excited", "excited"),
-            ("scared", "anxious"),   # mapped to anxious by the system
-            ("terrified", "anxious"), # mapped to anxious by the system
+            ("scared", "afraid"),    # mapped to afraid, not anxious --
+            ("terrified", "afraid"), # acute fear is closer to afraid,
+                                     # which is itself a canonical emotion
             ("proud", "proud"),
         ]
 

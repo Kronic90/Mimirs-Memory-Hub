@@ -252,6 +252,17 @@ MOOD_GATE_KEEP_MIN        = 20
 # ── 20. Auto-Consolidation (hippocampal replay interval) ─────────────────
 AUTO_CONSOLIDATION_INTERVAL = 50
 
+# Yggdrasil (the memory graph) is otherwise only (re)built on the full
+# consolidation pass above, on sleep, on load, or after an import — so a
+# short/early session (fewer than this many memories) would have an empty
+# graph the whole time, starving dream/reflect/graph-visualization features
+# of any connections to draw on. Below this count, rebuild it on its own,
+# more frequent cadence instead (cheap at this scale — it's O(n^2) but n is
+# small). At/above this count, the regular consolidation cadence above
+# takes over, same as before.
+YGGDRASIL_EARLY_SESSION_MAX   = 100
+YGGDRASIL_EARLY_REBUILD_EVERY = 10
+
 # ── 21. Memory Chunking (Miller 1956 — 7±2) ─────────────────────────────
 CHUNK_OVERLAP_THRESHOLD   = 0.30
 CHUNK_MIN_GROUP           = 3
