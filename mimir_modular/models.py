@@ -10,10 +10,12 @@ from typing import Any
 from .constants import (
     INITIAL_STABILITY, FLASHBULB_STABILITY_FLOOR, FLASHBULB_VIVIDNESS_FLOOR,
     ANCHOR_STABILITY_FLOOR, ANCHOR_VIVIDNESS_FLOOR,
+    CHERISH_STABILITY_FLOOR, CHERISH_VIVIDNESS_FLOOR,
     GIST_AGE_THRESHOLD_DAYS, GIST_PRESERVE_WORDS,
     RECONSOLIDATION_DRIFT_RATE, DRIFT_ALERT_THRESHOLD,
     STATE_DEPENDENT_BOOST, ZEIGARNIK_BOOST,
     MIN_SPACING_DAYS, SPACING_BONUS, DIMINISHING_RATE, STABILITY_CAP,
+    RETRIEVAL_IMPORTANCE_BUMP,
     VISUAL_VIVID_THRESHOLD, VISUAL_GIST_THRESHOLD,
     SOLUTION_INITIAL_IMPORTANCE, SOLUTION_REUSE_BOOST,
     _DEDUP_STOP,
@@ -114,12 +116,24 @@ class Memory:
         self._arc_position: str = ""  # setup / rising / climax / falling / resolution
 
     # ── Spaced-repetition touch + reconsolidation ─────────────────────
-    def touch(self, current_mood: tuple[float, float, float] | None = None):
+    def touch(self, current_mood: tuple[float, float, float] | None = None,
+              factual: bool = False):
         """Record an access.  Well-spaced touches increase stability.
 
         If *current_mood* is provided and the memory is not a flashbulb,
         reconsolidation occurs: the memory's emotion subtly drifts toward
         the current mood context (Nader et al 2000).
+
+        *factual* marks that this access came from a specific, pointed
+        query (not just "happened to be relevant context for whatever
+        this turn was about") -- only a factual access also nudges
+        importance up. Recall runs on nearly every conversational turn,
+        so gating the importance bump on query type (not just "it was in
+        the results") matters: without it, broad topical relevance alone
+        inflates importance across most of the store over a long enough
+        conversation, which washes out the importance-floor's actual
+        signal rather than sharpening it for the specific things someone
+        keeps asking about by name.
         """
         now = datetime.now()
         last = datetime.fromisoformat(self._last_access)
@@ -132,6 +146,8 @@ class Memory:
             )
             self._stability = min(
                 self._stability * effective_bonus, STABILITY_CAP)
+            if factual:
+                self.importance = min(10, self.importance + RETRIEVAL_IMPORTANCE_BUMP)
         self._access_count += 1
         self._last_access = now.isoformat()
 
@@ -164,6 +180,9 @@ class Memory:
         if self._anchor:
             effective_stability = max(
                 effective_stability, ANCHOR_STABILITY_FLOOR)
+        if self._cherished:
+            effective_stability = max(
+                effective_stability, CHERISH_STABILITY_FLOOR)
         if self._is_flashbulb:
             effective_stability = max(
                 effective_stability, FLASHBULB_STABILITY_FLOOR)
@@ -181,6 +200,12 @@ class Memory:
         # Anchor floor
         if self._anchor:
             return max(raw, self.importance * ANCHOR_VIVIDNESS_FLOOR)
+
+        # Cherish floor — "should never fade", same strength of promise
+        # as anchor, just for emotionally precious moments rather than
+        # identity facts (see constants.py for why this was missing).
+        if self._cherished:
+            return max(raw, self.importance * CHERISH_VIVIDNESS_FLOOR)
 
         # Importance-based floor — strong memories have biological
         # protection (stronger synaptic consolidation)

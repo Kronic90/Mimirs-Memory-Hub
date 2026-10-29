@@ -164,15 +164,48 @@ GIST_AGE_THRESHOLD_DAYS    = 90
 GIST_PRESERVE_WORDS        = 15
 
 # ── Spaced-repetition (mirrored from VividnessMem) ───────────────────────
-INITIAL_STABILITY  = 3.0
+# A fresh memory's starting decay time-constant. 3.0 made ordinary
+# (unprotected, below-importance-floor) memories lose essentially all
+# their vividness within the first week (exp(-7/3) ~= 0.09) -- correct
+# in spirit (unimportant stuff should fade), but it meant "fading" looked
+# like "gone almost immediately" rather than a gradual sink over weeks to
+# months. 30 keeps the same shape (still fades to near-nothing by month
+# 6-12 if nothing protects it) but on a timescale that actually reads as
+# gradual: ~1 month before it's meaningfully faded, ~3 months before it's
+# mostly gone, rather than mostly gone within the first couple of weeks.
+INITIAL_STABILITY  = 30.0
 SPACING_BONUS      = 1.8
 MIN_SPACING_DAYS   = 0.5
 STABILITY_CAP      = 180.0
 DIMINISHING_RATE   = 0.85
 
+# A well-spaced stability bonus alone can't meaningfully compete with the
+# vividness exponential (exp(-age/stability)) over a period of months --
+# multiplying a ~3-day time constant by 1.8x doesn't change its order of
+# magnitude once age is in the hundreds of days. What actually survives
+# that long are the hard floors (flashbulb / anchor / semantic / importance
+# >= IMPORTANCE_FLOOR_THRESHOLD). So a well-spaced touch also nudges
+# importance itself up a little, same as hearing something confirmed again
+# makes a person revise how much it matters -- after being asked about
+# again a couple of times, a memory can earn its way across the importance
+# floor threshold on its own, same path promote-by-hand already uses.
+RETRIEVAL_IMPORTANCE_BUMP = 1
+
 # ── Anchors ──────────────────────────────────────────────────────────────
 ANCHOR_STABILITY_FLOOR  = 90.0
 ANCHOR_VIVIDNESS_FLOOR  = 0.30
+
+# ── Cherished memories ────────────────────────────────────────────────────
+# presets.py's own system prompt promises the model that cherish="true" is
+# for "deeply meaningful moments that should never fade" -- the same
+# strength of promise as anchor's "must stay permanently stable", just for
+# emotional moments rather than identity facts. cherish() previously only
+# set a boolean flag (exempting a memory from gist-compression/dedup, and
+# a +10% recall-ranking nudge) with no actual effect on vividness decay,
+# so a cherished memory faded exactly like an uncherished one -- the one
+# thing the feature is named for silently didn't happen.
+CHERISH_STABILITY_FLOOR = 90.0
+CHERISH_VIVIDNESS_FLOOR = 0.30
 
 # ── Dedup ────────────────────────────────────────────────────────────────
 _DEDUP_THRESHOLD = 0.55
@@ -398,3 +431,13 @@ _EMOTIONAL_QUERY_WORDS = frozenset({
     "angry", "afraid", "anxious", "stressed", "excited", "love",
     "hate", "miss", "worry", "scared", "lonely", "grateful",
 })
+
+# ── 28. Recognition-cued recall boost ─────────────────────────────────────
+# Humans are measurably better at RECOGNIZING a specific name/number when
+# cued with it than at freely recalling it unprompted (the classic
+# recognition-vs-recall dissociation) — a query containing a distinctive
+# token (a number, a proper noun) that appears verbatim in a candidate
+# memory gets a composite-score boost, so a specific detail that's faded
+# out of "pure vividness" ranking can still be recognized when the exact
+# cue is present in the question itself.
+RECOGNITION_BOOST = 0.20

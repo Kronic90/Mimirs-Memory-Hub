@@ -57,26 +57,31 @@ def test_low_importance_memory_fades_smoothly_and_substantially():
                 f"Vividness increased unexpectedly: step {i}: "
                 f"{values[i-1]} -> {values[i]}")
 
-        # FINDING: with INITIAL_STABILITY=3.0 days (vividmimir/constants.py)
-        # and no spaced-repetition re-access, an importance-3 neutral
-        # memory loses the overwhelming majority of its vividness in the
-        # FIRST WEEK, not gradually over months as the README's "falls out
-        # of recall after 3-6 months" framing implies. This is correct
-        # exponential math (not a bug), but the effective human-perceived
-        # curve for below-average-importance content is "vivid for ~1
-        # week, then essentially gone within a month" rather than a
-        # multi-month graduated fade.
+        # Regression guard for the fixed bug: INITIAL_STABILITY was 3.0
+        # days, which made an importance-3 neutral memory lose the
+        # overwhelming majority of its vividness in the FIRST WEEK --
+        # "fading" looked like "gone almost immediately" rather than a
+        # gradual sink over weeks to months. Raised to 30.0 days so the
+        # same eventual outcome (near-zero within a year or two, if
+        # nothing protects or re-accesses it) arrives on a timescale that
+        # actually reads as gradual: still mostly vivid at a week, down
+        # to roughly a third by a month, a twentieth by three months.
         week1_drop_fraction = (v0 - curve[0][1]) / max(v0, 1e-9)
         month1_value = curve[1][1]
+        month3_value = curve[2][1]
         print(f"[low-imp curve shape] week1_drop_fraction="
-              f"{week1_drop_fraction:.3f} month1_value={month1_value:.6f}")
-        assert week1_drop_fraction > 0.5, (
-            "Expected to confirm the fast-initial-decay finding; if this "
-            "fails, INITIAL_STABILITY or the decay formula changed")
-        assert month1_value < 0.01, (
-            "Expected near-zero vividness within a month for imp-3 "
-            "neutral content under current INITIAL_STABILITY; if this "
-            "fails the decay rate has slowed down")
+              f"{week1_drop_fraction:.3f} month1_value={month1_value:.6f} "
+              f"month3_value={month3_value:.6f}")
+        assert week1_drop_fraction < 0.3, (
+            "Regression: dropping sharply in the first week again -- "
+            "INITIAL_STABILITY may have been lowered back down")
+        assert v0 * 0.2 < month1_value < v0 * 0.6, (
+            f"Regression: month-1 vividness ({month1_value:.3f}) is no "
+            f"longer in the expected 'meaningfully faded but not gone' "
+            f"range relative to v0={v0:.3f}")
+        assert month3_value < v0 * 0.1, (
+            "Expected substantial fading by month 3 for imp-3 neutral "
+            "content -- if this fails the decay rate slowed down further")
         # By year 2, a low-importance, never-revisited, non-emotional
         # memory should be most of the way to "forgotten" (human-like).
         assert values[-1] < v0 * 0.4, (

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 from datetime import datetime
 
 from .constants import (
@@ -18,6 +19,7 @@ from .constants import (
     TEMPORAL_LOOKAHEAD_DAYS, TEMPORAL_LOOKBEHIND_DAYS,
     VISUAL_BOOST,
     ENTITY_RECALL_BOOST,
+    RECOGNITION_BOOST,
     _W_KEYWORD_FACTUAL, _W_SEMANTIC_FACTUAL, _W_VIVIDNESS_FACTUAL,
     _W_MOOD_FACTUAL, _W_RECENCY_FACTUAL,
     _W_KEYWORD_EMOTIONAL, _W_SEMANTIC_EMOTIONAL, _W_VIVIDNESS_EMOTIONAL,
@@ -31,6 +33,23 @@ from .helpers import (
 from .models import Memory, ShortTermFact, Lesson
 
 
+_DISTINCTIVE_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'-]*")
+
+
+def _distinctive_tokens(text: str) -> set[str]:
+    """Tokens from the ORIGINAL (case-preserved) query text that are
+    cheap, reliable proxies for "specific detail a human would recognize
+    even after they could no longer freely recall it": numbers, and
+    capitalized words (proper nouns, named entities, technical terms)."""
+    tokens = set()
+    for w in _DISTINCTIVE_TOKEN_RE.findall(text):
+        if len(w) < 3:
+            continue
+        if any(c.isdigit() for c in w) or w[0].isupper():
+            tokens.add(w.lower())
+    return tokens
+
+
 class RecallMixin:
     """Mixin providing hybrid retrieval, resonance, spreading-activation
     priming, temporal navigation, and related recall helpers."""
@@ -39,9 +58,9 @@ class RecallMixin:
     #  Internal: touch memory + sync VividEmbed
     # ──────────────────────────────────────────────────────────────────
 
-    def _touch_memory(self, mem: Memory):
+    def _touch_memory(self, mem: Memory, factual: bool = False):
         """Touch a memory and propagate to VividEmbed if uid is set."""
-        mem.touch(current_mood=self._mood)
+        mem.touch(current_mood=self._mood, factual=factual)
         if self._embed is not None and mem._embed_uid:
             try:
                 self._embed.touch(mem._embed_uid)
@@ -139,6 +158,8 @@ class RecallMixin:
         if not query_words:
             return []
 
+        distinctive = _distinctive_tokens(context)
+
         # ── Stage 1a: BM25 keyword search ─────────────────────────────
         bm25 = self._bm25_scores(query_words)
         max_bm25 = max(bm25.values()) if bm25 else 1.0
@@ -198,6 +219,8 @@ class RecallMixin:
         # Also boost factual score if entity name detected
         if entity_matched:
             factual_score += 2
+
+        is_factual_query = factual_score > emotional_score
 
         if factual_score > emotional_score:
             w_kw = _W_KEYWORD_FACTUAL
@@ -340,6 +363,20 @@ class RecallMixin:
             if idx in entity_matched:
                 composite += ENTITY_RECALL_BOOST
 
+            # Recognition boost — a distinctive token from the query
+            # (a number, a proper noun) that appears verbatim in this
+            # memory's content gets a flat bonus, independent of how
+            # faded its overall vividness is. Substring match (not a
+            # content_words set intersection) since content_words()
+            # doesn't strip punctuation and a token like "15%" would
+            # otherwise never match a clean "15". Flat rather than
+            # per-match scaled, so one exact hit is enough; this models
+            # cued recognition, not a second keyword-density signal.
+            if distinctive:
+                mem_content_lower = mem.content.lower()
+                if any(tok in mem_content_lower for tok in distinctive):
+                    composite += RECOGNITION_BOOST
+
             mem_words = _resonance_words(
                 f"{mem.content} {mem.emotion}")
             primed = sum(
@@ -367,7 +404,30 @@ class RecallMixin:
             scored.append((composite, idx))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [self._reflections[idx] for _, idx in scored[:k]]
+        results = [self._reflections[idx] for _, idx in scored[:k]]
+
+        # Retrieval practice (the "testing effect") — successfully
+        # recalling a memory should make it easier to recall again, same
+        # as the spaced-repetition touch() already applied in
+        # get_active_self() and on the write path. This was the one gap:
+        # the single most-used retrieval path never reinforced anything
+        # it returned, so a detail that surfaced fine at month 3 got no
+        # benefit from that and was just as likely to have faded out of
+        # the top results by month 12. touch() is itself spacing-gated
+        # (see Memory.touch), so calling it on every recall doesn't let a
+        # burst of queries in one sitting repeatedly inflate stability.
+        #
+        # The importance bump specifically (not the stability bump) only
+        # applies when this was a factual/specific query, not a general
+        # conversational one — recall() runs on nearly every turn, so an
+        # ungated importance bump would creep up across most of the
+        # store over a long conversation just from topical relevance,
+        # diluting the importance-floor's signal instead of sharpening
+        # it for things someone actually keeps asking about by name.
+        for mem in results:
+            self._touch_memory(mem, factual=is_factual_query)
+
+        return results
 
     # ──────────────────────────────────────────────────────────────────
     #  Deep Recall — resolve a model-requested conversation snapshot

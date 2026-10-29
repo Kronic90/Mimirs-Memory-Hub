@@ -234,6 +234,12 @@ def _parse_remember_tags(text: str) -> list[dict]:
             "source":     attrs.get("source", "conversation"),
             "cherish":    attrs.get("cherish", "").lower() == "true",
             "anchor":     attrs.get("anchor", "").lower() == "true",
+            # Optional: which known person this memory is specifically
+            # about, so it surfaces under "MY IMPRESSIONS OF <entity>" and
+            # gets entity-anchored recall. The model's own choice -- there
+            # is deliberately no automatic substring-based fallback for
+            # this any more (see memory_manager.process_turn).
+            "entity":     attrs.get("entity", "").strip(),
             # "identity" is the current attribute name; "self" (legacy, and
             # confusingly close to <self_reflect/>) is still accepted.
             "is_self":    (attrs.get("identity", attrs.get("self", ""))
@@ -1270,6 +1276,17 @@ async def memory_import(request: Request, char_id: str = ""):
     entries = body.get("entries", [])
     enrich = body.get("enrich", False)
     imported = []
+
+    # Archive the untouched original source(s) before any reshaping into
+    # Mimir's own memory format -- best-effort, never blocks the import.
+    for src in body.get("source_backups", []):
+        try:
+            filename = str(src.get("filename", "import"))[:200]
+            raw_content = str(src.get("content", ""))
+            if raw_content:
+                mem.save_import_backup(filename, raw_content)
+        except Exception:
+            pass
 
     for entry in entries:
         content = entry.get("content", "")
@@ -2836,6 +2853,7 @@ async def chat_ws(ws: WebSocket):
                                     why_saved=entry["why"],
                                     conversation_snapshot=_bg_conversation_snapshot,
                                     category="self" if entry.get("is_self") else "",
+                                    entity=entry.get("entity", ""),
                                 )
                                 if result:
                                     _formed.append(result)
@@ -3611,6 +3629,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                             importance=tag.get("importance", 5),
                                             source="multi_agent_conversation",
                                             category="self" if tag.get("is_self") else "",
+                                            entity=tag.get("entity", ""),
                                         )
                                         if result:
                                             agent_formed.append(result)
@@ -3669,7 +3688,12 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                 showimage_hashes = _parse_showimage_tags(response_text)
 
                                 # Run turn processing (emotion detection, chemistry, etc.)
-                                agent_mem.process_turn(user_text, response_text, agent_preset, skip_save=bool(tags))
+                                # skip_save=True always -- a memory is only ever created
+                                # from a model-authored <remember> tag (tags above), never
+                                # from this turn-processing heuristic deciding on its own
+                                # that something was "worth remembering". Matches single-
+                                # chat, which has always been skip_save=True unconditionally.
+                                agent_mem.process_turn(user_text, response_text, agent_preset, skip_save=True)
                             except Exception:
                                 pass
 

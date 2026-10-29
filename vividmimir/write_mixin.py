@@ -14,6 +14,7 @@ from .constants import (
     PATTERN_SEP_THRESHOLD, PATTERN_SEP_NUDGE,
     STABILITY_CAP, INITIAL_STABILITY,
     ANCHOR_STABILITY_FLOOR,
+    CHERISH_STABILITY_FLOOR,
     AUTO_CONSOLIDATION_INTERVAL,
     YGGDRASIL_EARLY_SESSION_MAX, YGGDRASIL_EARLY_REBUILD_EVERY,
     PROSPECTIVE_IMPORTANCE_MIN,
@@ -40,7 +41,7 @@ class WriteMixin:
                  importance: int = 5, source: str = "reflection",
                  why_saved: str = "",
                  conversation_snapshot: list[dict] | None = None,
-                 category: str = "") -> Memory:
+                 category: str = "", entity: str = "") -> Memory:
         """Store an episodic memory.
 
         *conversation_snapshot*, if given, is the surrounding conversation at
@@ -52,6 +53,13 @@ class WriteMixin:
         only "self" is meaningful (the model's own personality/identity,
         surfaced in its own dedicated context section rather than competing
         in the general memory pool).
+
+        *entity*, if given, marks which known person this memory is
+        specifically about (surfaces it under that entity's own impressions
+        section, and gives it entity-anchored recall). Deliberately only
+        ever set by explicit choice (the model tagging <remember entity=
+        "Name">) -- not inferred automatically from a name appearing
+        somewhere in the conversation.
         """
         # Chemistry modulation
         mods = self._chemistry.get_modifiers()
@@ -102,6 +110,7 @@ class WriteMixin:
                 if conversation_snapshot:
                     merged._snapshot_id = self._save_snapshot(conversation_snapshot)
                 merged._category = category or existing._category
+                merged.entity = entity or existing.entity
                 if self._embed is not None and existing._embed_uid:
                     try:
                         self._embed.remove(existing._embed_uid)
@@ -124,7 +133,7 @@ class WriteMixin:
 
         mem = Memory(content=content, emotion=emotion,
                      importance=effective_importance, source=source,
-                     why_saved=why_saved)
+                     why_saved=why_saved, entity=entity)
 
         mem._novelty_score = novelty
         mem._encoding_mood = self._mood
@@ -395,7 +404,8 @@ class WriteMixin:
         return True
 
     def cherish(self, memory: Memory) -> bool:
-        """Mark a memory as a sentimental favourite."""
+        """Mark a memory as a sentimental favourite — protected from
+        fading the same way anchor() protects a foundational fact."""
         if memory._cherished:
             return False
         all_mems = list(self._reflections)
@@ -404,6 +414,7 @@ class WriteMixin:
         if memory not in all_mems:
             return False
         memory._cherished = True
+        memory._stability = max(memory._stability, CHERISH_STABILITY_FLOOR)
         return True
 
     def uncherish(self, memory: Memory) -> bool:

@@ -355,17 +355,17 @@ class MemoryManager:
                        importance: int = 5, source: str = "playground",
                        why_saved: str = "",
                        conversation_snapshot: list[dict] | None = None,
-                       category: str = ""):
+                       category: str = "", entity: str = ""):
         """Like remember(), but returns the live Memory object rather than
-        a dict snapshot — for internal callers (e.g. process_turn's entity
-        linking) that need to mutate the memory right after creation."""
+        a dict snapshot — for internal callers that need to mutate the
+        memory right after creation."""
         emotion = normalize_emotion(emotion)
         mem = self._mimir.remember(
             content=content, emotion=emotion,
             importance=importance, source=source,
             why_saved=why_saved,
             conversation_snapshot=conversation_snapshot,
-            category=category,
+            category=category, entity=entity,
         )
         self._invalidate_stats_cache()
         return mem
@@ -374,10 +374,10 @@ class MemoryManager:
                  importance: int = 5, source: str = "playground",
                  why_saved: str = "",
                  conversation_snapshot: list[dict] | None = None,
-                 category: str = "") -> dict:
+                 category: str = "", entity: str = "") -> dict:
         return self._remember_obj(
             content, emotion, importance, source,
-            why_saved, conversation_snapshot, category,
+            why_saved, conversation_snapshot, category, entity,
         ).to_dict()
 
     def remember_exchange(self, user_msg: str, assistant_msg: str,
@@ -560,21 +560,17 @@ class MemoryManager:
             else:
                 assistant_brief = assistant_msg
             mem_content += f"\nI responded: {assistant_brief}"
-            mem = self._remember_obj(
+            # No automatic entity-linking here deliberately -- which
+            # person (if any) a memory is about is the model's own choice
+            # via <remember entity="Name">, never inferred from a name
+            # merely appearing in the message.
+            self._remember_obj(
                 content=mem_content,
                 emotion=primary_emotion,
                 importance=importance,
                 source="conversation",
                 why_saved=why,
             )
-            # Entity extraction: link memory to known social entities
-            # mentioned in the user message (helps crystallization)
-            if mem and not mem.entity:
-                msg_lower = user_msg.lower()
-                for ent_name in self._mimir._social:
-                    if ent_name.lower() in msg_lower:
-                        mem.entity = ent_name
-                        break
 
         # Update mood (also ticks chemistry internally)
         self.update_mood(emotions)
@@ -1517,6 +1513,27 @@ class MemoryManager:
         }
 
     # ── import ────────────────────────────────────────────────────────
+
+    def save_import_backup(self, filename: str, raw_content: str) -> str:
+        """Archive the untouched original file/text an import came from,
+        before any of it gets reshaped into Mimir's own memory format.
+        External systems (Character.ai exports, etc.) don't have Mimir's
+        fields (importance, stability, cherish/anchor, entity, ...) -- the
+        import process has to make judgment calls to fill those in, so the
+        original is kept as-is, permanently, in case that interpretation
+        is ever wrong and the source is needed again."""
+        backup_dir = self._dir.parent / "import_backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(filename).name or "import"
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        dest = backup_dir / f"{ts}_{safe_name}"
+        # Avoid collisions if multiple files land in the same second
+        n = 1
+        while dest.exists():
+            dest = backup_dir / f"{ts}_{n}_{safe_name}"
+            n += 1
+        dest.write_text(raw_content, encoding="utf-8")
+        return str(dest)
 
     def import_memory(self, content: str, emotion: str = "neutral",
                       importance: int = 5, source: str = "import",

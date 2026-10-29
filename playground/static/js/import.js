@@ -6,6 +6,7 @@
 const ImportPage = (() => {
     let initialized = false;
     let pendingEntries = [];
+    let pendingSourceBackups = [];  // [{filename, content}] -- untouched originals
 
     function parseContent(text, format) {
         const entries = [];
@@ -133,9 +134,11 @@ const ImportPage = (() => {
         const emotion = document.getElementById('import-emotion').value;
         const importance = parseInt(document.getElementById('import-importance').value) || 5;
         let allEntries = [];
+        pendingSourceBackups = [];
 
         for (const file of files) {
             const text = await file.text();
+            pendingSourceBackups.push({ filename: file.name, content: text });
             const format = detectFormat(file.name);
             const entries = parseContent(text, format);
             entries.forEach(e => {
@@ -166,6 +169,7 @@ const ImportPage = (() => {
         const emotion = document.getElementById('import-emotion').value;
         const importance = parseInt(document.getElementById('import-importance').value) || 5;
 
+        pendingSourceBackups = [{ filename: 'pasted_import.txt', content: text }];
         const entries = parseContent(text, format);
         entries.forEach(e => {
             if (!e.emotion) e.emotion = emotion;
@@ -200,12 +204,18 @@ const ImportPage = (() => {
         btn.textContent = 'Importing…';
 
         try {
-            // Send in batches of 20
+            // Send in batches of 20. The untouched original source(s) go
+            // along with the first batch only -- they're archived once
+            // server-side, not per-batch.
             const batchSize = 20;
             let total = 0;
             for (let i = 0; i < pendingEntries.length; i += batchSize) {
                 const batch = pendingEntries.slice(i, i + batchSize);
-                const result = await App.apiPost('/memory/import', { entries: batch, enrich: enrich });
+                const payload = { entries: batch, enrich: enrich };
+                if (i === 0 && pendingSourceBackups.length) {
+                    payload.source_backups = pendingSourceBackups;
+                }
+                const result = await App.apiPost('/memory/import', payload);
                 total += result.imported || 0;
                 status.textContent = `Imported ${total} / ${pendingEntries.length} memories…`;
             }
@@ -214,6 +224,7 @@ const ImportPage = (() => {
             status.style.borderLeft = '3px solid var(--success)';
             App.toast(`Imported ${total} memories!`, 'success');
             pendingEntries = [];
+            pendingSourceBackups = [];
             document.getElementById('import-preview').style.display = 'none';
             document.getElementById('import-content').value = '';
         } catch (e) {
