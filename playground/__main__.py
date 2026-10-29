@@ -29,7 +29,7 @@ def main():
 
     print()
     print("  +======================================+")
-    print("  |         Mimir's Well v0.1.0          |")
+    print("  |         Mimir's Well v1.0.2          |")
     print(f"  |   http://{host}:{port}          |")
     print("  +======================================+")
     print()
