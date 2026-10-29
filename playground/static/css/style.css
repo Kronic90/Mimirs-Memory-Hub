@@ -112,6 +112,8 @@ a:hover { text-decoration: underline; }
 .nav-items {
     list-style: none;
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     padding: 8px 8px;
 }
 
