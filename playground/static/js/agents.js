@@ -239,8 +239,9 @@ const AgentsPage = (() => {
         select.innerHTML = '<option value="">(none — text only)</option>';
         try {
             let mmprojs = await App.api('/models/mmproj/cache');
-            if (!mmprojs || mmprojs.length === 0) {
+            if ((!mmprojs || mmprojs.length === 0) && !App.state.settings?.mmproj_scanned) {
                 mmprojs = await App.api('/models/mmproj/scan');
+                if (App.state.settings) App.state.settings.mmproj_scanned = true;
             }
             if (mmprojs && mmprojs.length > 0) {
                 mmprojs.forEach(m => {

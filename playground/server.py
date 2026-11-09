@@ -921,7 +921,10 @@ async def scan_mmproj():
             if d not in all_dirs:
                 all_dirs.append(d)
         results = await asyncio.to_thread(model_manager.scan_for_mmproj, all_dirs)
-        _cfg.update({"mmproj_cache": results})
+        # mmproj_scanned lets the UI tell "scanned, found nothing" apart from
+        # "never scanned" -- otherwise an empty result (most users have no
+        # vision models) re-triggered a full disk scan on every page load.
+        _cfg.update({"mmproj_cache": results, "mmproj_scanned": True})
         return JSONResponse(results)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

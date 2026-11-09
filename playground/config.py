@@ -1,5 +1,6 @@
 """Persistent configuration for Mimir's Well."""
 from __future__ import annotations
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -85,7 +86,12 @@ class Config:
         self._save()
 
     def to_dict(self) -> dict:
-        return dict(self._data)
+        # Deep copy: callers (e.g. GET /api/settings masking API keys for
+        # display) mutate nested dicts like backends[...]["api_key"]. A
+        # shallow copy shares those nested dicts with the live config, so
+        # masking for the UI overwrote the real key in memory with "••••",
+        # which then failed as a non-ASCII HTTP Authorization header.
+        return copy.deepcopy(self._data)
 
     @property
     def profile_dir(self) -> Path:
@@ -99,11 +105,28 @@ class Config:
         if _CFG_FILE.exists():
             with open(_CFG_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            self._data = dict(_DEFAULT)
+            self._data = copy.deepcopy(_DEFAULT)
             self._deep_merge(self._data, saved)
+            if self._scrub_masked_keys():
+                self._save()
         else:
-            self._data = dict(_DEFAULT)
+            self._data = copy.deepcopy(_DEFAULT)
             self._save()
+
+    def _scrub_masked_keys(self) -> bool:
+        """Clear any API key that is actually a UI display mask ("sk-1••••abcd").
+
+        A bug in v1.0.2 let the masked display value overwrite the real key
+        and get saved to disk. A masked key can never authenticate, so clear
+        it — the user just re-enters the key once instead of hitting an
+        opaque "'ascii' codec can't encode" error on every request.
+        """
+        changed = False
+        for cfg in self._data.get("backends", {}).values():
+            if isinstance(cfg, dict) and "•" in str(cfg.get("api_key", "")):
+                cfg["api_key"] = ""
+                changed = True
+        return changed
 
     def _save(self) -> None:
         _CFG_DIR.mkdir(parents=True, exist_ok=True)

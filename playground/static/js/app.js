@@ -221,8 +221,11 @@ const App = (() => {
         try {
             // Try cache first, then scan
             let mmprojs = await api('/models/mmproj/cache');
-            if (!mmprojs || mmprojs.length === 0) {
+            // Auto-scan only if a scan has never run; a rescan is available
+            // from the Models page.
+            if ((!mmprojs || mmprojs.length === 0) && !state.settings?.mmproj_scanned) {
                 mmprojs = await api('/models/mmproj/scan');
+                if (state.settings) state.settings.mmproj_scanned = true;
             }
             if (mmprojs && mmprojs.length > 0) {
                 mmprojs.forEach(m => {
@@ -361,7 +364,10 @@ const App = (() => {
         // Load settings & models
         await loadSettings();
         await loadModels();
-        await loadVisionModels();
+        // Not awaited: on a fresh install this can trigger a disk scan that
+        // takes minutes, and Chat.init() (which wires up Send/Enter) runs
+        // after this -- awaiting it left chat unresponsive until it finished.
+        loadVisionModels();
 
         // Show/hide transformers input based on initial backend
         const tfInput = document.getElementById('transformers-model-input');
