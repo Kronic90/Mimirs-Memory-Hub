@@ -24,7 +24,7 @@ if _root not in _os.environ.get("PYTHONPATH", ""):
 from playground.config import Config
 from playground.presets import PRESETS, get_preset
 from playground.llm_backends import create_backend, OllamaBackend
-from playground.memory_manager import MemoryManager
+from playground.memory_manager import MemoryManager, coerce_importance
 from playground import model_manager
 from playground.character_manager import CharacterManager
 from playground.conversation_manager import ConversationManager
@@ -178,7 +178,14 @@ _REMEMBER_RE = _re.compile(
     r'<remember(?P<attrs>[^>]*)>(?P<content>.*?)</remember>',
     _re.DOTALL | _re.IGNORECASE,
 )
-_ATTR_RE = _re.compile(r'(\w+)=["\']([^"\']*)["\']')
+# Each value is matched up to its OWN closing quote (backreference), so an
+# apostrophe inside a double-quoted value -- why="it's her birthday",
+# entity="O'Brien" -- no longer cuts the value short at the apostrophe.
+_ATTR_RE = _re.compile(r'(\w+)\s*=\s*(["\'])(.*?)\2', _re.DOTALL)
+
+
+def _parse_attrs(attr_text: str) -> dict[str, str]:
+    return {k: v for k, _q, v in _ATTR_RE.findall(attr_text)}
 
 # Strip <think> / <thinking> blocks from stored conversation history
 # Also handles unclosed think tags (model hit max_tokens while still thinking)
@@ -223,9 +230,8 @@ def _parse_remember_tags(text: str) -> list[dict]:
     """
     entries = []
     for m in _REMEMBER_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
-        importance = int(attrs.get("importance", 5))
-        importance = max(1, min(10, importance))
+        attrs = _parse_attrs(m.group("attrs"))
+        importance = coerce_importance(attrs.get("importance", 5))
         entries.append({
             "content":    m.group("content").strip(),
             "emotion":    attrs.get("emotion", "neutral"),
@@ -240,6 +246,9 @@ def _parse_remember_tags(text: str) -> list[dict]:
             # is deliberately no automatic substring-based fallback for
             # this any more (see memory_manager.process_turn).
             "entity":     attrs.get("entity", "").strip(),
+            # The model saying this replaces something it remembered that
+            # is no longer true -- a short description of the old memory.
+            "updates":    attrs.get("updates", "").strip(),
             # "identity" is the current attribute name; "self" (legacy, and
             # confusingly close to <self_reflect/>) is still accepted.
             "is_self":    (attrs.get("identity", attrs.get("self", ""))
@@ -259,19 +268,12 @@ _REMIND_RE = _re.compile(
     _re.DOTALL | _re.IGNORECASE,
 )
 
-# Mapping of weekday names to isoweekday() values (Mon=1)
-_WEEKDAY_MAP = {
-    "monday": 1, "tuesday": 2, "wednesday": 3, "thursday": 4,
-    "friday": 5, "saturday": 6, "sunday": 7,
-}
-
-
 def _parse_remind_tags(text: str) -> list[dict]:
     """Extract all <remind> entries → [{text, hours}]"""
     import datetime as _dt
     entries = []
     for m in _REMIND_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        attrs = _parse_attrs(m.group("attrs"))
         content = m.group("content").strip()
         hours: float = 24.0  # default
 
@@ -342,11 +344,11 @@ def _parse_task_tags(text: str) -> list[dict]:
     """Extract <task> tags → [{action, content, priority, id, project}]"""
     entries = []
     for m in _TASK_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        attrs = _parse_attrs(m.group("attrs"))
         entries.append({
             "action": attrs.get("action", "start").lower(),
             "content": m.group("content").strip(),
-            "priority": int(attrs.get("priority", "5")),
+            "priority": coerce_importance(attrs.get("priority", 5)),
             "id": attrs.get("id", ""),
             "project": attrs.get("project", ""),
         })
@@ -361,11 +363,11 @@ def _parse_solution_tags(text: str) -> list[dict]:
     """Extract <solution> tags → [{problem, content, importance}]"""
     entries = []
     for m in _SOLUTION_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        attrs = _parse_attrs(m.group("attrs"))
         entries.append({
             "problem": attrs.get("problem", ""),
             "content": m.group("content").strip(),
-            "importance": int(attrs.get("importance", "5")),
+            "importance": coerce_importance(attrs.get("importance", 5)),
         })
     return entries
 
@@ -387,7 +389,7 @@ def _parse_social_tags(text: str) -> list[dict]:
     """Extract <social> tags → [{entity, content, emotion, importance}]"""
     entries = []
     for m in _SOCIAL_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        attrs = _parse_attrs(m.group("attrs"))
         entity = attrs.get("entity", "").strip()
         if not entity:
             continue
@@ -395,7 +397,8 @@ def _parse_social_tags(text: str) -> list[dict]:
             "entity": entity,
             "content": m.group("content").strip(),
             "emotion": attrs.get("emotion", "neutral"),
-            "importance": int(attrs.get("importance", "5")),
+            "importance": coerce_importance(attrs.get("importance", 5)),
+            "updates": attrs.get("updates", "").strip(),
         })
     return entries
 
@@ -420,7 +423,7 @@ def _parse_cherish_tags(text: str) -> list[dict]:
     """Extract <treasure> (or legacy <cherish>) tags → [{query, anchor}]"""
     entries = []
     for m in _CHERISH_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        attrs = _parse_attrs(m.group("attrs"))
         query = attrs.get("query", "").strip()
         if not query:
             continue
@@ -453,7 +456,7 @@ def _parse_deep_remember_tags(text: str) -> list[dict]:
     """Extract <recall> (or legacy <deep_remember>) tags → [{query}]"""
     entries = []
     for m in _DEEP_REMEMBER_RE.finditer(text):
-        attrs = dict(_ATTR_RE.findall(m.group("attrs")))
+        attrs = _parse_attrs(m.group("attrs"))
         query = attrs.get("query", "").strip()
         if not query:
             continue
@@ -535,54 +538,6 @@ def _get_agent_files_dir() -> Path:
     d = _cfg.profile_dir.parent.parent / "agent_files"
     d.mkdir(parents=True, exist_ok=True)
     return d
-
-
-# ── Heuristic reminder detection ─────────────────────────────────────────────
-
-_HEURISTIC_REMIND_PHRASES = [
-    "i need to", "i have to", "i must", "i should", "remind me to",
-    "don't forget", "dont forget", "remember to", "i've got to", "i got to",
-    "i gotta", "i need", "we need to", "i have an appointment", "i have a meeting",
-]
-
-
-def _heuristic_reminder_from_user(user_text: str) -> list[dict]:
-    """
-    Scan user message for reminder intent without explicit <remind> tags.
-    Returns [{text, hours}] list, or [] if nothing detected.
-    """
-    import datetime as _dt
-    lower = user_text.lower()
-
-    if not any(p in lower for p in _HEURISTIC_REMIND_PHRASES):
-        return []
-
-    # Date/time detection
-    hours: float = 24.0
-    if "tonight" in lower or "this evening" in lower:
-        hours = 6.0
-    elif "in an hour" in lower or "in 1 hour" in lower:
-        hours = 1.0
-    elif "in two hours" in lower or "in 2 hours" in lower:
-        hours = 2.0
-    elif "tomorrow" in lower:
-        hours = 24.0
-    elif "this week" in lower:
-        hours = 5 * 24.0
-    elif "next week" in lower:
-        hours = 7 * 24.0
-    else:
-        # Named weekday
-        now_iso = _dt.datetime.now().isoweekday()  # Mon=1
-        for dayname, iso_day in _WEEKDAY_MAP.items():
-            if dayname in lower:
-                diff = (iso_day - now_iso) % 7 or 7
-                hours = diff * 24.0
-                break
-
-    # Cap text length for readability
-    reminder_text = user_text[:200].strip()
-    return [{"text": reminder_text, "hours": hours}]
 
 
 def _sync_llm_fn(prompt: str) -> str:
@@ -1256,7 +1211,7 @@ async def memory_remember(request: Request, char_id: str = ""):
     result = mem.remember(
         content=content,
         emotion=body.get("emotion", "neutral"),
-        importance=body.get("importance", 5),
+        importance=coerce_importance(body.get("importance", 5)),
         source=body.get("source", "manual"),
         why_saved=body.get("why_saved", ""),
     )
@@ -1292,9 +1247,11 @@ async def memory_import(request: Request, char_id: str = ""):
             pass
 
     for entry in entries:
-        content = entry.get("content", "")
+        content = str(entry.get("content", "") or "").strip()
+        if not content:
+            continue  # blank lines used to become empty memories
         emotion = entry.get("emotion", "neutral")
-        importance = entry.get("importance", 5)
+        importance = coerce_importance(entry.get("importance", 5))
         why_saved = entry.get("why_saved", "imported from external system")
 
         # AI enrichment: use heuristic analysis to fill in emotion/importance/why_saved
@@ -1317,7 +1274,8 @@ async def memory_import(request: Request, char_id: str = ""):
             why_saved=why_saved,
             timestamp=entry.get("timestamp", ""),
         )
-        imported.append(result)
+        if result:
+            imported.append(result)
     mem.save()
     return JSONResponse({"imported": len(imported), "memories": imported})
 
@@ -1550,7 +1508,7 @@ async def memory_add_social(request: Request, char_id: str = ""):
         entity=body.get("entity", ""),
         content=body.get("content", ""),
         emotion=body.get("emotion", "neutral"),
-        importance=body.get("importance", 5),
+        importance=coerce_importance(body.get("importance", 5)),
         why_saved=body.get("why_saved", ""),
     )
     mem.save()
@@ -1582,7 +1540,7 @@ async def memory_add_lesson(request: Request, char_id: str = ""):
         topic=body.get("topic", ""),
         context_trigger=body.get("context_trigger", ""),
         strategy=body.get("strategy", ""),
-        importance=body.get("importance", 5),
+        importance=coerce_importance(body.get("importance", 5)),
     )
     mem.save()
     return JSONResponse(result)
@@ -1747,7 +1705,7 @@ async def memory_save_visual(request: Request, char_id: str = ""):
         image_bytes=image_bytes,
         description=body.get("description", ""),
         emotion=body.get("emotion", "neutral"),
-        importance=int(body.get("importance", 5)),
+        importance=coerce_importance(body.get("importance", 5)),
         why_saved=body.get("why_saved", "manual upload"),
     )
     mem.save()
@@ -1909,7 +1867,7 @@ async def record_solution(request: Request, char_id: str = ""):
     result = mem.record_solution(
         problem=body.get("problem", ""),
         solution=body.get("solution", ""),
-        importance=body.get("importance", 5),
+        importance=coerce_importance(body.get("importance", 5)),
     )
     mem.save()
     return JSONResponse(result)
@@ -2123,7 +2081,7 @@ async def load_conversation(conv_id: str):
     global _conversation, _current_conv_id
     # Sanitize: only allow alphanumeric + underscore
     import re
-    if not re.match(r'^[\w]+$', conv_id):
+    if not re.match(r'^[\w-]+$', conv_id):
         return JSONResponse({"error": "Invalid ID"}, status_code=400)
     path = _conversations_dir / f"{conv_id}.json"
     if not path.is_file():
@@ -2138,7 +2096,7 @@ async def load_conversation(conv_id: str):
 async def delete_conversation(conv_id: str):
     """Delete a saved conversation."""
     import re
-    if not re.match(r'^[\w]+$', conv_id):
+    if not re.match(r'^[\w-]+$', conv_id):
         return JSONResponse({"error": "Invalid ID"}, status_code=400)
     path = _conversations_dir / f"{conv_id}.json"
     if path.is_file():
@@ -2386,7 +2344,7 @@ async def create_multi_conversation(request: Request):
 @app.get("/api/multi-conversations/{conv_id}")
 async def get_multi_conversation(conv_id: str):
     """Load a multi-agent conversation."""
-    if not _re.match(r'^[\w]+$', conv_id):
+    if not _re.match(r'^[\w-]+$', conv_id):
         return JSONResponse({"error": "Invalid ID"}, status_code=400)
     conv = _conversations.get_conversation(conv_id)
     if not conv:
@@ -2397,7 +2355,7 @@ async def get_multi_conversation(conv_id: str):
 @app.put("/api/multi-conversations/{conv_id}")
 async def update_multi_conversation(conv_id: str, request: Request):
     """Update conversation metadata."""
-    if not _re.match(r'^[\w]+$', conv_id):
+    if not _re.match(r'^[\w-]+$', conv_id):
         return JSONResponse({"error": "Invalid ID"}, status_code=400)
     body = await request.json()
     result = _conversations.update_conversation(conv_id, body)
@@ -2409,7 +2367,7 @@ async def update_multi_conversation(conv_id: str, request: Request):
 @app.delete("/api/multi-conversations/{conv_id}")
 async def delete_multi_conversation(conv_id: str):
     """Delete a multi-agent conversation."""
-    if not _re.match(r'^[\w]+$', conv_id):
+    if not _re.match(r'^[\w-]+$', conv_id):
         return JSONResponse({"error": "Invalid ID"}, status_code=400)
     ok = _conversations.delete_conversation(conv_id)
     if ok:
@@ -2420,7 +2378,7 @@ async def delete_multi_conversation(conv_id: str):
 @app.post("/api/multi-conversations/{conv_id}/message")
 async def add_message_to_conversation(conv_id: str, request: Request):
     """Add a message to conversation history."""
-    if not _re.match(r'^[\w]+$', conv_id):
+    if not _re.match(r'^[\w-]+$', conv_id):
         return JSONResponse({"error": "Invalid ID"}, status_code=400)
     body = await request.json()
     speaker = body.get("speaker", "user")
@@ -2440,7 +2398,11 @@ async def add_message_to_conversation(conv_id: str, request: Request):
 
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
-    global _conversation
+    # _current_conv_id / _negative_mood_streak must be declared global here:
+    # the "clear" handler below assigns them, and without this those were
+    # function locals -- New Chat kept the old conversation id, so the next
+    # message auto-saved over (and destroyed) the previous conversation.
+    global _conversation, _current_conv_id, _negative_mood_streak
     if not _origin_ok(ws.headers.get("origin")):
         await ws.close(code=4403)
         return
@@ -2626,7 +2588,11 @@ async def chat_ws(ws: WebSocket):
             memory_enabled = _cfg.get("memory", {}).get("enabled", True)
             if memory_enabled:
                 try:
-                    entity = active_char.get("name", "") if active_char else _cfg.get("persona_name", "")
+                    # The person on the other side of the chat -- the
+                    # character's impressions OF THE USER. This used to pass
+                    # the character's own name, so "MY IMPRESSIONS OF ..."
+                    # showed what it thought of itself, never of the user.
+                    entity = "User"
                     context_block = mem.get_context_for_preset(
                         preset=preset,
                         conversation_context=user_text,
@@ -2857,19 +2823,15 @@ async def chat_ws(ws: WebSocket):
                                     conversation_snapshot=_bg_conversation_snapshot,
                                     category="self" if entry.get("is_self") else "",
                                     entity=entry.get("entity", ""),
+                                    # Applied to the created/merged memory
+                                    # object itself -- not "last in list",
+                                    # which was wrong after a dedup merge.
+                                    cherish=bool(entry.get("cherish")),
+                                    anchor=bool(entry.get("anchor")),
+                                    updates=entry.get("updates", ""),
                                 )
                                 if result:
                                     _formed.append(result)
-                                # Apply cherish/anchor if the model requested it
-                                if result and (entry.get("cherish") or entry.get("anchor")):
-                                    try:
-                                        idx = len(mem._mimir._reflections) - 1
-                                        if entry.get("cherish"):
-                                            mem.toggle_cherish(idx)
-                                        if entry.get("anchor"):
-                                            mem.toggle_anchor(idx)
-                                    except Exception:
-                                        pass
 
                         # Process retroactive cherish/anchor on existing memories
                         for ct in _bg_cherish_tags:
@@ -2893,6 +2855,7 @@ async def chat_ws(ws: WebSocket):
                                     emotion=si["emotion"],
                                     importance=si["importance"],
                                     conversation_snapshot=_bg_conversation_snapshot,
+                                    updates=si.get("updates", ""),
                                 )
                                 if sresult:
                                     _formed.append(sresult)
@@ -2945,9 +2908,23 @@ async def chat_ws(ws: WebSocket):
                             except Exception:
                                 pass
 
-                        # Save model-authored reminders
+                        # Save model-authored reminders. Reminders come ONLY
+                        # from the model's own <remind> tags -- there used to
+                        # be a keyword fallback ("i need", "i should", ...)
+                        # that turned messages like "I need a hug" into
+                        # reminders; the model decides, same as memories.
                         for r in _bg_remind_tags:
+                            if not r.get("text"):
+                                continue
                             mem.set_reminder(text=r["text"], hours=r["hours"])
+                            try:
+                                await _bg_ws.send_json({
+                                    "type": "reminder_set",
+                                    "text": r["text"],
+                                    "hours": r["hours"],
+                                })
+                            except Exception:
+                                pass
 
                         # Process model-authored task tags (Agent/Assistant)
                         for t in _bg_task_tags:
@@ -3106,18 +3083,6 @@ async def chat_ws(ws: WebSocket):
                                     "result": {"error": str(e)},
                                 })
 
-                        # Heuristic reminder fallback — only if model wrote no <remind> tags
-                        if not _bg_remind_tags:
-                            heuristic_reminders = _heuristic_reminder_from_user(_bg_user_text)
-                            for r in heuristic_reminders:
-                                mem.set_reminder(text=r["text"], hours=r["hours"])
-                            if heuristic_reminders:
-                                await _bg_ws.send_json({
-                                    "type": "reminder_set",
-                                    "text": heuristic_reminders[0]["text"],
-                                    "hours": heuristic_reminders[0]["hours"],
-                                })
-
                         # Heuristic fallback — task-priority presets only
                         if not _bg_remember_tags and _bg_preset.get("task_priority", False):
                             from playground.memory_manager import (
@@ -3172,7 +3137,7 @@ async def chat_ws(ws: WebSocket):
                             pass
 
                         # ── Rage-quit: AI leaves chat after sustained negativity ──
-                        global _negative_mood_streak
+                        global _negative_mood_streak, _current_conv_id
                         effective_mood = (mood_label or "neutral").lower()
                         if effective_mood in _NEGATIVE_MOODS:
                             _negative_mood_streak += 1
@@ -3187,6 +3152,10 @@ async def chat_ws(ws: WebSocket):
                                 await _bg_ws.send_json({"type": "rage_quit"})
                                 _negative_mood_streak = 0
                                 _conversation.clear()
+                                # Already auto-saved; anything typed after
+                                # this goes to a new conversation file
+                                # rather than overwriting the old one.
+                                _current_conv_id = None
                             except Exception:
                                 pass
 
@@ -3245,12 +3214,16 @@ async def chat_ws(ws: WebSocket):
 
                     async def _send_tts(resp_text: str, vp: str, _ws: WebSocket, _restore_voice=saved_voice, _tts=tts):
                         try:
-                            audio = await asyncio.get_event_loop().run_in_executor(
-                                None, _tts.generate_audio, resp_text, vp
-                            )
-                            # Restore global voice after generation
-                            if _restore_voice and hasattr(_tts, 'voice'):
-                                _tts.voice = _restore_voice
+                            try:
+                                audio = await asyncio.get_event_loop().run_in_executor(
+                                    None, _tts.generate_audio, resp_text, vp
+                                )
+                            finally:
+                                # Restore the global voice even if generation
+                                # failed -- otherwise a character's voice
+                                # override stuck as everyone's voice.
+                                if _restore_voice and hasattr(_tts, 'voice'):
+                                    _tts.voice = _restore_voice
                             if audio:
                                 import base64 as _b64
                                 # Edge TTS returns MP3, Maya returns WAV
@@ -3304,7 +3277,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
     if not _origin_ok(ws.headers.get("origin")):
         await ws.close(code=4403)
         return
-    if not _re.match(r'^[\w]+$', conv_id):
+    if not _re.match(r'^[\w-]+$', conv_id):
         await ws.close(code=4403)
         return
     await ws.accept()
@@ -3520,7 +3493,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             context_block = agent_mem.get_context_for_preset(
                                 preset=agent_preset,
                                 conversation_context=user_text,
-                                entity=agent_name,
+                                entity="User",  # impressions of the user, not of itself
                                 interaction_gap_seconds=interaction_gap,
                             )
                             if context_block:
@@ -3547,8 +3520,14 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     vision_model = (agent.get("vision_model")
                                     or (char.get("vision_model") if char else "")
                                     or "")
+                    # Applied to a per-call copy of the config -- writing it
+                    # into _cfg persisted it to config.json, so any local
+                    # agent without a vision model wiped the user's chosen
+                    # single-chat vision model.
+                    agent_cfg = _cfg.to_dict()
                     if backend_name == "local":
-                        _cfg.update({"backends": {"local": {"mmproj_path": vision_model}}})
+                        agent_cfg.setdefault("backends", {}).setdefault(
+                            "local", {})["mmproj_path"] = vision_model
 
                     # Build per-agent message view
                     agent_messages = _build_agent_messages(msg_history, agent_name, char_id or "")
@@ -3580,7 +3559,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             agent_messages[-1]["content"] += (
                                 f"\n\n[User attached an image. BLIP caption: {blip_caption}]")
 
-                    backend = create_backend(backend_name, _cfg.to_dict())
+                    backend = create_backend(backend_name, agent_cfg)
                     llm_params = _cfg.get("llm_params", {})
                     full_response = []
 
@@ -3633,6 +3612,9 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                             source="multi_agent_conversation",
                                             category="self" if tag.get("is_self") else "",
                                             entity=tag.get("entity", ""),
+                                            cherish=bool(tag.get("cherish")),
+                                            anchor=bool(tag.get("anchor")),
+                                            updates=tag.get("updates", ""),
                                         )
                                         if result:
                                             agent_formed.append(result)
@@ -3656,6 +3638,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                         sresult = agent_mem.add_social(
                                             entity=si["entity"], content=si["content"],
                                             emotion=si["emotion"], importance=si["importance"],
+                                            updates=si.get("updates", ""),
                                         )
                                         if sresult:
                                             agent_formed.append(sresult)

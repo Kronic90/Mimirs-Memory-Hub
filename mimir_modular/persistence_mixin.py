@@ -156,11 +156,24 @@ class PersistenceMixin:
 
         social_dir = self._data_dir / "social"
         social_dir.mkdir(exist_ok=True)
+        self._sync_social_index()
+        written: set[str] = set()
         for entity, impressions in self._social.items():
             fname = re.sub(r'[^\w]', '_', entity.lower()) + ".json"
+            written.add(fname)
             self._write_json(
                 social_dir / fname,
                 [m.to_dict() for m in impressions])
+        # Remove files for entities that no longer have any impressions
+        # (deleted, pruned, or merged into a canonical name like "User").
+        # Left behind, the load-time legacy migration re-imported their
+        # contents -- deleted impressions came back after a restart.
+        for f in social_dir.glob("*.json"):
+            if f.name not in written:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
 
         self._write_json(
             self._data_dir / "lessons.json",
@@ -184,7 +197,8 @@ class PersistenceMixin:
             {"mood": list(self._mood),
              "session_count": self._session_count,
              "active_project": self._active_project,
-             "last_interaction_at": self._last_interaction_at})
+             "last_interaction_at": self._last_interaction_at,
+             "last_affect_fade": self._last_affect_fade})
 
         self._write_json(
             self._data_dir / "tasks.json",
@@ -241,11 +255,17 @@ class PersistenceMixin:
         # ── Rebuild social index from reflections ─────────────────────
         # Social memories now live in _reflections (full pipeline).
         # Rebuild _social by scanning for source=="social" + entity.
+        # Entities are canonicalised here too, so duplicates saved by older
+        # versions ("User"/"USER"/"The User"/"You") merge into one identity
+        # on load -- the merged name is then written back on the next save.
         for mem in self._reflections:
             if mem.source == "social" and mem.entity:
+                mem.entity = self._resolve_entity(mem.entity) or mem.entity
                 if mem.entity not in self._social:
                     self._social[mem.entity] = []
                 self._social[mem.entity].append(mem)
+            elif mem.entity:
+                mem.entity = self._resolve_entity(mem.entity) or mem.entity
 
         # ── Legacy migration: promote social-only memories ────────────
         # Older profiles stored social memories ONLY in social/ dir,
@@ -269,6 +289,7 @@ class PersistenceMixin:
                         mem = Memory.from_dict(d)
                         if not mem.entity:
                             mem.entity = entity
+                        mem.entity = self._resolve_entity(mem.entity) or mem.entity
                         if mem.source != "social":
                             mem.source = "social"
                         key = (mem.entity, mem.content)
@@ -330,6 +351,7 @@ class PersistenceMixin:
                 self._session_count = data.get("session_count", 0)
                 self._active_project = data.get("active_project", "")
                 self._last_interaction_at = data.get("last_interaction_at", "")
+                self._last_affect_fade = data.get("last_affect_fade", "")
 
         tpath = self._data_dir / "tasks.json"
         if tpath.exists():
@@ -414,7 +436,24 @@ class PersistenceMixin:
             else:
                 with open(path, "r", encoding="utf-8") as f:
                     return json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError, Exception):
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            # Unreadable (corrupt, or encrypted with a different key). The
+            # caller treats None as "no data", and the next save() would
+            # then overwrite the file with an empty store -- so keep an
+            # untouched copy first, and never clobber an earlier copy.
+            try:
+                import shutil
+                from datetime import datetime as _dt
+                backup = path.with_name(
+                    f"{path.stem}.unreadable-{_dt.now():%Y%m%d_%H%M%S}{path.suffix}")
+                if path.exists() and not backup.exists():
+                    shutil.copy2(path, backup)
+                    print(f"[Mimir] Could not read {path.name} ({type(e).__name__}); "
+                          f"original kept as {backup.name}")
+            except Exception:
+                pass
             return None
 
     # ──────────────────────────────────────────────────────────────────

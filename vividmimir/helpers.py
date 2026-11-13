@@ -43,6 +43,56 @@ def _closest_emotion(pad: tuple[float, float, float]) -> str:
     return best
 
 
+# Ways a model refers to the person it's talking to. All of these are the
+# same human, so they resolve to one social entity instead of fragmenting
+# the relationship data across "User", "USER", "The User", "You", ...
+def _normalize_timestamp(ts, fallback: str = "") -> str:
+    """Coerce any timestamp into the naive local ISO string the engine expects.
+
+    Imports from other apps carry timestamps in whatever shape that app used:
+    UTC with a trailing "Z" or "+00:00" offset, epoch seconds/milliseconds
+    (as numbers or numeric strings), or plain dates. Every age calculation
+    does ``datetime.now() - datetime.fromisoformat(ts)``, so an offset-aware
+    value raises "can't subtract offset-naive and offset-aware datetimes" and
+    a number raises TypeError -- and since that runs on every recall, a
+    single such memory broke recall for the whole profile. Unparseable input
+    returns *fallback* (callers pass "now" or the creation time).
+    """
+    if ts is None or ts == "":
+        return fallback
+    try:
+        if isinstance(ts, bool):
+            return fallback
+        if isinstance(ts, (int, float)) or (
+                isinstance(ts, str) and re.fullmatch(r"\s*\d{9,14}(\.\d+)?\s*", ts)):
+            val = float(ts)
+            if val > 1e11:          # milliseconds
+                val /= 1000.0
+            return datetime.fromtimestamp(val).isoformat()
+        s = str(ts).strip()
+        if s.endswith(("Z", "z")):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone().replace(tzinfo=None)   # to local, naive
+        return dt.isoformat()
+    except (ValueError, TypeError, OverflowError, OSError):
+        return fallback
+
+
+_USER_ENTITY_ALIASES = frozenset({"user", "you", "human"})
+USER_ENTITY = "User"
+
+
+def _entity_key(name: str) -> str:
+    """Matching key for a social entity name: case-insensitive, whitespace
+    collapsed, leading "the " ignored ("The User" == "user" == "USER")."""
+    key = " ".join(str(name).split()).casefold()
+    if key.startswith("the "):
+        key = key[4:].strip()
+    return key
+
+
 def _content_words(text: str) -> set[str]:
     """Extract meaningful non-stop words from text."""
     return set(text.lower().split()) - _DEDUP_STOP
@@ -169,7 +219,17 @@ def _humanize_age(seconds: float) -> str:
     if days < 14:
         return f"{int(days)} day{'s' if days >= 2 else ''} ago"
     weeks = days / 7
-    return f"{int(weeks)} week{'s' if weeks >= 2 else ''} ago"
+    if weeks < 9:
+        return f"{int(weeks)} week{'s' if weeks >= 2 else ''} ago"
+    # People don't remember old things in weeks ("104 weeks ago") -- older
+    # memories get the coarser, rounder time sense they have for us.
+    months = days / 30.44
+    if months < 18:
+        return f"about {round(months)} months ago"
+    years = days / 365.25
+    if years < 1.75:
+        return "about a year and a half ago"
+    return f"about {round(years)} years ago"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

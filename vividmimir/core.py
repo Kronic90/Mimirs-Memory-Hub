@@ -13,7 +13,7 @@ from typing import Any
 from .constants import (
     _NeuroChemistry, _EmotionalAuditLog, _VividEmbed, _PIL_Image,
     _Fernet, _PBKDF2, _crypto_hashes,
-    STABILITY_CAP, LLMCallable,
+    STABILITY_CAP, LLMCallable, TOT_MAX_WORDS,
 )
 from .helpers import (
     _emotion_to_vector, _closest_emotion,
@@ -102,6 +102,9 @@ class Mimir(
         self._last_reflect_at: datetime | None = None
         # Time awareness — persisted (see persistence_mixin.py).
         self._last_interaction_at: str = ""
+        # When emotional tone was last softened (Fading Affect Bias) --
+        # persisted, so fading tracks real elapsed time across restarts.
+        self._last_affect_fade: str = ""
 
         # ── Task / Project branch ─────────────────────────────────────
         self._active_project: str = ""
@@ -215,6 +218,10 @@ class Mimir(
         """Between-session neurochemistry reset + god-tier consolidation."""
         self._chemistry.sleep_reset(hours)
         self._audit.log("sleep_reset", details={"hours": hours})
+
+        # Emotional tone softens over sleep -- before anything else, so the
+        # rest of consolidation works with today's feelings, not the raw ones.
+        self.fade_affect()
 
         muninn_stats = self.muninn()
         gist_count = self._compress_to_gist()
@@ -428,11 +435,55 @@ class Mimir(
         self_mems.sort(key=lambda m: m.mood_adjusted_vividness(self._mood), reverse=True)
         return self_mems[:limit]
 
+    # Words that look "distinctive" (capitalised) but are never the detail
+    # that slips your mind.
+    _TOT_KEEP = frozenset({"user", "i", "i'm", "i've", "i'd", "i'll", "you"})
+
+    def _hazy_gist(self, m: Memory, cue_lower: str) -> str:
+        """How a faded-but-cued memory comes to mind: the gist survives,
+        the verbatim specifics don't (fuzzy-trace theory). Specific details
+        -- names, numbers -- slip away, UNLESS the current conversation
+        mentions them: then they're recognised (cued recognition beats free
+        recall), exactly like the recall-side recognition boost."""
+        words = m.gist.split()
+        out: list[str] = []
+        sentence_start = True
+        for w in words[:TOT_MAX_WORDS]:
+            core = re.sub(r"[^\w']", "", w)
+            base = core.lower().removesuffix("'s")
+            distinctive = bool(core) and base not in self._TOT_KEEP and (
+                any(c.isdigit() for c in core)
+                or (core[0].isupper() and not sentence_start))
+            if distinctive and base not in cue_lower:
+                if not (out and out[-1] == "…"):
+                    out.append("…")
+            else:
+                out.append(w)
+            sentence_start = w.endswith((".", "!", "?"))
+        text = " ".join(out)
+        if len(words) > TOT_MAX_WORDS and not text.endswith("…"):
+            text += " …"
+        return text
+
+    def _recollect(self, m: Memory, cue_lower: str = "") -> str:
+        """One memory as it comes to mind right now, for the context block."""
+        age = self._memory_age_str(m)
+        if m._superseded_by:
+            return (f"{m.gist} ({m.emotion}, {age}) "
+                    f"[used to be true — now: {m._superseded_by}]")
+        feeling = m.emotion + (f", {m.felt_phrase}" if m.felt_phrase else "")
+        if m.is_hazy:
+            return (f"{self._hazy_gist(m, cue_lower)} ({feeling}, {age}, "
+                    f"hazy — the details won't quite come back)")
+        return f"{m.gist} ({feeling}, {age})"
+
     def get_context_block(self, current_entity: str = "",
                           conversation_context: str = "",
                           interaction_gap_seconds: float | None = None) -> str:
         """Build a full memory context block for injection into a prompt."""
         lines: list[str] = []
+        cue_lower = (conversation_context or "").lower()
+        any_hazy = False
 
         lines.append(f"(Right now it's {datetime.now().strftime('%A, %B %d, %Y, %H:%M')})")
         if interaction_gap_seconds is not None and interaction_gap_seconds >= 1800:
@@ -454,9 +505,18 @@ class Mimir(
         if self._pending_deep_recalls:
             for recall_entry in self._pending_deep_recalls:
                 lines.append("=== DEEP RECALL ===")
-                lines.append(
-                    f'(You asked to recall more about: '
-                    f'"{recall_entry["query"]}" — {recall_entry["memory_gist"]})')
+                if recall_entry.get("came_back"):
+                    lines.append(
+                        f'(You tried to remember "{recall_entry["query"]}" '
+                        f'— and it comes back to you now: '
+                        f'{recall_entry["memory_gist"]})')
+                    if not recall_entry["snapshot"]:
+                        lines.append("")
+                        continue
+                else:
+                    lines.append(
+                        f'(You asked to recall more about: '
+                        f'"{recall_entry["query"]}" — {recall_entry["memory_gist"]})')
                 transcript_lines = []
                 for turn in recall_entry["snapshot"]:
                     role = turn.get("role", "user")
@@ -480,13 +540,17 @@ class Mimir(
         if foreground:
             lines.append("=== THINGS ON MY MIND ===")
             for m in foreground:
-                lines.append(
-                    f"— {m.gist} ({m.emotion}, {self._memory_age_str(m)})")
+                any_hazy |= m.is_hazy and not m._superseded_by
+                lines.append(f"— {self._recollect(m, cue_lower)}")
             lines.append("")
 
         if background:
             lines.append("=== BACKGROUND KNOWLEDGE ===")
             for m in background:
+                if m.is_hazy or m._superseded_by:
+                    any_hazy |= m.is_hazy and not m._superseded_by
+                    lines.append(f"· {self._recollect(m, cue_lower)}")
+                    continue
                 content = m.gist
                 if len(content) > 80:
                     cut = content[:80].rfind(" ")
@@ -495,18 +559,26 @@ class Mimir(
             lines.append("")
 
         if current_entity:
+            current_entity = self._resolve_entity(current_entity) or current_entity
             impressions = self._social.get(current_entity, [])
             if impressions:
+                # Current impressions first; outdated ones ("used to be")
+                # only make the cut if there's room.
                 vivid = sorted(
                     impressions,
-                    key=lambda m: m.mood_adjusted_vividness(self._mood),
+                    key=lambda m: (not m._superseded_by,
+                                   m.mood_adjusted_vividness(self._mood)),
                     reverse=True)[:5]
                 lines.append(
                     f"=== MY IMPRESSIONS OF "
                     f"{current_entity.upper()} ===")
                 for m in vivid:
-                    lines.append(
-                        f"— {m.content} ({m.emotion})")
+                    if m._superseded_by:
+                        lines.append(
+                            f"— {m.content} ({m.emotion}) "
+                            f"[used to be true — now: {m._superseded_by}]")
+                    else:
+                        lines.append(f"— {m.content} ({m.emotion})")
                 lines.append("")
 
         active_lessons = self.get_active_lessons()[:3]
@@ -605,9 +677,17 @@ class Mimir(
                 lines.append(
                     "=== SOMETHING THIS REMINDS ME OF ===")
                 for m in resonant[:3]:
-                    lines.append(
-                        f"— {m.gist} ({m.emotion})")
+                    any_hazy |= m.is_hazy and not m._superseded_by
+                    lines.append(f"— {self._recollect(m, cue_lower)}")
                 lines.append("")
+
+        if any_hazy:
+            lines.append(
+                "(Hazy memories: you remember the gist, not the details. "
+                "That's normal — ask them, or if it really matters, try to "
+                "remember with <recall query=\"...\"/>. Never invent the "
+                "missing details.)")
+            lines.append("")
 
         if self._chemistry.enabled:
             lines.append(f"=== NEUROCHEMISTRY ===")
@@ -848,6 +928,7 @@ class Mimir(
             }
 
         if entity:
+            entity = self._resolve_entity(entity) or entity
             mems = self._social.get(entity, [])
             return _score_entity(entity, mems)
 

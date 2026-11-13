@@ -19,6 +19,8 @@ from .constants import (
     SUMMARY_IMPORTANCE, SUMMARY_STABILITY,
     REINFORCEMENT_IMPORTANCE_MIN, REINFORCEMENT_VIVIDNESS_MAX,
     REINFORCEMENT_STABILITY_BOOST, REINFORCEMENT_MAX_PER_CYCLE,
+    FAB_NEGATIVE_HALF_LIFE_DAYS, FAB_POSITIVE_HALF_LIFE_DAYS,
+    FAB_FLASHBULB_SLOWDOWN, FAB_RESIDUAL,
 )
 from .helpers import (
     _emotion_to_vector, _content_words, _overlap_ratio, _resonance_words,
@@ -171,6 +173,51 @@ class NeuroscienceMixin:
     # ══════════════════════════════════════════════════════════════════
     #  Huginn — Thought (pattern detection, mechanism #11)
     # ══════════════════════════════════════════════════════════════════
+
+    def fade_affect(self, now: datetime | None = None) -> int:
+        """Fading Affect Bias (Walker, Skowronski & Thompson 2003).
+
+        Soften how strongly memories are FELT, in proportion to the real
+        time passed since they were last softened -- unpleasant feelings
+        faster than pleasant ones. The emotion itself (what was felt), the
+        content and the importance never change; only _affect_intensity,
+        which scales the memory's pull on mood, mood-congruent recall and
+        reliving. A residual always remains: you still know it hurt.
+
+        Runs during sleep consolidation. Returns how many memories changed.
+        """
+        now = now or datetime.now()
+        try:
+            last = (datetime.fromisoformat(self._last_affect_fade)
+                    if self._last_affect_fade else None)
+        except ValueError:
+            last = None
+        changed = 0
+        for m in self._reflections:
+            pad = m._emotion_pad or _emotion_to_vector(m.emotion)
+            if not pad or (abs(pad[0]) < 0.05 and abs(pad[1]) < 0.05):
+                continue                      # nothing much felt to soften
+            if m._affect_intensity <= FAB_RESIDUAL:
+                continue
+            try:
+                born = datetime.fromisoformat(m._decay_from or m.timestamp)
+            except ValueError:
+                continue
+            start = max(born, last) if last else born
+            dt_days = (now - start).total_seconds() / 86400
+            if dt_days <= 0:
+                continue
+            half_life = (FAB_NEGATIVE_HALF_LIFE_DAYS if pad[0] < 0
+                         else FAB_POSITIVE_HALF_LIFE_DAYS)
+            if m._is_flashbulb:
+                half_life *= FAB_FLASHBULB_SLOWDOWN
+            new = max(FAB_RESIDUAL,
+                      m._affect_intensity * 0.5 ** (dt_days / half_life))
+            if new < m._affect_intensity - 1e-6:
+                m._affect_intensity = new
+                changed += 1
+        self._last_affect_fade = now.isoformat()
+        return changed
 
     def huginn(self) -> list[Memory]:
         """Odin's raven of Thought — scans all memories for emergent

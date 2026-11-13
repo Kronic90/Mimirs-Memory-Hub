@@ -38,6 +38,50 @@ except ModuleNotFoundError:
             _spec.loader.exec_module(_mod)
             Mimir = _mod.Mimir  # type: ignore
 
+try:
+    from vividmimir.helpers import _normalize_timestamp
+except ImportError:  # pragma: no cover - engine copy without the helper
+    from mimir_modular.helpers import _normalize_timestamp
+
+
+_IMPORTANCE_WORDS = {
+    "critical": 10, "vital": 10, "max": 10, "maximum": 10,
+    "very high": 9, "extreme": 9,
+    "high": 8, "important": 8,
+    "medium": 5, "moderate": 5, "normal": 5, "mid": 5,
+    "low": 3, "minor": 3, "very low": 2, "trivial": 1, "min": 1,
+}
+
+
+def coerce_importance(value, default: int = 5) -> int:
+    """Turn whatever a model (or an import file) wrote for importance into
+    an int 1-10. Small models routinely write "high", "7.5" or "8/10";
+    a bare int() on those raised and lost the whole turn's memories."""
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        n = value
+    else:
+        text = str(value or "").strip().lower()
+        if not text:
+            return default
+        if text in _IMPORTANCE_WORDS:
+            return _IMPORTANCE_WORDS[text]
+        m = re.search(r"-?\d+(?:\.\d+)?", text)
+        if not m:
+            return default
+        n = float(m.group())
+        # "80%" or "8/10"-style scales
+        if "%" in text and n > 10:
+            n = n / 10
+    try:
+        return max(1, min(10, int(round(float(n)))))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+_coerce_importance = coerce_importance
+
 # ── lightweight keyword-based emotion detector ────────────────────────
 
 # Covers all ~47 emotions presets.py's _REMEMBER_FMT advertises to the
@@ -374,11 +418,33 @@ class MemoryManager:
                  importance: int = 5, source: str = "playground",
                  why_saved: str = "",
                  conversation_snapshot: list[dict] | None = None,
-                 category: str = "", entity: str = "") -> dict:
-        return self._remember_obj(
+                 category: str = "", entity: str = "",
+                 cherish: bool = False, anchor: bool = False,
+                 updates: str = "") -> dict:
+        """*cherish*/*anchor* mark the memory as treasured / formative.
+        Applied to the returned Memory object itself: remember() may merge
+        into an existing near-duplicate, so "the last memory in the list"
+        is not necessarily this one (that used to cherish the wrong memory,
+        or toggle an already-cherished one back off).
+
+        *updates* is the model saying "this replaces something I remembered
+        that's no longer true" -- see _apply_update()."""
+        old = self._find_update_target(updates)
+        old_content = old.content if old is not None else ""
+        mem = self._remember_obj(
             content, emotion, importance, source,
             why_saved, conversation_snapshot, category, entity,
-        ).to_dict()
+        )
+        self._apply_update(old, old_content, mem)
+        if cherish and not mem._cherished:
+            self._mimir.cherish(mem)
+        if anchor and not mem._anchor:
+            try:
+                self._mimir.promote_to_anchor(mem)
+            except Exception:
+                mem._anchor = True
+                mem._stability = max(mem._stability, 90.0)
+        return mem.to_dict()
 
     def remember_exchange(self, user_msg: str, assistant_msg: str,
                           emotion: str = "neutral",
@@ -747,7 +813,11 @@ class MemoryManager:
         property, not a stored field) — this builds a small dict per
         memory that does, mirroring how get_graph() builds its node dicts.
         """
-        memories = self._mimir.recall(context, limit=limit)
+        # touch=False: this is only a UI preview of what's relevant -- the
+        # real recall for this turn already happened in get_context_block().
+        # Touching again would double the access count and reconsolidation
+        # drift for every recalled memory on every turn.
+        memories = self._mimir.recall(context, limit=limit, touch=False)
         return [
             {
                 "content": m.gist[:200],
@@ -864,20 +934,63 @@ class MemoryManager:
     def add_social(self, entity: str, content: str,
                    emotion: str = "neutral", importance: int = 5,
                    why_saved: str = "",
-                   conversation_snapshot: list[dict] | None = None) -> dict:
+                   conversation_snapshot: list[dict] | None = None,
+                   updates: str = "") -> dict:
+        old = self._find_update_target(updates)
+        old_content = old.content if old is not None else ""
         mem = self._mimir.add_social_impression(
             entity=entity, content=content, emotion=emotion,
             importance=importance, why_saved=why_saved,
             conversation_snapshot=conversation_snapshot,
         )
+        self._apply_update(old, old_content, mem)
         return mem.to_dict()
+
+    # ── belief updating (model-driven) ───────────────────────────────
+
+    def _find_update_target(self, query: str):
+        """Which existing memory the model says has changed. Resolved BEFORE
+        the new memory is stored (storing can merge into it). Requires a
+        real word overlap -- an unclear or invented reference updates
+        nothing rather than marking some unrelated memory as outdated."""
+        query = (query or "").strip()
+        if not query:
+            return None
+        try:
+            from vividmimir.helpers import _content_words, _overlap_ratio
+            from vividmimir.constants import UPDATE_MATCH_MIN_OVERLAP
+        except ImportError:  # pragma: no cover
+            from mimir_modular.helpers import _content_words, _overlap_ratio
+            from mimir_modular.constants import UPDATE_MATCH_MIN_OVERLAP
+        q = _content_words(query.lower())
+        best, best_score = None, 0.0
+        for m in self._mimir.recall(query, limit=5, touch=False):
+            if m._superseded_by:
+                continue
+            score = _overlap_ratio(q, m.content_words)
+            if score > best_score:
+                best, best_score = m, score
+        return best if best_score >= UPDATE_MATCH_MIN_OVERLAP else None
+
+    def _apply_update(self, old, old_content: str, new) -> None:
+        if old is None or new is None:
+            return
+        still_there = any(m is old for m in self._mimir._reflections)
+        if still_there and old is not new:
+            self._mimir.supersede(old, new)
+        elif old_content and old_content != new.content:
+            # The new memory was merged INTO the old one (near-duplicate
+            # wording): same memory, revised in place -- keep what it used
+            # to say as its history.
+            new._supersedes = old_content[:160]
 
     def get_social_impressions(self, entity: str = "") -> list[dict]:
         """Return social impressions, optionally filtered by entity."""
         social = self._mimir.social_impressions  # dict: entity -> [Memory]
+        wanted = self._mimir._resolve_entity(entity) if entity else ""
         results = []
         for ent, mems in social.items():
-            if entity and ent.lower() != entity.lower():
+            if wanted and ent != wanted:
                 continue
             for m in mems:
                 d = m.to_dict()
@@ -1321,7 +1434,10 @@ class MemoryManager:
         """Remove a memory by its index in _reflections."""
         refs = self._mimir._reflections
         if 0 <= index < len(refs):
-            refs.pop(index)
+            # forget() keeps the search indexes, graph edges and social
+            # index consistent -- a bare pop() left them pointing at the
+            # wrong memories, and deleted social impressions came back.
+            self._mimir.forget(refs[index])
             self._invalidate_stats_cache()
             self.save()
             return True
@@ -1335,7 +1451,10 @@ class MemoryManager:
             return None
         mem = refs[index]
         if "importance" in changes:
-            mem._believed_importance = max(1, min(10, int(changes["importance"])))
+            # Previously written only to _believed_importance, which nothing
+            # reads -- so editing importance in the Memory browser did nothing.
+            mem.importance = max(1, min(10, int(changes["importance"])))
+            self._invalidate_stats_cache()
         if "emotion" in changes:
             new_emotion = str(changes["emotion"])
             reason = changes.get("reason", "user edit")
@@ -1360,7 +1479,7 @@ class MemoryManager:
         """
         if not query:
             return None
-        matches = self._mimir.recall(query, limit=1)
+        matches = self._mimir.recall(query, limit=1, touch=False)
         if not matches:
             return None
         target = matches[0]
@@ -1535,12 +1654,40 @@ class MemoryManager:
         dest.write_text(raw_content, encoding="utf-8")
         return str(dest)
 
+    @staticmethod
+    def _apply_import_time(mem, timestamp) -> None:
+        """Give an imported memory its real date, but start its forgetting
+        clock at the import (see IMPORT_PREAGE_DAYS): the true timestamp
+        keeps "this happened back in 2024" context and temporal recall,
+        while the decay clock means an old import arrives recallable rather
+        than already faded to nothing."""
+        from datetime import datetime, timedelta
+        try:
+            from vividmimir.constants import IMPORT_PREAGE_DAYS
+        except ImportError:  # pragma: no cover
+            from mimir_modular.constants import IMPORT_PREAGE_DAYS
+        timestamp = _normalize_timestamp(timestamp)
+        if not timestamp:
+            return
+        now = datetime.now()
+        event = datetime.fromisoformat(timestamp)
+        true_age = max((now - event).total_seconds() / 86400, 0.0)
+        preage = min(true_age, IMPORT_PREAGE_DAYS)
+        decay_from = (now - timedelta(days=preage)).isoformat()
+        mem.timestamp = timestamp
+        mem._decay_from = decay_from
+        mem._last_access = decay_from
+
     def import_memory(self, content: str, emotion: str = "neutral",
                       importance: int = 5, source: str = "import",
                       why_saved: str = "imported from external system",
                       timestamp: str = "") -> dict:
         """Import a memory with dedup check and emotion normalization."""
+        content = (content or "").strip()
+        if not content:
+            return {}
         emotion = normalize_emotion(emotion)
+        importance = _coerce_importance(importance)
         # Dedup check: skip near-identical memories
         try:
             from vividmimir.helpers import _content_words, _overlap_ratio
@@ -1557,8 +1704,7 @@ class MemoryManager:
             importance=importance, source=source,
             why_saved=why_saved,
         )
-        if timestamp:
-            mem.timestamp = timestamp
+        self._apply_import_time(mem, timestamp)
         # Imports are infrequent/bulk, unlike live remember() calls, so it's
         # worth eagerly rebuilding Yggdrasil here rather than waiting for the
         # next auto-consolidation interval — otherwise an imported memory can
@@ -1577,7 +1723,7 @@ class MemoryManager:
                 skipped += 1
                 continue
             emotion = normalize_emotion(m.get("emotion", "neutral"))
-            importance = max(1, min(10, int(m.get("importance", 5))))
+            importance = _coerce_importance(m.get("importance", 5))
             source = m.get("source", "import")
             why_saved = m.get("why_saved", "batch import")
             timestamp = m.get("timestamp", "")
@@ -1603,8 +1749,7 @@ class MemoryManager:
                 importance=importance, source=source,
                 why_saved=why_saved,
             )
-            if timestamp:
-                mem.timestamp = timestamp
+            self._apply_import_time(mem, timestamp)
             imported += 1
 
         if imported > 0:

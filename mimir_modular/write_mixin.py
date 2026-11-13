@@ -19,17 +19,34 @@ from .constants import (
     YGGDRASIL_EARLY_SESSION_MAX, YGGDRASIL_EARLY_REBUILD_EVERY,
     PROSPECTIVE_IMPORTANCE_MIN,
     VISUAL_QUALITY_FADED,
+    SUPERSEDED_STABILITY_FACTOR,
 )
 from .helpers import (
     _emotion_to_vector, _closest_emotion,
     _content_words, _overlap_ratio, _resonance_words, _extract_dates,
     _infer_arc_position,
     _visual_hash, _compress_image, _decompress_image,
+    _entity_key, _USER_ENTITY_ALIASES, USER_ENTITY,
 )
 from .models import Memory, Reminder
 
 
 class WriteMixin:
+
+    def _resolve_entity(self, name: str) -> str:
+        """Canonical name for a social entity, so spelling/case variants of
+        the same person share one identity. Aliases for the human the model
+        is talking to resolve to "User"; anything else reuses the spelling
+        already on record (first seen wins), else the cleaned-up input."""
+        key = _entity_key(name)
+        if not key:
+            return ""
+        if key in _USER_ENTITY_ALIASES:
+            return USER_ENTITY
+        for existing in self._social:
+            if _entity_key(existing) == key:
+                return existing
+        return " ".join(str(name).split())
     """Mixin providing memory creation (remember, remember_visual),
     mood updates, social impressions, anchor/cherish/reframe, and relive."""
 
@@ -61,6 +78,9 @@ class WriteMixin:
         "Name">) -- not inferred automatically from a name appearing
         somewhere in the conversation.
         """
+        if entity:
+            entity = self._resolve_entity(entity)
+
         # Chemistry modulation
         mods = self._chemistry.get_modifiers()
         effective_importance = importance
@@ -378,13 +398,92 @@ class WriteMixin:
         )
 
         # Tag with entity and link into the social graph
+        entity = self._resolve_entity(entity) or entity
         mem.entity = entity
-
-        if entity not in self._social:
-            self._social[entity] = []
-        self._social[entity].append(mem)
+        # Rebuilt from _reflections rather than appended to: remember() may
+        # have merged this into an existing near-duplicate (a new object
+        # replacing the old one in _reflections), and an append left the
+        # replaced object behind in _social as a stale duplicate.
+        self._sync_social_index()
 
         return mem
+
+    def supersede(self, old: Memory, new: Memory) -> bool:
+        """Mark *old* as no longer true because *new* replaced it.
+
+        Reconsolidation on prediction error: when what you remembered turns
+        out to have changed, the memory is updated rather than kept side by
+        side with a contradiction -- but the old version isn't erased. It
+        becomes how things used to be ("you used to live in Manchester"),
+        loses out to the current version in recall, and fades faster.
+        Only ever called because the model said so (updates="...").
+        """
+        if old is new or old._superseded_by:
+            return False
+        old._superseded_by = new.content[:160]
+        new._supersedes = old.content[:160]
+        old._stability = max(
+            INITIAL_STABILITY * 0.5,
+            old._stability * SUPERSEDED_STABILITY_FACTOR)
+        self._audit.log("memory_updated", details={
+            "old": old.content[:80], "new": new.content[:80]})
+        return True
+
+    def _sync_social_index(self):
+        """Rebuild the per-entity social index from _reflections, the single
+        source of truth. Anything that removes or replaces a memory there
+        (delete, pruning to the attic, chunking, dedup merges) is then
+        reflected in _social automatically, instead of a stale copy living
+        on in social/<entity>.json and being re-imported on the next load."""
+        social: dict[str, list[Memory]] = {}
+        for m in self._reflections:
+            if m.source == "social" and m.entity:
+                social.setdefault(m.entity, []).append(m)
+        self._social = social
+
+    def forget(self, memory: Memory) -> bool:
+        """Permanently remove one memory (an explicit user delete).
+
+        Everything that refers to memories by list position -- the word and
+        date indexes, Yggdrasil edges, inferred edges, task links -- is
+        shifted down so it keeps pointing at the right memories. Popping the
+        list alone left those stale, so recall returned the wrong memory
+        (whatever slid into the deleted slot) until the next restart. The
+        memory is also dropped from the social index, otherwise its
+        social/<entity>.json copy re-imported it on the next load.
+        """
+        idx = next((i for i, m in enumerate(self._reflections)
+                    if m is memory), None)
+        if idx is None:
+            return False
+        self._reflections.pop(idx)
+
+        def _shift(i: int) -> int:
+            return i - 1 if i > idx else i
+
+        self._yggdrasil = {
+            _shift(src): [(_shift(t), et, w) for t, et, w in edges if t != idx]
+            for src, edges in self._yggdrasil.items() if src != idx}
+        self._inferred_edges = {
+            (_shift(a), _shift(b)): v
+            for (a, b), v in self._inferred_edges.items()
+            if a != idx and b != idx}
+        for task in getattr(self, "_project_tasks", []):
+            ids = getattr(task, "_memory_indices", None)
+            if ids:
+                task._memory_indices = [_shift(i) for i in ids if i != idx]
+
+        self._sync_social_index()
+
+        if self._embed is not None and memory._embed_uid:
+            try:
+                self._embed.remove(memory._embed_uid)
+            except Exception as e:
+                self._embed_errors += 1
+                print(f"[VividEmbed] remove failed: {e}")
+
+        self._rebuild_index()
+        return True
 
     # ──────────────────────────────────────────────────────────────────
     #  Anchor + cherished management
@@ -474,7 +573,8 @@ class WriteMixin:
         old_mood = self._mood
         encoding_mood = memory._encoding_mood
         if encoding_mood and any(v != 0 for v in encoding_mood):
-            alpha = 0.6
+            # Re-living a memory whose feeling has faded moves you less.
+            alpha = 0.6 * memory._affect_intensity
             self._mood = tuple(
                 round(old_mood[i] * (1 - alpha) + encoding_mood[i] * alpha, 4)
                 for i in range(3))
@@ -494,7 +594,8 @@ class WriteMixin:
             }
             event_type = event_map.get(emo)
             if event_type:
-                self._chemistry.on_event(event_type, 0.4)
+                self._chemistry.on_event(
+                    event_type, 0.4 * memory._affect_intensity)
 
         try:
             idx = self._reflections.index(memory)

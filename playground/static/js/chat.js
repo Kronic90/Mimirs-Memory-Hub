@@ -197,6 +197,11 @@ const MoodColors = (() => {
 
 const Chat = (() => {
     let currentAssistantEl = null;
+    // The reply that most recently finished. memory_activity arrives from a
+    // background task AFTER 'done' (which nulls currentAssistantEl), so it
+    // attaches here -- attaching to currentAssistantEl meant the strip was
+    // never shown in single chat.
+    let lastAssistantEl = null;
     let currentTokens = [];
     let currentRaw = '';          // running concatenation (avoids O(n) join per token)
     let _renderPending = false;   // rAF throttle flag
@@ -688,6 +693,7 @@ const Chat = (() => {
                     badge.textContent = msg.tokens + ' tokens';
                     currentAssistantEl.parentNode.appendChild(badge);
                 }
+                if (currentAssistantEl) lastAssistantEl = currentAssistantEl;
                 currentAssistantEl = null;
                 if (msg.memory_saved && msg.memory_saved > 0) {
                     const count = msg.memory_saved;
@@ -730,9 +736,12 @@ const Chat = (() => {
                 break;
 
             case 'memory_activity':
-                if (currentAssistantEl) {
-                    const strip = renderMemoryActivity(msg);
-                    if (strip) currentAssistantEl.parentNode.insertBefore(strip, currentAssistantEl.nextSibling);
+                {
+                    const target = lastAssistantEl || currentAssistantEl;
+                    if (target && target.isConnected && target.parentNode) {
+                        const strip = renderMemoryActivity(msg);
+                        if (strip) target.parentNode.insertBefore(strip, target.nextSibling);
+                    }
                 }
                 break;
 

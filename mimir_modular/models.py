@@ -12,7 +12,7 @@ from .constants import (
     ANCHOR_STABILITY_FLOOR, ANCHOR_VIVIDNESS_FLOOR,
     CHERISH_STABILITY_FLOOR, CHERISH_VIVIDNESS_FLOOR,
     GIST_AGE_THRESHOLD_DAYS, GIST_PRESERVE_WORDS,
-    RECONSOLIDATION_DRIFT_RATE, DRIFT_ALERT_THRESHOLD,
+    RECONSOLIDATION_DRIFT_RATE, DRIFT_ALERT_THRESHOLD, TOT_CLARITY_THRESHOLD,
     STATE_DEPENDENT_BOOST, ZEIGARNIK_BOOST,
     MIN_SPACING_DAYS, SPACING_BONUS, DIMINISHING_RATE, STABILITY_CAP,
     RETRIEVAL_IMPORTANCE_BUMP,
@@ -22,7 +22,9 @@ from .constants import (
     IMPORTANCE_FLOOR_THRESHOLD, IMPORTANCE_FLOOR_LOW, IMPORTANCE_FLOOR_HIGH,
     SEMANTIC_VIVIDNESS_FLOOR, SEMANTIC_STABILITY,
 )
-from .helpers import _emotion_to_vector, _closest_emotion, _content_words
+from .helpers import (
+    _emotion_to_vector, _closest_emotion, _content_words, _normalize_timestamp,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -67,6 +69,13 @@ class Memory:
         "_drift_history",
         # Narrative arc (Freytag 1863)
         "_arc_position",
+        # When forgetting starts counting from, if not the event time
+        # (imported memories: "relearned" at import -- Ebbinghaus savings)
+        "_decay_from",
+        # Belief updating (reconsolidation on prediction error)
+        "_superseded_by", "_supersedes",
+        # How strongly the emotion is still felt, 0-1 (Fading Affect Bias)
+        "_affect_intensity",
     )
 
     def __init__(self, content: str, emotion: str = "neutral",
@@ -114,6 +123,20 @@ class Memory:
         self._drift_history: list[tuple[str, str, float]] = []  # (timestamp, emotion, magnitude)
         # Narrative arc
         self._arc_position: str = ""  # setup / rising / climax / falling / resolution
+        # "" = decay from timestamp. Set for imported memories: timestamp
+        # stays the real event time (temporal recall, "how long ago" in the
+        # context), while forgetting counts from when this mind (re)learned
+        # it at import -- otherwise a 2-year-old import arrived already
+        # almost completely faded.
+        self._decay_from: str = ""
+        # Set when the model marks this as changed (updates="..."): the
+        # newer memory's text on the old one, the older one's on the new.
+        self._superseded_by: str = ""
+        self._supersedes: str = ""
+        # WHAT was felt is the emotion; HOW STRONGLY it's still felt is this.
+        # Kept separate so softening never turns "angry" into some unrelated
+        # label -- a faded argument is still an argument, it just stings less.
+        self._affect_intensity: float = 1.0
 
     # ── Spaced-repetition touch + reconsolidation ─────────────────────
     def touch(self, current_mood: tuple[float, float, float] | None = None,
@@ -165,11 +188,15 @@ class Memory:
             self.emotion = _closest_emotion(self._emotion_pad)
 
     # ── Vividness (organic decay) ─────────────────────────────────────
+    def _decay_age_days(self) -> float:
+        """Days of forgetting so far: from _decay_from if set (imports),
+        otherwise from when the memory was formed."""
+        start = self._decay_from or self.timestamp
+        return (datetime.now() - datetime.fromisoformat(start)).total_seconds() / 86400
+
     @property
     def vividness(self) -> float:
-        age_days = (
-            datetime.now() - datetime.fromisoformat(self.timestamp)
-        ).total_seconds() / 86400
+        age_days = self._decay_age_days()
         effective_stability = self._stability
 
         # Semantic memories get near-permanent stability
@@ -229,9 +256,10 @@ class Memory:
         if not mem_vec or mood_vector == (0.0, 0.0, 0.0):
             return base
 
-        # Standard mood congruence
+        # Standard mood congruence -- scaled by how strongly the memory is
+        # still felt: a feeling that has softened pulls on mood less.
         dot = sum(a * b for a, b in zip(mem_vec, mood_vector))
-        congruence = max(-1.0, min(1.0, dot))
+        congruence = max(-1.0, min(1.0, dot)) * self._affect_intensity
         mood_boost = 1.0 + congruence * 0.3
 
         # State-dependent boost (encoding-context match)
@@ -249,9 +277,7 @@ class Memory:
         """Return the memory's content, or a compressed gist if old."""
         if self._is_flashbulb:
             return self.content
-        age_days = (
-            datetime.now() - datetime.fromisoformat(self.timestamp)
-        ).total_seconds() / 86400
+        age_days = self._decay_age_days()
         if age_days < GIST_AGE_THRESHOLD_DAYS:
             return self.content
         words = self.content.split()
@@ -282,6 +308,30 @@ class Memory:
         curr_pad = self._emotion_pad or orig_pad
         return math.sqrt(sum(
             (a - b) ** 2 for a, b in zip(orig_pad, curr_pad)))
+
+    @property
+    def felt_phrase(self) -> str:
+        """How the feeling comes across now, for the context block."""
+        if self._affect_intensity >= 0.75:
+            return ""
+        if self._affect_intensity >= 0.5:
+            return "softened with time"
+        return "only faintly felt now"
+
+    @property
+    def clarity(self) -> float:
+        """How clearly this can be recalled right now, 0-1: vividness
+        relative to how important the memory was. Low clarity is a memory
+        that is still there but faded -- the gist without the details."""
+        return self.vividness / max(self.importance, 1)
+
+    @property
+    def is_hazy(self) -> bool:
+        """Faded below clear recall (tip-of-the-tongue territory). Cherished,
+        anchored and flashbulb memories are protected from this."""
+        if self._cherished or self._anchor or self._is_flashbulb:
+            return False
+        return self.clarity < TOT_CLARITY_THRESHOLD
 
     @property
     def has_drifted(self) -> bool:
@@ -348,6 +398,14 @@ class Memory:
             d["drift_history"] = self._drift_history
         if self._arc_position:
             d["arc_position"] = self._arc_position
+        if self._decay_from:
+            d["decay_from"] = self._decay_from
+        if self._superseded_by:
+            d["superseded_by"] = self._superseded_by
+        if self._supersedes:
+            d["supersedes"] = self._supersedes
+        if self._affect_intensity < 1.0:
+            d["affect_intensity"] = round(self._affect_intensity, 4)
         return d
 
     @classmethod
@@ -356,11 +414,16 @@ class Memory:
         obj.content       = d.get("content", "")
         obj.emotion       = d.get("emotion", "neutral")
         obj.importance    = max(1, min(10, d.get("importance", 5)))
-        obj.timestamp     = d.get("timestamp", datetime.now().isoformat())
+        # Normalised on load so a profile that already saved an offset-aware
+        # ("...Z") or epoch timestamp from an older import heals itself
+        # instead of breaking every recall (see _normalize_timestamp).
+        obj.timestamp     = _normalize_timestamp(
+            d.get("timestamp"), datetime.now().isoformat())
         obj.source        = d.get("source", "reflection")
         obj.entity        = d.get("entity", "")
         obj._access_count = d.get("access_count", 0)
-        obj._last_access  = d.get("last_access", obj.timestamp)
+        obj._last_access  = _normalize_timestamp(
+            d.get("last_access"), obj.timestamp)
         obj._stability    = d.get("stability", INITIAL_STABILITY)
         obj.why_saved     = d.get("why_saved", "")
         # Neuroscience
@@ -394,6 +457,10 @@ class Memory:
         obj._novelty_score     = d.get("novelty_score", 0.5)
         obj._drift_history     = d.get("drift_history", [])
         obj._arc_position      = d.get("arc_position", "")
+        obj._decay_from        = _normalize_timestamp(d.get("decay_from"), "")
+        obj._superseded_by     = d.get("superseded_by", "")
+        obj._supersedes        = d.get("supersedes", "")
+        obj._affect_intensity  = float(d.get("affect_intensity", 1.0))
         return obj
 
 

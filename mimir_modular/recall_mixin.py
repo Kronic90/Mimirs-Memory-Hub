@@ -25,10 +25,12 @@ from .constants import (
     _W_KEYWORD_EMOTIONAL, _W_SEMANTIC_EMOTIONAL, _W_VIVIDNESS_EMOTIONAL,
     _W_MOOD_EMOTIONAL, _W_RECENCY_EMOTIONAL,
     _FACTUAL_QUERY_WORDS, _EMOTIONAL_QUERY_WORDS,
+    SUPERSEDED_RECALL_FACTOR, TOT_CLARITY_THRESHOLD,
+    SPACING_BONUS, STABILITY_CAP,
 )
 from .helpers import (
     _emotion_to_vector, _closest_emotion,
-    _content_words, _resonance_words, _extract_dates,
+    _content_words, _resonance_words, _extract_dates, _overlap_ratio,
 )
 from .models import Memory, ShortTermFact, Lesson
 
@@ -86,6 +88,8 @@ class RecallMixin:
 
             def _score(mem: Memory) -> float:
                 base = mem.mood_adjusted_vividness(self._mood)
+                if mem._superseded_by:
+                    base *= SUPERSEDED_RECALL_FACTOR
                 mem_words = _resonance_words(
                     f"{mem.content} {mem.emotion}")
                 overlap = len(ctx_words & mem_words)
@@ -100,7 +104,8 @@ class RecallMixin:
         else:
             ranked = sorted(
                 self._reflections,
-                key=lambda m: m.mood_adjusted_vividness(self._mood),
+                key=lambda m: m.mood_adjusted_vividness(self._mood)
+                * (SUPERSEDED_RECALL_FACTOR if m._superseded_by else 1.0),
                 reverse=True)
 
         active = ranked[:limit]
@@ -145,9 +150,15 @@ class RecallMixin:
     # ──────────────────────────────────────────────────────────────────
 
     def recall(self, context: str, limit: int | None = None,
-               mood: tuple[float, float, float] | None = None) -> list[Memory]:
+               mood: tuple[float, float, float] | None = None,
+               touch: bool = True) -> list[Memory]:
         """Hybrid retrieval: BM25 keyword + VividEmbed semantic + spreading
-        activation + contextual gating → composite re-rank."""
+        activation + contextual gating → composite re-rank.
+
+        *touch=False* makes this a read-only peek (no retrieval practice,
+        no access count, no reconsolidation drift) -- for UI display of
+        "what would be recalled", which must not count as the character
+        actually remembering something a second time in the same turn."""
         k = limit or self.RECALL_LIMIT
         current_mood = mood or self._mood
 
@@ -336,7 +347,7 @@ class RecallMixin:
             mem_vec = _emotion_to_vector(mem.emotion)
             if mem_vec and current_mood != (0.0, 0.0, 0.0):
                 dot = sum(a * b for a, b in zip(mem_vec, current_mood))
-                s_mood = (dot + 1.0) / 2.0
+                s_mood = 0.5 + ((dot + 1.0) / 2.0 - 0.5) * mem._affect_intensity
             else:
                 s_mood = 0.5
 
@@ -356,6 +367,12 @@ class RecallMixin:
 
             if mem._cherished:
                 composite *= 1.1
+
+            # Outdated (the model marked it updates="..."): the current
+            # version wins, but the past can still surface when it's
+            # strongly cued -- "you used to live in Manchester".
+            if mem._superseded_by:
+                composite *= SUPERSEDED_RECALL_FACTOR
 
             # Entity-anchored boost — memories directly about a
             # mentioned entity get a recall advantage, like how
@@ -424,8 +441,9 @@ class RecallMixin:
         # store over a long conversation just from topical relevance,
         # diluting the importance-floor's signal instead of sharpening
         # it for things someone actually keeps asking about by name.
-        for mem in results:
-            self._touch_memory(mem, factual=is_factual_query)
+        if touch:
+            for mem in results:
+                self._touch_memory(mem, factual=is_factual_query)
 
         return results
 
@@ -441,6 +459,29 @@ class RecallMixin:
         matches — e.g. the memory predates this feature, or nothing matched.
         """
         candidates = self.recall(query, limit=10)
+
+        # ── Effortful recall of a hazy memory (tip of the tongue) ─────
+        # The model chose to try harder to remember something that had
+        # faded. If the cue genuinely points at a hazy memory, it comes
+        # back in full next turn -- and because it was hard to retrieve,
+        # retrieving it strengthens it more than an easy recall would
+        # (desirable difficulties, Bjork 1994). Self-limiting: once the
+        # memory is clear again it's no longer hazy and this stops firing.
+        q_words = _resonance_words(query)
+        for m in candidates[:3]:
+            if not m.is_hazy or not q_words:
+                continue
+            cue_overlap = len(q_words & _resonance_words(m.content)) / len(q_words)
+            if cue_overlap < 0.3:
+                continue
+            m._stability = min(m._stability * SPACING_BONUS, STABILITY_CAP)
+            snapshot = self._load_snapshot(m._snapshot_id) if m._snapshot_id else None
+            self._pending_deep_recalls = [{
+                "query": query, "memory_gist": m.content,
+                "snapshot": snapshot or [], "came_back": True,
+            }]
+            return True
+
         target = next((m for m in candidates if m._snapshot_id), None)
         if target is None:
             return False

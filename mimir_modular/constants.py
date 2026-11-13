@@ -179,6 +179,50 @@ MIN_SPACING_DAYS   = 0.5
 STABILITY_CAP      = 180.0
 DIMINISHING_RATE   = 0.85
 
+# Imported memories (from Character.ai exports etc.) keep their real date,
+# but forgetting is counted from the import -- going through someone's old
+# history is a relearning event, and relearned material comes back much
+# faster than it was first learned (Ebbinghaus 1885, "savings"). They start
+# as if this many days old (or their true age, if younger): recallable, but
+# noticeably less fresh than something said today. At the default stability
+# that's ~79% retention on arrival instead of ~0% for a 2-year-old memory.
+IMPORT_PREAGE_DAYS = 7.0
+
+# ── Memory updating: reconsolidation on prediction error ─────────────────
+# (Lee 2009; Sinclair & Barense 2019). When the model notices something it
+# remembered is no longer true ("they moved", "they broke up") and says so
+# with updates="...", the old memory is not erased -- it becomes how things
+# USED to be. It loses out to the current version in recall (but still
+# surfaces when the past itself is the topic), and the outdated trace is
+# weakened like any other interfered-with memory.
+SUPERSEDED_RECALL_FACTOR = 0.45   # composite-score multiplier in recall
+SUPERSEDED_STABILITY_FACTOR = 0.6 # outdated trace fades faster than before
+UPDATE_MATCH_MIN_OVERLAP = 0.15   # how sure we must be which memory changed
+
+# ── Fading Affect Bias (Walker, Skowronski & Thompson 2003) ──────────────
+# Over time the emotional charge of memories softens -- and unpleasant
+# feelings fade markedly faster than pleasant ones. Applied during sleep
+# consolidation ("sleep to forget, sleep to remember": REM sleep strips
+# emotional tone while keeping content; Walker & van der Helm 2009), in
+# proportion to the real time that has passed. The facts never change and
+# importance is untouched -- only how strongly the memory is FELT. A residual
+# keeps memories from going emotionally flat: you still know it hurt.
+FAB_NEGATIVE_HALF_LIFE_DAYS = 120.0
+FAB_POSITIVE_HALF_LIFE_DAYS = 365.0
+FAB_FLASHBULB_SLOWDOWN = 2.0      # vivid emotional "where were you" moments
+FAB_RESIDUAL = 0.35               # never fades below this share of original
+
+# ── Feeling of knowing / tip of the tongue (Hart 1965; Brown & McNeill
+# 1966; fuzzy-trace theory, Brainerd & Reyna 1990) ──────────────────────
+# A faded memory that the conversation still cues doesn't come back
+# verbatim: the gist survives, the specific details (names, numbers) don't
+# -- unless the cue itself supplies them, which is recognition. The model
+# sees it as hazy and decides what to do: ask, or try harder with <recall>.
+# A successful effortful recall strengthens the memory more than an easy
+# one (desirable difficulties, Bjork 1994).
+TOT_CLARITY_THRESHOLD = 0.30      # vividness / importance below this = hazy
+TOT_MAX_WORDS = 14                # verbatim detail beyond the gist is lost
+
 # A well-spaced stability bonus alone can't meaningfully compete with the
 # vividness exponential (exp(-age/stability)) over a period of months --
 # multiplying a ~3-day time constant by 1.8x doesn't change its order of

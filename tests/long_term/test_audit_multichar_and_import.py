@@ -125,7 +125,11 @@ def test_five_characters_full_year_no_cross_contamination():
                     f"Rapid interleaved switching caused {other}'s check-in "
                     f"to leak into {name}'s memory store")
     finally:
-        for h in harnesses.values():
+        # Reverse order: each harness's time warp saved the PREVIOUS one's
+        # patched clock as its "original", so closing in creation order
+        # left a +365-day clock patched into the engine for every test
+        # that ran after this one.
+        for h in reversed(list(harnesses.values())):
             h.close()
             import shutil
             shutil.rmtree(h._tmpdir, ignore_errors=True)
