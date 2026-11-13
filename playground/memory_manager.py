@@ -1408,7 +1408,7 @@ class MemoryManager:
         elif sort == "importance":
             mems.sort(key=lambda m: m.importance, reverse=True)
         elif sort == "vividness":
-            mems.sort(key=lambda m: getattr(m, '_stability', 0), reverse=True)
+            mems.sort(key=lambda m: m.vividness, reverse=True)
 
         total = len(mems)
         page = mems[offset:offset + limit]
@@ -1424,7 +1424,13 @@ class MemoryManager:
                 d["_index"] = -1
             d["cherished"] = getattr(m, '_cherished', False)
             d["anchor"] = getattr(m, '_anchor', False)
-            d["vividness"] = round(getattr(m, '_stability', 0), 2)
+            # Real current vividness (this used to show _stability -- the
+            # decay time constant in days -- under the "vivid" label).
+            d["vividness"] = round(m.vividness, 2)
+            d["hazy"] = bool(getattr(m, "is_hazy", False))
+            d["felt"] = round(getattr(m, "_affect_intensity", 1.0), 2)
+            d["superseded_by"] = getattr(m, "_superseded_by", "")
+            d["supersedes"] = getattr(m, "_supersedes", "")
             results.append(d)
 
         return {"total": total, "offset": offset, "limit": limit,

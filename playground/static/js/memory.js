@@ -208,7 +208,8 @@ const MemoryPage = (() => {
 
         memories.forEach(m => {
             const card = document.createElement('div');
-            card.className = 'memory-card emotion-' + (m.emotion || 'neutral');
+            card.className = 'memory-card emotion-' + (m.emotion || 'neutral')
+                + (m.superseded_by ? ' superseded' : '');
 
             const idx = m._index;
             const isCherished = m.cherished;
@@ -218,6 +219,17 @@ const MemoryPage = (() => {
             if (m.is_flashbulb) badges.push('<span class="mem-badge flashbulb">⚡ flashbulb</span>');
             if (isCherished) badges.push('<span class="mem-badge cherished">💎 cherished</span>');
             if (isAnchor) badges.push('<span class="mem-badge anchor">⚓ anchor</span>');
+            // Organic memory states (v1.0.4)
+            if (m.superseded_by) badges.push(
+                `<span class="mem-badge superseded" data-tip="This changed, so the character remembers it as how things used to be. Now: ${esc(m.superseded_by)}">🕰️ used to be true</span>`);
+            if (m.supersedes) badges.push(
+                `<span class="mem-badge updated" data-tip="This replaced an older memory. Before: ${esc(m.supersedes)}">🔄 updated</span>`);
+            const felt = (m.felt !== undefined) ? m.felt
+                : (m.affect_intensity !== undefined ? m.affect_intensity : 1);
+            if (felt < 0.75) badges.push(
+                `<span class="mem-badge softened" data-tip="How strongly this is still felt: ${Math.round(felt * 100)}%. Feelings soften with time, unpleasant ones faster than pleasant ones. What happened and how much it mattered haven't changed.">🌙 ${felt < 0.5 ? 'faintly felt' : 'softened'}</span>`);
+            if (m.hazy) badges.push(
+                '<span class="mem-badge hazy" data-tip="Faded: the character remembers the gist but not the details (names, numbers). Mentioning a detail in chat helps it come back, and the character can try to recall it.">🌫️ hazy</span>');
 
             card.innerHTML = `
                 <div class="memory-card-body">
