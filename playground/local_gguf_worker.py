@@ -59,6 +59,85 @@ def _capture_native_stderr(fn):
     return result, exc, captured
 
 
+def _make_vision_handler(mmproj_path: str):
+    """Vision chat handler that formats prompts with the MODEL'S OWN chat
+    template instead of LLaVA-1.5's.
+
+    llama-cpp-python only ships vision handlers for a few model families,
+    and the generic one (Llava15ChatHandler) hard-codes LLaVA's
+    "USER: ... ASSISTANT:" format. Used with any other model -- Gemma 3,
+    for one -- the model never sees its real turn markers, so it doesn't
+    know where its reply ends: it rambles on, writes extra "USER:/ASSISTANT:"
+    turns itself and leaks prompt text. Every GGUF carries its own template
+    in its metadata, so we render with that, passing images through as
+    text placeholders the handler then swaps for the vision embedding.
+    LLaVA's format stays as the fallback for models with no template.
+    """
+    from llama_cpp.llama_chat_format import Llava15ChatHandler
+
+    class ModelTemplateVisionHandler(Llava15ChatHandler):
+        _use_model_template = False
+
+        def adopt_model_template(self, llm) -> None:
+            template = (getattr(llm, "metadata", None) or {}).get(
+                "tokenizer.chat_template", "")
+            if template:
+                self.CHAT_FORMAT = template
+                self.DEFAULT_SYSTEM_MESSAGE = None
+                self._use_model_template = True
+
+        @staticmethod
+        def get_image_urls(messages):
+            urls = []
+            for m in messages:
+                content = m.get("content") if isinstance(m, dict) else None
+                if not isinstance(content, list):
+                    continue
+                for part in content:
+                    if part.get("type") == "image_url":
+                        u = part["image_url"]
+                        urls.append(u["url"] if isinstance(u, dict) else u)
+                    elif part.get("type") == "text" and part.get("_mimir_image"):
+                        urls.append(part["text"])
+            return urls
+
+        @staticmethod
+        def _inline_images(message):
+            content = message.get("content")
+            if not isinstance(content, list):
+                return message
+            parts = []
+            for part in content:
+                if part.get("type") == "image_url":
+                    u = part["image_url"]
+                    url = u["url"] if isinstance(u, dict) else u
+                    # Model templates generally only render text parts; the
+                    # URL text is what the handler replaces with the image.
+                    parts.append({"type": "text", "text": url, "_mimir_image": True})
+                else:
+                    parts.append(part)
+            return {**message, "content": parts}
+
+        def __call__(self, **kwargs):
+            if self._use_model_template:
+                original = kwargs["messages"]
+                kwargs["messages"] = [self._inline_images(m) for m in original]
+                try:
+                    return super().__call__(**kwargs)
+                except Exception as e:
+                    # Template features the vision renderer can't provide
+                    # (custom jinja helpers etc.) -> fall back to LLaVA's.
+                    if "jinja" not in type(e).__module__:
+                        raise
+                    self.CHAT_FORMAT = Llava15ChatHandler.CHAT_FORMAT
+                    self.DEFAULT_SYSTEM_MESSAGE = Llava15ChatHandler.DEFAULT_SYSTEM_MESSAGE
+                    self._use_model_template = False
+                    kwargs["messages"] = original
+            return super().__call__(**kwargs)
+
+    return ModelTemplateVisionHandler(clip_model_path=mmproj_path, verbose=False)
+
+
 def _ensure_model(model_path: str, mmproj_path: str, n_gpu_layers: int, n_ctx: int):
     global _llm, _loaded_path, _loaded_mmproj, _loaded_n_gpu_layers, _loaded_n_ctx
     if (_llm is not None and _loaded_path == model_path
@@ -89,16 +168,18 @@ def _ensure_model(model_path: str, mmproj_path: str, n_gpu_layers: int, n_ctx: i
         "n_ctx": n_ctx,
         "verbose": False,
     }
+    vision_handler = None
     if mmproj_path and pathlib.Path(mmproj_path).is_file():
         # clip_model_path is not a real Llama() parameter in current
         # llama-cpp-python — vision support requires a chat_handler object
         # built from the mmproj file instead.
-        from llama_cpp.llama_chat_format import Llava15ChatHandler
-        kwargs["chat_handler"] = Llava15ChatHandler(
-            clip_model_path=mmproj_path, verbose=False)
+        vision_handler = _make_vision_handler(mmproj_path)
+        kwargs["chat_handler"] = vision_handler
 
     try:
         _llm = Llama(**kwargs)
+        if vision_handler is not None:
+            vision_handler.adopt_model_template(_llm)
     except Exception as e:
         # Reload with verbose logging captured at the OS fd level, purely to
         # recover the specific native error llama-cpp-python's own exception
@@ -162,13 +243,25 @@ def _looks_like_template_error(exc: Exception) -> bool:
 
 
 def _stream(llm, all_messages: list[dict], temperature: float, max_tokens: int,
-            out_q, req_id) -> bool:
+            out_q, req_id, has_images: bool = False) -> bool:
     """Stream one attempt. Returns True if at least one token was produced."""
     produced = False
-    for chunk in llm.create_chat_completion(
-        messages=all_messages, temperature=temperature,
-        max_tokens=max_tokens, stream=True,
-    ):
+    # A loaded vision model attaches a vision chat handler to the Llama
+    # object, and llama-cpp-python then uses it for EVERY request. For a
+    # text-only turn use the model's own built-in template directly -- the
+    # exact format it was trained on, same as when no vision model is set.
+    own_template = (getattr(llm, "_chat_handlers", None) or {}).get(
+        "chat_template.default")
+    if not has_images and getattr(llm, "chat_handler", None) is not None \
+            and own_template is not None:
+        chunks = own_template(
+            llama=llm, messages=all_messages, temperature=temperature,
+            max_tokens=max_tokens, stream=True)
+    else:
+        chunks = llm.create_chat_completion(
+            messages=all_messages, temperature=temperature,
+            max_tokens=max_tokens, stream=True)
+    for chunk in chunks:
         delta = chunk.get("choices", [{}])[0].get("delta", {})
         token = delta.get("content", "")
         reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
@@ -201,9 +294,10 @@ def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
             if job.get("images") and job.get("mmproj_path"):
                 _attach_images(all_messages, job["images"])
 
+            has_images = bool(job.get("images") and job.get("mmproj_path"))
             try:
                 _stream(llm, all_messages, job["temperature"], job["max_tokens"],
-                        out_q, req_id)
+                        out_q, req_id, has_images=has_images)
             except Exception as e:
                 if _looks_like_template_error(e):
                     # The loaded model's chat template rejects a separate
@@ -214,7 +308,8 @@ def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
                     if job.get("images") and job.get("mmproj_path"):
                         _attach_images(retry_messages, job["images"])
                     _stream(llm, retry_messages, job["temperature"],
-                            job["max_tokens"], out_q, req_id)
+                            job["max_tokens"], out_q, req_id,
+                            has_images=has_images)
                 else:
                     raise
 
