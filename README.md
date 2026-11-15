@@ -1,25 +1,29 @@
-﻿# Mimir's Memory Hub
+# Mimir's Memory Hub
 
-**A local AI companion that actually remembers you.**
-
-Mimir's Memory Hub is a free, open-source AI companion platform that runs on your machine. Connect any local model or cloud API and start talking to a character that builds a genuine, persistent memory of every conversation — one that fades, strengthens, dreams, and evolves the way a human mind does. It's a memory and companion platform first — optional tool/agent capabilities exist for people who want them, but they're off by default and never required for the character/companion experience.
-
-No subscriptions. No data leaving your machine (unless you choose a cloud API). No conversation limits. No forgetting.
-
-**This project will always be 100% free.** No paid tiers, no premium features, no catches. Every feature you see here is available to everyone.
+**The local AI companion that actually remembers you.**
 
 <p align="center">
-  <img src="docs/screenshots/chat_ui.png" alt="Mimir's Memory Hub — Chat UI with neurochemistry sidebar" width="900"/>
+  <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/releases/latest"><img src="https://img.shields.io/github/v/release/Kronic90/Mimirs-Memory-Hub?label=release&color=7c3aed" alt="Latest release"></a>
+  <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/releases"><img src="https://img.shields.io/github/downloads/Kronic90/Mimirs-Memory-Hub/total?color=ec4899" alt="Downloads"></a>
+  <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/stargazers"><img src="https://img.shields.io/github/stars/Kronic90/Mimirs-Memory-Hub?style=flat&color=f59e0b" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-3b82f6" alt="Windows, macOS, Linux">
+  <img src="https://img.shields.io/badge/runs-100%25%20local-10b981" alt="Runs 100% local">
 </p>
 
----
+Mimir's Memory Hub is a free AI companion and character platform that runs on your own PC. Connect any local model (Ollama, GGUF via llama.cpp, LM Studio) or a cloud API and talk to a character that builds a **persistent, human-like memory** of you. Memories fade, strengthen, carry emotion and get consolidated in "sleep", the way a human mind's do.
 
-## Community
+<p align="center">
+  <img src="docs/media/demo.gif" alt="Demo: Luna remembers that the user's dog Rex was having an operation and asks how he's doing in a brand-new chat" width="900"/>
+  <br><sub>Real, unscripted output from Gemma 3 12B running locally. Chat 2 is a fresh conversation, so Luna only knows about Rex from her memory. (For the demo, that memory's date was moved back 3 days to stand in for the time passing.)</sub>
+</p>
 
-Mimir's Memory Hub is a community-driven project. All feedback, suggestions, feature requests, and bug reports are welcome and will be taken into consideration. If you have an idea for something you'd like to see, open an issue or start a discussion — this project is built for the people who use it.
+<p align="center">
+  <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/releases/latest"><b>⬇ Download for Windows (portable, no install)</b></a>
+  &nbsp;·&nbsp; <a href="#installation">macOS / Linux</a>
+  &nbsp;·&nbsp; <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/discussions">Discussions</a>
+</p>
 
-- **Issues & feature requests** — [GitHub Issues](https://github.com/Kronic90/Mimirs-Memory-Hub/issues)
-- **Discussions** — [GitHub Discussions](https://github.com/Kronic90/Mimirs-Memory-Hub/discussions)
+No subscriptions. No data leaving your machine (unless you choose a cloud API). No conversation limits. **Always 100% free**: no paid tiers, no premium features, no catches.
 
 ---
 
@@ -35,6 +39,35 @@ Mimir's Memory Hub is a community-driven project. All feedback, suggestions, fea
 > 3. Your browser opens automatically — done
 
 macOS / Linux users: see the [Installation](#installation) section below.
+
+---
+
+## How it compares
+
+Most chat apps "remember" by stuffing recent messages into the context window, or by searching a vector database for similar text. Mimir models memory the way people experience it.
+
+| | Typical chat app | Vector-store memory (RAG) | **Mimir's Memory Hub** |
+|---|:---:|:---:|:---:|
+| Remembers across sessions | ❌ limited to the context window | ✅ | ✅ |
+| Important / emotional moments recalled more readily | ❌ | ❌ similarity only | ✅ |
+| Natural forgetting (real forgetting curve) | ❌ | ❌ keeps everything equally | ✅ |
+| Mood shapes what comes to mind | ❌ | ❌ | ✅ |
+| Updates beliefs when facts change ("I moved to Leeds") | ❌ | ⚠️ old and new both match | ✅ |
+| Consolidation, "sleep" and dreams | ❌ | ❌ | ✅ |
+| See and browse the memory graph | ❌ | ❌ | ✅ |
+| Runs fully offline on your PC | varies | varies | ✅ |
+
+**Benchmarks:** 93.9% Recall@5 on LongMemEval, and 4.4× the no-memory baseline on Mem2ActBench tool accuracy (0.44 vs 0.10). Full methodology and the categories where it's weaker are in [BENCHMARKS.md](benchmarks/BENCHMARKS.md).
+
+---
+
+## Community
+
+Mimir's Memory Hub is a community-driven project. All feedback, suggestions, feature requests, and bug reports are welcome and will be taken into consideration. If you have an idea for something you'd like to see, open an issue or start a discussion — this project is built for the people who use it.
+
+- **Issues & feature requests** — [GitHub Issues](https://github.com/Kronic90/Mimirs-Memory-Hub/issues)
+- **Discussions** — [GitHub Discussions](https://github.com/Kronic90/Mimirs-Memory-Hub/discussions)
+- ⭐ **If Mimir remembers something that surprises you, a star helps other people find it.**
 
 ---
 

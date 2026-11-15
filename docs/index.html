@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mimir's Memory Hub: a local AI companion with long-term memory</title>
+<meta name="description" content="Free AI companion and character platform that runs on your PC and actually remembers you. Human-like persistent memory that fades, strengthens and dreams. Works with Ollama, GGUF/llama.cpp, LM Studio and any OpenAI-compatible API.">
+<meta name="keywords" content="AI companion, long-term memory, local LLM, persistent memory, Ollama, llama.cpp, GGUF, AI character chat, SillyTavern cards, offline AI, private AI chat">
+<link rel="canonical" href="https://kronic90.github.io/Mimirs-Memory-Hub/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Mimir's Memory Hub: the local AI companion that remembers you">
+<meta property="og:description" content="Human-like persistent memory for local AI characters. Free, private, runs on your PC.">
+<meta property="og:url" content="https://kronic90.github.io/Mimirs-Memory-Hub/">
+<meta property="og:image" content="https://kronic90.github.io/Mimirs-Memory-Hub/media/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Mimir's Memory Hub: the local AI companion that remembers you">
+<meta name="twitter:description" content="Human-like persistent memory for local AI characters. Free, private, runs on your PC.">
+<meta name="twitter:image" content="https://kronic90.github.io/Mimirs-Memory-Hub/media/social-preview.png">
+<link rel="icon" href="media/icon.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Mimir's Memory Hub",
+  "applicationCategory": "CommunicationApplication",
+  "operatingSystem": "Windows, macOS, Linux",
+  "description": "A free, local AI companion and character platform with human-like persistent memory.",
+  "url": "https://kronic90.github.io/Mimirs-Memory-Hub/",
+  "downloadUrl": "https://github.com/Kronic90/Mimirs-Memory-Hub/releases/latest",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "image": "https://kronic90.github.io/Mimirs-Memory-Hub/media/social-preview.png"
+}
+</script>
+<style>
+:root {
+  --bg: #0b0b10; --panel: #15151d; --text: #f4f4f5; --muted: #a1a1aa;
+  --border: rgba(255,255,255,.12); --accent: #7c3aed; --accent2: #ec4899;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; color: var(--text); font: 17px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(900px 500px at 10% -5%, rgba(124,58,237,.35), transparent 60%),
+    radial-gradient(800px 500px at 100% 30%, rgba(236,72,153,.18), transparent 60%),
+    var(--bg);
+}
+a { color: #c4b5fd; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+header { display: flex; align-items: center; gap: 12px; padding: 20px 0; }
+header img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+header strong { font-size: 18px; }
+header nav { margin-left: auto; display: flex; gap: 18px; font-size: 15px; }
+header nav a { color: var(--muted); text-decoration: none; }
+.hero { text-align: center; padding: 40px 0 24px; }
+h1 { font-size: clamp(34px, 6vw, 60px); line-height: 1.08; margin: 0 0 16px; font-weight: 800; }
+h1 em { font-style: normal; background: linear-gradient(90deg, #a78bfa, #f472b6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { max-width: 680px; margin: 0 auto 26px; color: #d4d4d8; font-size: 19px; }
+.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn { display: inline-block; padding: 13px 22px; border-radius: 10px; font-weight: 700; text-decoration: none; }
+.btn.primary { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; }
+.btn.ghost { border: 1px solid var(--border); color: var(--text); }
+.small { color: var(--muted); font-size: 14px; margin-top: 10px; }
+.demo { margin: 34px auto 10px; max-width: 960px; }
+.demo img { width: 100%; border-radius: 14px; border: 1px solid var(--border); box-shadow: 0 30px 80px rgba(0,0,0,.55); }
+.demo p { color: var(--muted); font-size: 14px; text-align: center; }
+section { padding: 40px 0; }
+h2 { font-size: 30px; margin: 0 0 18px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 560px; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: center; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+td.us { color: #6ee7b7; font-weight: 700; }
+.steps { counter-reset: s; list-style: none; padding: 0; }
+.steps li { counter-increment: s; margin: 0 0 10px; padding-left: 40px; position: relative; }
+.steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+details { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { color: #d4d4d8; margin: 10px 0 0; }
+footer { color: var(--muted); font-size: 14px; padding: 30px 0 50px; text-align: center; }
+@media (max-width: 600px) { header nav { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="media/icon.png" alt="">
+    <strong>Mimir's Memory Hub</strong>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#compare">Compare</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/Kronic90/Mimirs-Memory-Hub">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>The local AI companion that <em>remembers you.</em></h1>
+    <p class="lede">A free AI companion and character platform that runs on your own PC. Your characters build a persistent, human-like memory of you: memories fade, strengthen, carry emotion and get consolidated while they "sleep".</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/Kronic90/Mimirs-Memory-Hub/releases/latest">⬇ Download for Windows</a>
+      <a class="btn ghost" href="https://github.com/Kronic90/Mimirs-Memory-Hub#installation">macOS / Linux</a>
+      <a class="btn ghost" href="https://github.com/Kronic90/Mimirs-Memory-Hub">★ Star on GitHub</a>
+    </div>
+    <p class="small">Portable Windows zip: unzip, double-click run.bat, done. No Python or install needed.</p>
+  </div>
+
+  <div class="demo">
+    <img src="media/demo.gif" alt="Demo: in a brand-new chat, Luna remembers the user's dog Rex was having an operation and asks how he's doing" loading="lazy">
+    <p>Real, unscripted output from Gemma 3 12B running locally. Chat 2 is a fresh conversation, so Luna only knows about Rex from her memory. (The memory's date was moved back 3 days to stand in for time passing.)</p>
+  </div>
+
+  <section id="features">
+    <h2>Memory that works like a mind</h2>
+    <div class="grid">
+      <div class="card"><h3>Remembers across sessions</h3><p>Things you said weeks ago come back when they're relevant, not just what fits in the context window.</p></div>
+      <div class="card"><h3>Emotion-weighted recall</h3><p>Important and emotional moments stick; small talk fades on a real forgetting curve.</p></div>
+      <div class="card"><h3>Mood &amp; neurochemistry</h3><p>Simulated dopamine, serotonin, oxytocin, norepinephrine and cortisol shape how memories are formed and recalled.</p></div>
+      <div class="card"><h3>Updates what it believes</h3><p>Tell it you moved city and the old fact is superseded, not left competing with the new one.</p></div>
+      <div class="card"><h3>Sleep, consolidation &amp; dreams</h3><p>A sleep cycle merges, prunes and links memories, and can produce dream-like insights.</p></div>
+      <div class="card"><h3>See its mind</h3><p>Browse every memory in a live graph, a 3D landscape, mood and chemistry timelines, and more.</p></div>
+      <div class="card"><h3>Many characters, group chats</h3><p>Each character has its own separate memory. Put several in one conversation with you.</p></div>
+      <div class="card"><h3>Any model you like</h3><p>Ollama, local GGUF via llama.cpp, LM Studio, Transformers, OpenAI, Anthropic, Google, OpenRouter, vLLM or any OpenAI-compatible API.</p></div>
+      <div class="card"><h3>Private by default</h3><p>Everything runs and is stored on your machine unless you choose a cloud API. Imports SillyTavern character cards.</p></div>
+    </div>
+  </section>
+
+  <section id="compare">
+    <h2>How it compares</h2>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>Typical chat app</th><th>Vector-store memory (RAG)</th><th>Mimir's Memory Hub</th></tr></thead>
+      <tbody>
+        <tr><td>Remembers across sessions</td><td>❌ limited to the context window</td><td>✅</td><td class="us">✅</td></tr>
+        <tr><td>Emotional moments recalled more readily</td><td>❌</td><td>❌ similarity only</td><td class="us">✅</td></tr>
+        <tr><td>Natural forgetting curve</td><td>❌</td><td>❌ keeps everything equally</td><td class="us">✅</td></tr>
+        <tr><td>Mood shapes what comes to mind</td><td>❌</td><td>❌</td><td class="us">✅</td></tr>
+        <tr><td>Updates beliefs when facts change</td><td>❌</td><td>⚠️ old and new both match</td><td class="us">✅</td></tr>
+        <tr><td>Consolidation, sleep and dreams</td><td>❌</td><td>❌</td><td class="us">✅</td></tr>
+        <tr><td>Browse the memory graph</td><td>❌</td><td>❌</td><td class="us">✅</td></tr>
+        <tr><td>Runs fully offline</td><td>varies</td><td>varies</td><td class="us">✅</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="small">Benchmarks: 93.9% Recall@5 on LongMemEval; 4.4× the no-memory baseline on Mem2ActBench tool accuracy. <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/blob/main/benchmarks/BENCHMARKS.md">Full results, including where it's weaker</a>.</p>
+  </section>
+
+  <section id="start">
+    <h2>Get started in a minute</h2>
+    <ol class="steps">
+      <li>Download the <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/releases/latest">Windows portable zip</a> (or clone the repo on macOS / Linux).</li>
+      <li>Unzip it anywhere and double-click <code>run.bat</code>. Your browser opens automatically.</li>
+      <li>Pick a model: install <a href="https://ollama.com">Ollama</a> and pull one, point it at a <code>.gguf</code> file, or add an API key.</li>
+      <li>Create a character (or import a SillyTavern card) and start talking. It remembers from the first message.</li>
+    </ol>
+  </section>
+
+  <section id="faq">
+    <h2>FAQ</h2>
+    <details><summary>Is it really free?</summary><p>Yes. No paid tiers, no premium features, no account. It's free for personal and non-commercial use.</p></details>
+    <details><summary>Does my data leave my computer?</summary><p>Not unless you choose a cloud model (OpenAI, Anthropic, Google, OpenRouter). With a local model, conversations and memories never leave your machine.</p></details>
+    <details><summary>What hardware do I need?</summary><p>The hub itself is light. What you need depends on the model: small local models run on a modest GPU or even CPU, and with a cloud API any PC works.</p></details>
+    <details><summary>How is this different from giving a model a long context window?</summary><p>A context window is short-term memory: it fills up and the oldest things fall out. Mimir keeps a long-term store and brings back what's relevant, weighting it by importance, emotion, mood and how recently and often it's been recalled, the way people remember.</p></details>
+    <details><summary>Can I use my SillyTavern characters?</summary><p>Yes. Import character cards (PNG or JSON), single files or whole folders.</p></details>
+  </section>
+
+  <footer>
+    Mimir's Memory Hub · <a href="https://github.com/Kronic90/Mimirs-Memory-Hub">GitHub</a> ·
+    <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/discussions">Discussions</a> ·
+    <a href="https://github.com/Kronic90/Mimirs-Memory-Hub/issues">Report a bug</a>
+  </footer>
+</div>
+</body>
+</html>
