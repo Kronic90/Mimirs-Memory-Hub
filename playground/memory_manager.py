@@ -1176,8 +1176,23 @@ class MemoryManager:
         result.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return result
 
-    def get_visual_image(self, hash_val: str) -> bytes | None:
-        """Return raw WebP bytes for a stored visual memory."""
+    def get_visual_image(self, hash_val: str, recall: bool = False) -> bytes | None:
+        """Return WebP bytes for a stored visual memory.
+
+        recall=True is the image as the character remembers it -- a faded
+        memory comes back blurrier/lower-detail (Mimir's visual clarity).
+        Otherwise the stored original is returned (memory browser, graph).
+        """
+        if recall:
+            for m in self._mimir._reflections:
+                if m._visual_hash == hash_val:
+                    try:
+                        v = self._mimir.get_visual(m)
+                        if v.get("image_bytes"):
+                            return v["image_bytes"]
+                    except Exception:
+                        pass
+                    break
         try:
             img_path = self._dir / "visual" / f"{hash_val}.webp"
             if img_path.is_file():
@@ -1185,6 +1200,65 @@ class MemoryManager:
         except Exception:
             pass
         return None
+
+    def resolve_visual(self, ref: str) -> str | None:
+        """Turn whatever the model wrote in a showimage tag into the hash of
+        an image that is actually stored, or None.
+
+        Models usually copy the hash exactly, but sometimes they drop or
+        swap a character, keep the "hash:" label, or describe the picture
+        instead ("the photo of Milo"). Matching tolerates all of that, but
+        only ever returns an image this character really remembers.
+        Showing a memory is also a recall, so it gets strengthened.
+        """
+        mems = [m for m in self._mimir._reflections
+                if m.has_visual and (self._dir / "visual" / f"{m._visual_hash}.webp").is_file()]
+        if not mems or not ref:
+            return None
+        raw = ref.strip().strip("[]()\"' ")
+        raw = re.sub(r'^(hash|id)\s*[:=]\s*', '', raw, flags=re.I).strip()
+        hexpart = raw.lower()
+        chosen = None
+        if re.fullmatch(r'[0-9a-f]{6,64}', hexpart):
+            exact = [m for m in mems if m._visual_hash == hexpart]
+            if exact:
+                chosen = exact[0]
+            else:
+                pref = [m for m in mems if m._visual_hash.startswith(hexpart)
+                        or hexpart.startswith(m._visual_hash)]
+                if len({m._visual_hash for m in pref}) == 1:
+                    chosen = pref[0]
+                else:
+                    import difflib
+                    best, score = None, 0.0
+                    for m in mems:
+                        r = difflib.SequenceMatcher(None, hexpart, m._visual_hash).ratio()
+                        if r > score:
+                            best, score = m, r
+                    if best is not None and score >= 0.8:
+                        chosen = best
+        if chosen is None:
+            # A description rather than a hash -- match it to what each
+            # image memory says it shows.
+            words = set(re.findall(r"[a-z0-9']{3,}", raw.lower()))
+            best, score = None, 0.0
+            for m in mems:
+                desc = set(re.findall(r"[a-z0-9']{3,}",
+                                           (m._visual_description or m.content).lower()))
+                if not words or not desc:
+                    continue
+                s = len(words & desc) / len(words)
+                if s > score:
+                    best, score = m, s
+            if best is not None and score >= 0.5:
+                chosen = best
+        if chosen is None:
+            return None
+        try:
+            self._mimir._touch_memory(chosen)
+        except Exception:
+            pass
+        return chosen._visual_hash
 
     def get_visual_context_block(self) -> str:
         """Return a context block listing visual memories with their hashes
@@ -1568,6 +1642,9 @@ class MemoryManager:
                 "stability": round(m._stability, 1),
                 "access_count": m._access_count,
             }
+            if m.has_visual:
+                node["visual_hash"] = m._visual_hash
+                node["visual_clarity"] = m.visual_clarity
             nodes.append(node)
 
         edges = []

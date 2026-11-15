@@ -58,8 +58,13 @@ class WriteMixin:
                  importance: int = 5, source: str = "reflection",
                  why_saved: str = "",
                  conversation_snapshot: list[dict] | None = None,
-                 category: str = "", entity: str = "") -> Memory:
+                 category: str = "", entity: str = "",
+                 dedup: bool = True) -> Memory:
         """Store an episodic memory.
+
+        *dedup*=False always forms a new memory instead of merging into a
+        near-identical one (used for images: two different pictures can be
+        described in almost the same words and must stay separate).
 
         *conversation_snapshot*, if given, is the surrounding conversation at
         the moment this memory was formed — persisted separately (never
@@ -110,7 +115,7 @@ class WriteMixin:
                     effective_importance * NOVELTY_DECAY_FACTOR)))
 
         # Dedup check
-        for i, existing in enumerate(self._reflections):
+        for i, existing in enumerate(self._reflections if dedup else ()):
             if _overlap_ratio(new_words, existing.content_words) >= _DEDUP_THRESHOLD:
                 merged = Memory(
                     content=content, emotion=emotion,
@@ -131,6 +136,11 @@ class WriteMixin:
                     merged._snapshot_id = self._save_snapshot(conversation_snapshot)
                 merged._category = category or existing._category
                 merged.entity = entity or existing.entity
+                # Talking about a pictured moment again mustn't lose the
+                # picture itself.
+                merged._visual_hash = existing._visual_hash
+                merged._visual_description = existing._visual_description
+                merged._visual_dimensions = existing._visual_dimensions
                 if self._embed is not None and existing._embed_uid:
                     try:
                         self._embed.remove(existing._embed_uid)
@@ -276,10 +286,22 @@ class WriteMixin:
         if not img_path.exists():
             img_path.write_bytes(webp_bytes)
 
+        # The same picture seen again reinforces its existing memory; a
+        # different picture is always its own memory, however similarly
+        # it's described.
+        same = next((m for m in self._reflections
+                     if m._visual_hash == img_hash), None)
+        if same is not None:
+            self._touch_memory(same)
+            same.importance = max(same.importance, importance)
+            if description and description != same._visual_description:
+                same._visual_description = description
+            return same
+
         mem = self.remember(
             content=description,
             emotion=emotion, importance=importance,
-            source=source, why_saved=why_saved)
+            source=source, why_saved=why_saved, dedup=False)
 
         mem._visual_hash = img_hash
         mem._visual_description = description

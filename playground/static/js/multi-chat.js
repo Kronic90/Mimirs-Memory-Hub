@@ -227,7 +227,9 @@ const MultiChatPage = (() => {
         const card = document.createElement('div');
         card.className = 'recalled-image-card';
         const img = document.createElement('img');
-        img.src = '/api/memory/visual/' + hash + (charId ? '?char_id=' + encodeURIComponent(charId) : '');
+        img.src = '/api/memory/visual/' + encodeURIComponent(hash) + '?recall=1'
+            + (charId ? '&char_id=' + encodeURIComponent(charId) : '');
+        img.addEventListener('click', () => card.classList.toggle('enlarged'));
         img.className = 'recalled-image';
         img.alt = `${speaker}'s recalled memory image`;
         img.onerror = () => card.remove();

@@ -296,6 +296,20 @@ const App = (() => {
             item.addEventListener('click', () => navigate(item.dataset.page));
         });
 
+        // Version label: real version from the server; click to check for updates
+        const verEl = document.getElementById('sidebar-version');
+        if (verEl) {
+            api('/version').then(v => { verEl.textContent = 'v' + v.version; }).catch(() => {});
+            verEl.addEventListener('click', () => {
+                navigate('settings');
+                setTimeout(() => {
+                    if (typeof SettingsPage !== 'undefined' && SettingsPage.checkUpdates) SettingsPage.checkUpdates();
+                    const sec = document.getElementById('settings-updates');
+                    if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 150);
+            });
+        }
+
         // Header selects
         document.getElementById('backend-select').addEventListener('change', async (e) => {
             state.backend = e.target.value;

@@ -309,15 +309,77 @@ def _strip_remind_tags(text: str) -> str:
 
 
 # ── Showimage-tag parsing ─────────────────────────────────────────────────────
-
+# Models write this a few different ways -- hash="X"/>, hash=X>, an id= or
+# query= attribute, a <show_image> spelling, or the reference wrapped as
+# <showimage>X</showimage>. All of them mean "show the user this picture".
 _SHOWIMAGE_RE = _re.compile(
-    r'<showimage\s+hash=["\']([^"\']+)["\'](?:\s*/)?>', _re.IGNORECASE
+    r'<show_?image\b([^>]*?)/?>(?:([^<]{0,300})</show_?image>)?', _re.IGNORECASE
+)
+_SHOWIMAGE_ATTR_RE = _re.compile(
+    r'(hash|id|image|query|description|of)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'/>]+))',
+    _re.IGNORECASE,
 )
 
 
 def _parse_showimage_tags(text: str) -> list[str]:
-    """Return list of hashes from <showimage hash="..."/> tags."""
-    return _SHOWIMAGE_RE.findall(text)
+    """Return the image references (a hash, or words describing the image)
+    from every showimage tag, in order."""
+    refs: list[str] = []
+    for attrs, inner in _SHOWIMAGE_RE.findall(text):
+        ref = ""
+        for _name, a, b, c in _SHOWIMAGE_ATTR_RE.findall(attrs):
+            ref = (a or b or c).strip()
+            if ref:
+                break
+        if not ref:
+            ref = (inner or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def _normalize_image_b64(image_b64: str) -> tuple[str, bytes | None]:
+    """Decode a browser-attached image and re-encode it as a plain JPEG.
+
+    People attach whatever their browser has -- WebP, AVIF, HEIC, CMYK or
+    16-bit PNGs, animated GIFs, 8000px phone photos. llama.cpp's image
+    loader only understands a few basic formats (WebP fails with "Failed to
+    create bitmap from image bytes"), and API backends have their own size
+    limits, so everything is converted once here: RGB, max 1920px edge,
+    JPEG. Returns ("", None) if the data isn't a readable image at all.
+    """
+    import base64 as _b64
+    if not image_b64:
+        return "", None
+    if "," in image_b64[:100] and image_b64.startswith("data:"):
+        image_b64 = image_b64.split(",", 1)[1]
+    try:
+        raw = _b64.b64decode(image_b64)
+    except Exception:
+        return "", None
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return image_b64, raw  # can't convert -- pass through as before
+    import io
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img = ImageOps.exif_transpose(img)  # phone photos: honour rotation
+        if img.mode in ("RGBA", "LA", "P"):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        else:
+            img = img.convert("RGB")
+        if max(img.size) > 1920:
+            img.thumbnail((1920, 1920), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=92)
+        data = buf.getvalue()
+        return _b64.b64encode(data).decode("ascii"), data
+    except Exception:
+        return "", None
 
 
 def _strip_showimage_tags(text: str) -> str:
@@ -1049,7 +1111,7 @@ async def vision_status():
 async def vision_describe(request: Request):
     """Describe an image using the active vision model or BLIP fallback."""
     body = await request.json()
-    image_b64 = body.get("image_b64", "")
+    image_b64, _ = _normalize_image_b64(body.get("image_b64", ""))
     if not image_b64:
         return JSONResponse({"error": "image_b64 required"}, status_code=400)
 
@@ -1661,6 +1723,73 @@ async def memory_get_reminders(include_fired: bool = False, char_id: str = ""):
     return JSONResponse(mem.get_reminders(include_fired=include_fired))
 
 
+# ── Updates & bringing data from another copy ─────────────────────
+
+@app.get("/api/version")
+async def get_version():
+    from playground.version import __version__
+    from playground import updater
+    return JSONResponse({"version": __version__, "kind": updater.install_kind()})
+
+
+@app.get("/api/update/check")
+async def update_check():
+    from playground import updater
+    return JSONResponse(await asyncio.to_thread(updater.check))
+
+
+@app.post("/api/update/apply")
+async def update_apply():
+    from playground import updater
+    return JSONResponse(await asyncio.to_thread(updater.apply))
+
+
+def _flush_all_memory() -> None:
+    for m in [_memory, *_char_memories.values()]:
+        if m is None:
+            continue
+        try:
+            m.save()
+        except Exception:
+            pass
+
+
+@app.post("/api/update/restart")
+async def update_restart():
+    """Save everything, stop the local model worker, start a fresh hub."""
+    from playground import updater
+    await asyncio.to_thread(_flush_all_memory)
+    try:
+        await asyncio.to_thread(_auto_save_conversation)
+    except Exception:
+        pass
+    try:
+        from playground.llm_backends import LocalGGUFBackend
+        w = LocalGGUFBackend._worker
+        if w is not None and w.is_alive():
+            w.terminate()
+    except Exception:
+        pass
+    updater.restart()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/data/import-preview")
+async def data_import_preview(request: Request):
+    from playground import updater
+    body = await request.json()
+    return JSONResponse(await asyncio.to_thread(updater.preview_import, body.get("path", "")))
+
+
+@app.post("/api/data/import-stage")
+async def data_import_stage(request: Request):
+    """Copy an older copy's data aside; it's swapped in on restart."""
+    from playground import updater
+    body = await request.json()
+    return JSONResponse(await asyncio.to_thread(
+        updater.stage_import, body.get("path", ""), bool(body.get("include_models"))))
+
+
 # ── Visual Memory API ─────────────────────────────────────────────
 
 @app.get("/api/memory/visual")
@@ -1671,14 +1800,15 @@ async def memory_get_visual(char_id: str = ""):
 
 
 @app.get("/api/memory/visual/{hash_val}")
-async def memory_get_visual_image(hash_val: str, char_id: str = ""):
-    """Serve a compressed visual memory image as WebP."""
+async def memory_get_visual_image(hash_val: str, char_id: str = "", recall: int = 0):
+    """Serve a compressed visual memory image as WebP. recall=1 serves it
+    as currently remembered (faded memories come back at lower detail)."""
     import re as _re2
     if not _re2.match(r'^[a-fA-F0-9]+$', hash_val):
         from fastapi.responses import Response
         return Response(status_code=400)
     mem = _ensure_memory(char_id=char_id or _cfg.get("active_character_id", ""))
-    data = mem.get_visual_image(hash_val)
+    data = mem.get_visual_image(hash_val, recall=bool(recall))
     if data is None:
         from fastapi.responses import Response
         return Response(status_code=404)
@@ -1919,7 +2049,9 @@ def _ensure_alternation(messages: list[dict]) -> list[dict]:
                 "content": out[-1]["content"] + "\n\n" + m.get("content", ""),
             }
         else:
-            out.append(dict(m))
+            # Only role/content -- saved entries can carry UI-only
+            # extras (e.g. "images") that some APIs reject.
+            out.append({"role": role, "content": m.get("content", "")})
     return out
 
 
@@ -2495,15 +2627,8 @@ async def chat_ws(ws: WebSocket):
                 continue
 
             # Image attached by user (base64 string from browser FileReader)
-            image_b64: str = msg.get("image", "")
-            pending_image_bytes: bytes | None = None
-            if image_b64:
-                import base64 as _b64
-                try:
-                    pending_image_bytes = _b64.b64decode(image_b64)
-                except Exception:
-                    image_b64 = ""
-                    pending_image_bytes = None
+            image_b64, pending_image_bytes = _normalize_image_b64(
+                msg.get("image", ""))
 
             backend_name = msg.get("backend") or _cfg.get("active_backend", "ollama")
             model_id = msg.get("model") or _cfg.get("active_model", "")
@@ -2705,8 +2830,14 @@ async def chat_ws(ws: WebSocket):
                 clean_response = _CHANNEL_STRIP_RE.sub("", clean_response).strip()
                 clean_response = _strip_remember_tags(clean_response)
                 clean_response = _strip_remind_tags(clean_response)
-                # Collect showimage hashes before stripping
-                showimage_hashes = _parse_showimage_tags(clean_response)
+                # Collect showimage references before stripping, and turn
+                # each into the hash of an image that really is stored.
+                showimage_hashes = []
+                if memory_enabled:
+                    for _ref in _parse_showimage_tags(clean_response):
+                        _h = mem.resolve_visual(_ref)
+                        if _h and _h not in showimage_hashes:
+                            showimage_hashes.append(_h)
                 clean_response = _strip_showimage_tags(clean_response)
                 # Strip task/solution tags from displayed response
                 clean_response = _strip_task_tags(clean_response)
@@ -2731,8 +2862,13 @@ async def chat_ws(ws: WebSocket):
                 save_file_tags = _parse_save_file_tags(response_text) if preset_name in ("agent", "assistant") else []
                 tool_calls = _parse_tool_calls(response_text) if preset_name in ("agent", "assistant") else []
 
-                # Store the clean response (no <remember> tags) in history
-                _conversation.append({"role": "assistant", "content": clean_response})
+                # Store the clean response (no <remember> tags) in history.
+                # Images shown are kept on the entry so a reloaded chat
+                # shows them again (stripped before sending to the LLM).
+                _asst_entry = {"role": "assistant", "content": clean_response}
+                if showimage_hashes:
+                    _asst_entry["images"] = list(showimage_hashes)
+                _conversation.append(_asst_entry)
 
                 # Auto-save conversation (non-blocking)
                 await asyncio.to_thread(_auto_save_conversation)
@@ -2769,7 +2905,8 @@ async def chat_ws(ws: WebSocket):
 
                 # Send show_image messages for any <showimage> the model wrote
                 for h in showimage_hashes:
-                    await ws.send_json({"type": "show_image", "hash": h})
+                    await ws.send_json({"type": "show_image", "hash": h,
+                                        "char_id": active_char_id or ""})
 
                 # ── Background: memory ops + TTS (non-blocking) ───────────
                 _bg_remember_tags = list(remember_tags)
@@ -2789,6 +2926,8 @@ async def chat_ws(ws: WebSocket):
                 _bg_clean = clean_response
                 _bg_preset = dict(preset)
                 _bg_pending_img = pending_image_bytes
+                _bg_user_entry = next((m for m in reversed(_conversation)
+                                       if m.get("role") == "user"), None)
                 _bg_char = dict(active_char) if active_char else None
                 _bg_ws = ws
 
@@ -2813,6 +2952,14 @@ async def chat_ws(ws: WebSocket):
                                 )
                                 if vresult:
                                     _formed.append(vresult)
+                                    _vh = vresult.get("visual_hash")
+                                    if _vh and _bg_user_entry is not None:
+                                        _bg_user_entry["image"] = _vh
+                                        _bg_user_entry["image_char_id"] = active_char_id or ""
+                                        try:
+                                            await asyncio.to_thread(_auto_save_conversation)
+                                        except Exception:
+                                            pass
                             else:
                                 result = mem.remember(
                                     content=entry["content"],
@@ -3385,15 +3532,8 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                 user_text = msg.get("content", "").strip()
 
                 # Image attached by user (base64 string from browser FileReader)
-                image_b64: str = msg.get("image", "")
-                pending_image_bytes: bytes | None = None
-                if image_b64:
-                    import base64 as _b64
-                    try:
-                        pending_image_bytes = _b64.b64decode(image_b64)
-                    except Exception:
-                        image_b64 = ""
-                        pending_image_bytes = None
+                image_b64, pending_image_bytes = _normalize_image_b64(
+                    msg.get("image", ""))
 
                 # Computed at most once per message, on first non-vision
                 # agent's turn, and reused for every other non-vision agent
@@ -3671,7 +3811,10 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                                     except Exception:
                                         pass
 
-                                showimage_hashes = _parse_showimage_tags(response_text)
+                                for _ref in _parse_showimage_tags(response_text):
+                                    _h = agent_mem.resolve_visual(_ref)
+                                    if _h and _h not in showimage_hashes:
+                                        showimage_hashes.append(_h)
 
                                 # Run turn processing (emotion detection, chemistry, etc.)
                                 # skip_save=True always -- a memory is only ever created

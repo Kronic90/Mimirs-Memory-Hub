@@ -138,7 +138,11 @@ const ConversationsPage = (() => {
                 const container = document.getElementById('chat-messages');
                 container.innerHTML = '';
                 (data.messages || []).forEach(m => {
-                    Chat.createMessageEl(m.role, m.content);
+                    const el = Chat.createMessageEl(m.role, m.content);
+                    if (m.role === 'user' && m.image) {
+                        Chat.showUserMemoryImage(el, m.image, m.image_char_id);
+                    }
+                    (m.images || []).forEach(h => Chat.showRecalledImage(h, data.agent || '', el));
                 });
                 App.navigate('chat');
                 App.toast('Conversation loaded', 'success');

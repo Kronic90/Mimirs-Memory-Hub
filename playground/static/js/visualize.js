@@ -17,6 +17,55 @@ const VisualizePage = (() => {
     let camX = 0, camY = 0, camZoom = 1;
     let dragging = false, dragStartX = 0, dragStartY = 0;
 
+    // ── Visual-memory thumbnails ─────────────────────────────────
+    // Image memories show a tiny preview of the picture on the node.
+    const thumbCache = {};   // hash -> HTMLImageElement (loaded) | 'loading' | 'failed'
+    function visualUrl(hash) {
+        const cid = window.getVizCharId && window.getVizCharId();
+        return '/api/memory/visual/' + encodeURIComponent(hash)
+            + (cid ? '?char_id=' + encodeURIComponent(cid) : '');
+    }
+    function getThumb(hash) {
+        const c = thumbCache[hash];
+        if (c instanceof HTMLImageElement) return c;
+        if (c) return null;
+        thumbCache[hash] = 'loading';
+        const img = new Image();
+        img.onload = () => { thumbCache[hash] = img; };
+        img.onerror = () => { thumbCache[hash] = 'failed'; };
+        img.src = visualUrl(hash);
+        return null;
+    }
+    function drawThumb(node, size, isHovered, color) {
+        const img = getThumb(node.visual_hash);
+        if (!img) return;
+        const s = isHovered ? 44 : 22;               // preview box (world px)
+        const x = node.x + size * 0.6;
+        const y = node.y - size * 0.6 - s;
+        const r = 5;
+        ctx.save();
+        // A fading memory's picture fades with it
+        ctx.globalAlpha = Math.max(0.35, Math.min(node.opacity, 1));
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + s, y, x + s, y + s, r);
+        ctx.arcTo(x + s, y + s, x, y + s, r);
+        ctx.arcTo(x, y + s, x, y, r);
+        ctx.arcTo(x, y, x + s, y, r);
+        ctx.closePath();
+        ctx.save();
+        ctx.clip();
+        // cover-crop to a square
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        const m = Math.min(iw, ih);
+        ctx.drawImage(img, (iw - m) / 2, (ih - m) / 2, m, m, x, y, s, s);
+        ctx.restore();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = color.fill;
+        ctx.stroke();
+        ctx.restore();
+    }
+
     // Colors for memory types
     const COLORS = {
         episodic:   { fill: '#7c3aed', glow: 'rgba(124,58,237,',  label: 'Episodic' },
@@ -423,6 +472,9 @@ const VisualizePage = (() => {
                 ctx.restore();
             }
 
+            // Tiny preview of the picture for visual memories
+            if (node.visual_hash) drawThumb(node, size, isHovered || isSelected, color);
+
             // Label for hovered/selected
             if (isHovered || isSelected) {
                 const label = (node.content || '').substring(0, 50);
@@ -475,6 +527,7 @@ const VisualizePage = (() => {
             <div class="viz-tip-header" style="border-left:3px solid ${color.fill};">
                 <strong>${color.label}</strong> ${badges}
             </div>
+            ${node.visual_hash ? `<img class="viz-tip-image" src="${visualUrl(node.visual_hash)}" alt="">` : ''}
             <div class="viz-tip-content">${esc(node.content || '')}</div>
             <div class="viz-tip-meta">
                 ${viv ? `Vividness: ${viv}` : ''}
@@ -519,6 +572,8 @@ const VisualizePage = (() => {
         content.innerHTML = `
             <div style="border-left:3px solid ${color.fill}; padding-left:12px; margin-bottom:12px;">
                 <div style="font-size:14px; font-weight:600; margin-bottom:4px;">${color.label} ${badges}</div>
+                ${node.visual_hash ? `<img class="viz-detail-image" src="${visualUrl(node.visual_hash)}" alt="Image stored with this memory">
+                    <div class="text-muted" style="font-size:11px; margin:2px 0 6px;">🖼️ Visual memory · ${esc(node.visual_clarity || '')}</div>` : ''}
                 <div style="font-size:13px; color:var(--text); line-height:1.5;">${esc(node.content || '')}</div>
             </div>
             <div class="viz-detail-grid">

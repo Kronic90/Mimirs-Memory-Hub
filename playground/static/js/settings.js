@@ -170,8 +170,154 @@ const SettingsPage = (() => {
     }
 
     // ── Init ─────────────────────────────────────────────────────
+    // ── Updates ──────────────────────────────────────────────────
+    const $ = (id) => document.getElementById(id);
+    function escHtml(t) {
+        return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function setStatus(id, html, cls) {
+        const el = $(id);
+        el.className = cls || 'text-muted';
+        el.style.fontSize = '13px';
+        el.innerHTML = html;
+    }
+    const updStatus = (html, cls) => setStatus('upd-status', html, cls);
+    const impStatus = (html, cls) => setStatus('imp-status', html, cls);
+
+    async function loadVersion() {
+        try {
+            const v = await App.api('/version');
+            $('upd-current').textContent = 'v' + v.version;
+            const sv = $('sidebar-version');
+            if (sv) sv.textContent = 'v' + v.version;
+        } catch { /* fine offline */ }
+    }
+
+    async function checkUpdates() {
+        const btn = $('btn-upd-check');
+        btn.disabled = true;
+        $('btn-upd-apply').style.display = 'none';
+        updStatus('Checking GitHub…');
+        try {
+            const r = await App.api('/update/check');
+            $('upd-current').textContent = 'v' + r.current;
+            if (r.notes) {
+                $('upd-notes').innerHTML = (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined')
+                    ? DOMPurify.sanitize(marked.parse(r.notes)) : escHtml(r.notes);
+                $('upd-notes-wrap').style.display = '';
+            }
+            if (r.kind === 'git') {
+                const g = r.git || {};
+                if (g.error) {
+                    updStatus(escHtml(g.error), 'upd-err');
+                } else if (r.update_available) {
+                    updStatus(`${g.behind} new change${g.behind === 1 ? '' : 's'} on <code>${escHtml(g.upstream)}</code>`
+                        + (r.latest ? ` (latest release v${escHtml(r.latest)})` : '')
+                        + (g.dirty ? '<br><span class="upd-err">You have local code changes — commit or stash them first.</span>' : ''));
+                    $('btn-upd-apply').style.display = '';
+                } else {
+                    updStatus(`You're up to date with <code>${escHtml(g.upstream || 'the remote')}</code>.`, 'upd-ok');
+                }
+            } else if (r.release_error) {
+                updStatus(escHtml(r.release_error), 'upd-err');
+            } else if (r.update_available) {
+                updStatus(`<strong>v${escHtml(r.latest)}</strong> is available`
+                    + (r.url ? ` — <a href="${escHtml(r.url)}" target="_blank" rel="noopener">release page</a>` : '')
+                    + `. Updating replaces the hub's code only — your data stays put and the old code is backed up.`);
+                $('btn-upd-apply').style.display = '';
+            } else {
+                updStatus(`You're on the latest version (v${escHtml(r.current)}).`, 'upd-ok');
+            }
+        } catch (e) {
+            updStatus(`Couldn't check for updates: ${escHtml(e.message)}`, 'upd-err');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function applyUpdate() {
+        const btn = $('btn-upd-apply');
+        btn.disabled = true;
+        updStatus('Updating… downloading and installing anything new, this can take a minute.');
+        try {
+            const r = await App.api('/update/apply', { method: 'POST', body: '{}' });
+            if (!r.ok) { updStatus(escHtml(r.error), 'upd-err'); return; }
+            let msg = r.version ? `Updated to v${escHtml(r.version)}.` : `Updated (${escHtml(r.from)} → ${escHtml(r.to)}).`;
+            if (r.pip && !r.pip.ok) {
+                msg += `<br><span class="upd-err">Installing new requirements had a problem:</span> <code>${escHtml(r.pip.output)}</code>`;
+            }
+            msg += ' Restart the hub to start using it.';
+            updStatus(msg, 'upd-ok');
+            btn.style.display = 'none';
+            $('btn-upd-restart').style.display = '';
+        } catch (e) {
+            updStatus(`Update failed: ${escHtml(e.message)}`, 'upd-err');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function restartHub(statusFn) {
+        const say = statusFn || updStatus;
+        say('Restarting… this page will reload by itself.');
+        try { await App.api('/update/restart', { method: 'POST', body: '{}' }); } catch { /* expected */ }
+        // Give the old server time to exit, then wait for the new one
+        await new Promise(r => setTimeout(r, 3000));
+        for (let i = 0; i < 120; i++) {
+            try {
+                const resp = await fetch('/api/version', { cache: 'no-store' });
+                if (resp.ok) { location.reload(); return; }
+            } catch { /* not up yet */ }
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        say(`The hub didn't come back by itself — please start it again (run.bat).`, 'upd-err');
+    }
+
+    // ── Bring data from another copy ─────────────────────────────
+    async function previewImport() {
+        $('imp-confirm').style.display = 'none';
+        const path = $('imp-path').value.trim();
+        if (!path) { impStatus('Paste the folder of the older copy first.', 'upd-err'); return; }
+        try {
+            const r = await App.apiPost('/data/import-preview', { path });
+            if (!r.ok) { impStatus(escHtml(r.error), 'upd-err'); return; }
+            impStatus(`Found <strong>${r.memories}</strong> memories, <strong>${r.characters}</strong> characters and `
+                + `<strong>${r.conversations}</strong> conversations in <code>${escHtml(r.source)}</code>.`);
+            $('imp-models-label').textContent = `Also copy its downloaded models (${r.models_gb} GB)`;
+            $('imp-models-wrap').style.display = r.models_gb > 0 ? '' : 'none';
+            $('imp-models').checked = false;
+            $('imp-confirm').style.display = '';
+        } catch (e) {
+            impStatus(`Couldn't read that folder: ${escHtml(e.message)}`, 'upd-err');
+        }
+    }
+
+    async function doImport() {
+        const path = $('imp-path').value.trim();
+        if (!confirm("Replace this copy's data with the older copy's? This copy's current data is backed up to _update_backups first.")) return;
+        $('btn-imp-go').disabled = true;
+        impStatus('Copying…');
+        try {
+            const r = await App.apiPost('/data/import-stage', { path, include_models: $('imp-models').checked });
+            if (!r.ok) {
+                impStatus(escHtml(r.error), 'upd-err');
+                $('btn-imp-go').disabled = false;
+                return;
+            }
+            await restartHub(impStatus);
+        } catch (e) {
+            impStatus(`Import failed: ${escHtml(e.message)}`, 'upd-err');
+            $('btn-imp-go').disabled = false;
+        }
+    }
+
     function init() {
         if (!initialized) {
+            $('btn-upd-check').addEventListener('click', checkUpdates);
+            $('btn-upd-apply').addEventListener('click', applyUpdate);
+            $('btn-upd-restart').addEventListener('click', () => restartHub());
+            $('btn-imp-preview').addEventListener('click', previewImport);
+            $('btn-imp-go').addEventListener('click', doImport);
             document.getElementById('btn-save-settings').addEventListener('click', save);
             const modeSelect = document.getElementById('set-tts-mode');
             if (modeSelect) modeSelect.addEventListener('change', updateTTSModeUI);
@@ -180,7 +326,8 @@ const SettingsPage = (() => {
             initialized = true;
         }
         load();
+        loadVersion();
     }
 
-    return { init };
+    return { init, checkUpdates, loadVersion };
 })();

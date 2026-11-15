@@ -54,6 +54,7 @@ Most chat apps "remember" by stuffing recent messages into the context window, o
 | Mood shapes what comes to mind | ❌ | ❌ | ✅ |
 | Updates beliefs when facts change ("I moved to Leeds") | ❌ | ⚠️ old and new both match | ✅ |
 | Consolidation, "sleep" and dreams | ❌ | ❌ | ✅ |
+| Remembers images it was shown, and can show them again | ❌ | ❌ | ✅ |
 | See and browse the memory graph | ❌ | ❌ | ✅ |
 | Runs fully offline on your PC | varies | varies | ✅ |
 

@@ -2392,8 +2392,22 @@ details[open] .think-chevron { transform: rotate(90deg); }
 
 .recalled-image-card {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
     margin: 8px 0;
+}
+
+.recalled-image-card .recalled-image { cursor: zoom-in; }
+.recalled-image-card.enlarged .recalled-image {
+    max-width: min(720px, 100%);
+    max-height: 70vh;
+    cursor: zoom-out;
+}
+
+.recalled-image-caption {
+    font-size: 11px;
+    color: var(--text-muted, #a1a1aa);
 }
 
 .recalled-image {
@@ -3630,3 +3644,36 @@ details[open] .think-chevron { transform: rotate(90deg); }
         height: auto;
     }
 }
+
+/* Visual-memory previews in the Original Graph */
+.viz-tip-image {
+    display: block;
+    max-width: 220px;
+    max-height: 150px;
+    object-fit: contain;
+    border-radius: 6px;
+    margin: 6px 0;
+}
+.viz-detail-image {
+    display: block;
+    max-width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+    border-radius: 8px;
+    margin: 6px 0 2px;
+    border: 1px solid var(--border);
+}
+
+/* Updates section */
+.upd-notes {
+    max-height: 260px;
+    overflow: auto;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 8px 12px;
+    margin-top: 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.upd-ok { color: var(--success, #10b981); }
+.upd-err { color: var(--error, #ef4444); }

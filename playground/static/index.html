@@ -109,7 +109,7 @@
             </ul>
 
             <div class="sidebar-footer">
-                <div class="sidebar-version">v1.0.4</div>
+                <div class="sidebar-version" id="sidebar-version" title="Click to check for updates" style="cursor:pointer;">v1.0.4</div>
             </div>
         </nav>
 
@@ -991,6 +991,40 @@
                     <p class="text-muted">Configure your playground</p>
                 </div>
                 <div class="settings-form">
+                    <div class="settings-section" id="settings-updates">
+                        <h3>Updates <span class="label-hint">— your memories, characters, chats and settings are always kept</span></h3>
+                        <div class="form-row" style="align-items:center;gap:10px;flex-wrap:wrap;">
+                            <span>You're on <strong id="upd-current">v…</strong></span>
+                            <button id="btn-upd-check" class="btn btn-secondary btn-sm">Check for updates</button>
+                            <button id="btn-upd-apply" class="btn btn-primary btn-sm" style="display:none;">Update now</button>
+                            <button id="btn-upd-restart" class="btn btn-primary btn-sm" style="display:none;">Restart hub</button>
+                        </div>
+                        <div id="upd-status" class="text-muted" style="font-size:13px;margin-top:8px;"></div>
+                        <details id="upd-notes-wrap" style="display:none;margin-top:8px;">
+                            <summary style="cursor:pointer;font-size:13px;">What's new</summary>
+                            <div id="upd-notes" class="upd-notes"></div>
+                        </details>
+                    </div>
+                    <div class="settings-section" id="settings-data-import">
+                        <h3>Bring data from another copy <span class="label-hint">— e.g. an older unzipped version</span></h3>
+                        <p class="text-muted" style="font-size:13px;margin:0 0 8px;">
+                            Unzipped a new version into a new folder? Paste the old folder's location here to bring over its
+                            memories, characters, conversations and settings. This copy's current data is backed up first.
+                        </p>
+                        <div class="form-row" style="align-items:center;gap:8px;flex-wrap:wrap;">
+                            <input type="text" id="imp-path" class="input" style="flex:1;min-width:260px;"
+                                   placeholder="e.g. C:\Users\you\Downloads\Mimirs-Memory-Hub-windows-portable">
+                            <button id="btn-imp-preview" class="btn btn-secondary btn-sm">Look</button>
+                        </div>
+                        <div id="imp-status" class="text-muted" style="font-size:13px;margin-top:8px;"></div>
+                        <div id="imp-confirm" style="display:none;margin-top:8px;">
+                            <label class="toggle-label" id="imp-models-wrap">
+                                <input type="checkbox" id="imp-models">
+                                <span id="imp-models-label">Also copy downloaded models</span>
+                            </label>
+                            <div><button id="btn-imp-go" class="btn btn-primary btn-sm" style="margin-top:6px;">Bring it over &amp; restart</button></div>
+                        </div>
+                    </div>
                     <div class="settings-section">
                         <h3>Appearance</h3>
                         <div class="form-group">

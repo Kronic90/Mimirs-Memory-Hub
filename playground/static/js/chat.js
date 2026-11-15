@@ -226,7 +226,7 @@ const Chat = (() => {
     // The server strips them from history, but tokens arrive raw during streaming.
     const _REMEMBER_RE   = /<remember(?:[^>]*)>[\s\S]*?<\/remember>/gi;
     const _REMIND_RE     = /<remind(?:[^>]*)>[\s\S]*?<\/remind>/gi;
-    const _SHOWIMAGE_RE  = /<showimage\s+hash=["'][^"']+["'](?:\s*\/)?>/gi;
+    const _SHOWIMAGE_RE  = /<show_?image\b[^>]*?\/?>(?:[^<]{0,300}<\/show_?image>)?/gi;
     const _TASK_RE       = /<task(?:[^>]*)>[\s\S]*?<\/task>/gi;
     const _SOLUTION_RE   = /<solution(?:[^>]*)>[\s\S]*?<\/solution>/gi;
     const _SOCIAL_RE     = /<social(?:[^>]*)>[\s\S]*?<\/social>/gi;
@@ -588,19 +588,51 @@ const Chat = (() => {
         clearAttachedImage();
     }
 
-    // ── Append a recalled image card into chat ───────────────────
-    function showRecalledImage(hash) {
-        const container = document.getElementById('chat-messages');
+    // ── Show an image from memory inside the message that recalled it ──
+    // anchorEl: the assistant message-content element (defaults to the
+    // last finished reply). Faded memories come back at lower detail.
+    function showRecalledImage(hash, charId, anchorEl) {
+        if (!hash) return;
+        const target = anchorEl || lastAssistantEl;
         const card = document.createElement('div');
         card.className = 'recalled-image-card';
         const img = document.createElement('img');
-        img.src = '/api/memory/visual/' + hash;
+        const q = new URLSearchParams({ recall: '1' });
+        if (charId) q.set('char_id', charId);
+        img.src = '/api/memory/visual/' + encodeURIComponent(hash) + '?' + q.toString();
         img.className = 'recalled-image';
-        img.alt = 'Recalled memory image';
-        img.onerror = () => card.remove();
+        img.alt = 'An image recalled from memory';
+        img.title = 'Recalled from memory — click to enlarge';
+        img.addEventListener('click', () => card.classList.toggle('enlarged'));
+        const cap = document.createElement('div');
+        cap.className = 'recalled-image-caption';
+        cap.textContent = '🖼️ from memory';
+        img.onerror = () => {
+            img.remove();
+            cap.textContent = '🖼️ This image is no longer stored in memory.';
+        };
         card.appendChild(img);
-        container.appendChild(card);
+        card.appendChild(cap);
+        if (target && target.isConnected && target.parentNode) {
+            target.parentNode.insertBefore(card, target.nextSibling);
+        } else {
+            document.getElementById('chat-messages').appendChild(card);
+        }
+        const container = document.getElementById('chat-messages');
+        img.addEventListener('load', () => { container.scrollTop = container.scrollHeight; });
         container.scrollTop = container.scrollHeight;
+    }
+
+    // Image a user shared that became a visual memory (reloaded chats).
+    function showUserMemoryImage(userContentEl, hash, charId) {
+        if (!userContentEl || !hash) return;
+        const q = new URLSearchParams();
+        if (charId) q.set('char_id', charId);
+        const thumb = document.createElement('img');
+        thumb.src = '/api/memory/visual/' + encodeURIComponent(hash) + (q.toString() ? '?' + q : '');
+        thumb.className = 'user-attached-image';
+        thumb.onerror = () => thumb.remove();
+        userContentEl.insertAdjacentElement('afterbegin', thumb);
     }
 
     // ── Handle incoming WebSocket messages ───────────────────────
@@ -732,7 +764,7 @@ const Chat = (() => {
                 break;
 
             case 'show_image':
-                showRecalledImage(msg.hash);
+                showRecalledImage(msg.hash, msg.char_id);
                 break;
 
             case 'memory_activity':
@@ -1309,5 +1341,5 @@ const Chat = (() => {
         updateMicVisibility();
     }
 
-    return { init, handleMessage, createMessageEl, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
+    return { init, handleMessage, createMessageEl, showRecalledImage, showUserMemoryImage, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
 })();

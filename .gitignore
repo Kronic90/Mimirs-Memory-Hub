@@ -39,3 +39,10 @@ Mimirs-Memory-Hub-windows-portable/
 *.zip
 _api_scan.json
 _scan*.txt
+
+# In-app updater / data import working folders
+_update_backups/
+_pending_data_import/
+mimir_update_*/
+playground_data/hub_restart.log
+_promo/

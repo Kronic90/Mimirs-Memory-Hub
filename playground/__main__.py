@@ -17,19 +17,34 @@ def main():
     import uvicorn
 
     host = "127.0.0.1"
-    port = 19009
+    # MIMIR_PORT lets an in-app restart come back on the same port
+    try:
+        port = int(os.environ.get("MIMIR_PORT", "") or 19009)
+    except ValueError:
+        port = 19009
     os.environ["MIMIR_PORT"] = str(port)
+
+    # Data brought over from an older copy is swapped in here, before
+    # anything has loaded (or could overwrite) memories.
+    from playground.updater import apply_pending_data_import
+    note = apply_pending_data_import()
+    if note:
+        print("  " + note)
 
     def _open_browser():
         import time
         time.sleep(1.8)
         webbrowser.open(f"http://{host}:{port}")
 
-    threading.Thread(target=_open_browser, daemon=True).start()
+    # After an in-app restart the page that's already open reconnects itself
+    if not os.environ.pop("MIMIR_NO_BROWSER", ""):
+        threading.Thread(target=_open_browser, daemon=True).start()
 
+    from playground.version import __version__
+    title = f"Mimir's Well v{__version__}"
     print()
     print("  +======================================+")
-    print("  |         Mimir's Well v1.0.4          |")
+    print(f"  |{title:^38}|")
     print(f"  |   http://{host}:{port}          |")
     print("  +======================================+")
     print()
