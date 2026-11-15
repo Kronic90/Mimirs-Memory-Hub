@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vividmimir"
-version = "2.0.0"
-description = "The Ultimate Memory Architecture — 21 neuroscience mechanisms for organic AI memory"
+version = "2.1.0"
+description = "Human-like long-term memory for AI agents and companions: forgetting, emotion, reconsolidation, sleep and a memory graph"
 readme = "README.md"
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ authors = [{name = "Kronic90"}]
 keywords = [
     "ai", "memory", "episodic-memory", "neurochemistry", "llm",
     "agent", "companion", "organic-memory", "neuroscience",
+    "long-term-memory", "llm-memory", "ai-companion", "persistent-memory",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -29,6 +30,9 @@ classifiers = [
 Homepage = "https://github.com/Kronic90/Mimir"
 Repository = "https://github.com/Kronic90/Mimir"
 Issues = "https://github.com/Kronic90/Mimir/issues"
+"Memory Hub (app)" = "https://github.com/Kronic90/Mimirs-Memory-Hub"
+"Memory Hub website" = "https://kronic90.github.io/Mimirs-Memory-Hub/"
+Changelog = "https://github.com/Kronic90/Mimir/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 neurochemistry = ["vividnessmem>=1.0.0"]

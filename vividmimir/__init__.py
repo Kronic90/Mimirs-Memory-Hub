@@ -9,7 +9,7 @@ Organic episodic memory for AI companions — 21 neuroscience mechanisms,
 neurochemistry engine, Yggdrasil memory graph, and hybrid retrieval.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 from .core import Mimir
 from .models import (

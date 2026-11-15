@@ -46,6 +46,10 @@ class WriteMixin:
         for existing in self._social:
             if _entity_key(existing) == key:
                 return existing
+        # Also people only ever mentioned via remember(entity=...)
+        for m in self._reflections:
+            if m.entity and _entity_key(m.entity) == key:
+                return m.entity
         return " ".join(str(name).split())
     """Mixin providing memory creation (remember, remember_visual),
     mood updates, social impressions, anchor/cherish/reframe, and relive."""
