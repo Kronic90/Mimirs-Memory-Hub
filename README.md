@@ -649,6 +649,14 @@ Mimir's Memory Hub builds on several open-source projects and models:
 
 ---
 
+## How it's built
+
+Mimir's memory system (its architecture, the neuroscience-inspired mechanisms and the original engine) was designed and built by me, [Kronic90](https://github.com/Kronic90).
+
+I'm a self-taught Python developer, so I used an AI coding assistant (Claude) to help build the Hub around it, mostly the web interface (JavaScript, HTML/CSS) and the app plumbing. It has also helped implement some newer memory features and bug fixes, always to my design and reviewed by me. Every idea about how memory should work, and every decision about what ships, is mine.
+
+---
+
 ## License
 
 PolyForm Noncommercial 1.0.0 — free for personal and non-commercial use. See [LICENSE](LICENSE) for details.
