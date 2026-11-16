@@ -15,6 +15,38 @@ class CharacterManager:
     def __init__(self):
         self.chars_dir = _DATA_DIR / "characters"
         self.chars_dir.mkdir(parents=True, exist_ok=True)
+        self.avatars_dir = self.chars_dir / "avatars"
+
+    # ── Pictures ───────────────────────────────────────────────────────
+    def avatar_path(self, char_id: str) -> Path | None:
+        p = self.avatars_dir / f"{char_id}.webp"
+        return p if p.is_file() else None
+
+    def save_avatar(self, char_id: str, image_bytes: bytes) -> dict | None:
+        """Store a character picture (any common format), square-cropped
+        around the top-centre (where faces usually are) to 512px WebP."""
+        if not self.get_character(char_id):
+            return None
+        from PIL import Image, ImageOps
+        import io, time
+        img = Image.open(io.BytesIO(image_bytes))
+        img = ImageOps.exif_transpose(img).convert("RGBA")
+        w, h = img.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top = 0 if h > w else (h - side) // 2   # portraits: keep the head
+        img = img.crop((left, top, left + side, top + side)).resize((512, 512), Image.LANCZOS)
+        bg = Image.new("RGB", img.size, (24, 24, 32))
+        bg.paste(img, mask=img.split()[-1])
+        self.avatars_dir.mkdir(parents=True, exist_ok=True)
+        bg.save(self.avatars_dir / f"{char_id}.webp", format="WEBP", quality=88)
+        return self.update_character(char_id, {"avatar": int(time.time())})
+
+    def remove_avatar(self, char_id: str) -> dict | None:
+        p = self.avatar_path(char_id)
+        if p:
+            p.unlink()
+        return self.update_character(char_id, {"avatar": 0})
 
     def list_characters(self) -> list[dict]:
         """List all characters with full data."""
@@ -93,10 +125,39 @@ class CharacterManager:
         if not char_file.exists():
             return False
         char_file.unlink()
+        av = self.avatar_path(char_id)
+        if av:
+            av.unlink()
         if profile_dir is not None:
             mem_dir = profile_dir / "characters" / char_id
             shutil.rmtree(mem_dir, ignore_errors=True)
         return True
+
+    def import_card_bytes(self, filename: str, data: bytes) -> dict:
+        """Import a character from an uploaded file: a SillyTavern/Tavern/
+        Chub card PNG (picture becomes the avatar) or a card JSON."""
+        from playground.character_sheet import read_card_png, card_to_character
+        is_png = data[:8] == b"\x89PNG\r\n\x1a\n"
+        if is_png:
+            card = read_card_png(data)
+        else:
+            try:
+                card = json.loads(data.decode("utf-8-sig"))
+            except Exception as e:
+                raise ValueError(f"Not a character card (PNG or JSON): {e}")
+            if not isinstance(card, dict):
+                raise ValueError("Not a character card (expected a JSON object)")
+        fields = card_to_character(card)
+        char = self.create_character(fields.pop("name"), fields.pop("description", ""),
+                                     **fields)
+        src = "character.ai" if fields.get("_cai") else ("card-png" if is_png else "card-json")
+        char = self.update_character(char["id"], {"_source": src}) or char
+        if is_png:
+            try:
+                char = self.save_avatar(char["id"], data) or char
+            except Exception:
+                pass
+        return char
 
     def import_sillytavern(self, file_path: str) -> dict:
         """Import a SillyTavern character (.json or .character format)."""
@@ -104,11 +165,15 @@ class CharacterManager:
         if not import_file.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         
+        if import_file.suffix.lower() == ".png":
+            return self.import_card_bytes(import_file.name, import_file.read_bytes())
         try:
-            with open(import_file, "r", encoding="utf-8") as f:
+            with open(import_file, "r", encoding="utf-8-sig") as f:
                 st_data = json.load(f)
         except Exception as e:
             raise ValueError(f"Invalid JSON file: {e}")
+        if isinstance(st_data, dict) and (st_data.get("spec") or isinstance(st_data.get("data"), dict)):
+            return self.import_card_bytes(import_file.name, import_file.read_bytes())
         
         # SillyTavern format variations
         name = st_data.get("char_name") or st_data.get("name") or "Imported Character"
@@ -147,7 +212,7 @@ class CharacterManager:
         errors = []
         
         # Look for .json and .character files
-        for pattern in ["*.json", "*.character"]:
+        for pattern in ["*.json", "*.character", "*.png"]:
             for file_path in folder.glob(pattern):
                 # Skip non-character JSON files (e.g., settings.json, metadata.json)
                 if file_path.name.lower() in ("settings.json", "metadata.json", "config.json"):

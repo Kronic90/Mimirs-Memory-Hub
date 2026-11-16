@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .constants import (
     HUGINN_PATTERN_MIN, HUGINN_OPEN_THREAD_WORDS,
@@ -20,7 +20,7 @@ from .constants import (
     REINFORCEMENT_IMPORTANCE_MIN, REINFORCEMENT_VIVIDNESS_MAX,
     REINFORCEMENT_STABILITY_BOOST, REINFORCEMENT_MAX_PER_CYCLE,
     FAB_NEGATIVE_HALF_LIFE_DAYS, FAB_POSITIVE_HALF_LIFE_DAYS,
-    FAB_FLASHBULB_SLOWDOWN, FAB_RESIDUAL,
+    FAB_FLASHBULB_SLOWDOWN, FAB_RESIDUAL, FAB_FIRST_RUN_CATCHUP_DAYS,
 )
 from .helpers import (
     _emotion_to_vector, _content_words, _overlap_ratio, _resonance_words,
@@ -203,7 +203,12 @@ class NeuroscienceMixin:
                 born = datetime.fromisoformat(m._decay_from or m.timestamp)
             except ValueError:
                 continue
-            start = max(born, last) if last else born
+            # First run ever (e.g. just updated to a version with fading
+            # affect): don't apply years of softening in one go -- that made
+            # long-running characters suddenly calm about everything. Catch
+            # up a month at most, then carry on from real elapsed time.
+            start = max(born, last) if last else max(
+                born, now - timedelta(days=FAB_FIRST_RUN_CATCHUP_DAYS))
             dt_days = (now - start).total_seconds() / 86400
             if dt_days <= 0:
                 continue

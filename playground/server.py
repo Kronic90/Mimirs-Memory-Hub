@@ -645,8 +645,35 @@ def _sync_llm_fn(prompt: str) -> str:
     return outcome.get("value", "")
 
 
+def _user_alias_names(char_id: str = "") -> list[str]:
+    """Names that mean "the user" for this character: their persona name
+    (or the character's own override) and the nickname it calls them."""
+    names = [(_cfg.get("user_persona") or {}).get("name", "")]
+    char = _characters.get_character(char_id) if char_id else None
+    if char:
+        names.append((char.get("user_persona") or {}).get("name", "")
+                     if (char.get("user_persona") or {}).get("enabled") else "")
+        names.append(char.get("user_nickname", ""))
+        # never treat the character's own name as the user
+        own = {(char.get("name") or "").strip().casefold()} | {
+            str(n).strip().casefold() for n in (char.get("nicknames") or [])}
+        names = [n for n in names if n and n.strip().casefold() not in own]
+    return [n.strip() for n in names if n and n.strip()]
+
+
 def _ensure_memory(char_id: str = "") -> MemoryManager:
     """Return the MemoryManager for the given character (isolated) or global default."""
+    mem = _ensure_memory_raw(char_id)
+    try:
+        # "Scott" and "User" are the same person: merge on the way in.
+        if mem._mimir.set_user_aliases(_user_alias_names(char_id)):
+            mem.save()
+    except Exception:
+        pass
+    return mem
+
+
+def _ensure_memory_raw(char_id: str = "") -> MemoryManager:
     global _memory, _char_memories
     if char_id:
         if char_id not in _char_memories:
@@ -721,7 +748,7 @@ async def update_settings(request: Request):
     # piece of code (including the masked-API-key check right below) that
     # assumes these are always dicts.
     _DICT_SHAPED_KEYS = ("backends", "llm_params", "memory", "tts", "stt",
-                        "tool_permissions", "search_provider")
+                        "tool_permissions", "search_provider", "user_persona")
     for key in _DICT_SHAPED_KEYS:
         if key in patch and not isinstance(patch[key], dict):
             return JSONResponse(
@@ -1139,7 +1166,7 @@ async def vision_describe(request: Request):
 
     # BLIP fallback
     try:
-        description = await asyncio.to_thread(_blip_describe, image_b64)
+        description = await _describe_image(image_b64)
         return JSONResponse({"description": description, "method": "blip"})
     except ImportError:
         return JSONResponse({"error": "No vision model available. Set a VL model + mmproj, "
@@ -1152,6 +1179,45 @@ async def vision_describe(request: Request):
 # ── BLIP fallback singleton ──────────────────────────────────────────
 _blip_model = None
 _blip_processor = None
+
+
+def _installed_starter() -> tuple[str, str] | None:
+    """(model, vision file) of an installed starter model, best first."""
+    models_dir = _cfg.profile_dir.parent.parent / "models"
+    for sid in ("gemma-4-e4b", "gemma-4-e2b"):
+        m = model_manager.STARTER_MODELS.get(sid)
+        if not m:
+            continue
+        mp, pp = models_dir / m["model_file"], models_dir / m["mmproj_file"]
+        if mp.is_file() and pp.is_file():
+            return str(mp), str(pp)
+    return None
+
+
+async def _describe_image(image_b64: str) -> str:
+    """Describe an image for a model that can't see. Uses the Gemma 4
+    starter model when it's installed (far better than BLIP), else BLIP."""
+    starter = _installed_starter()
+    if starter:
+        try:
+            from playground.llm_backends import LocalGGUFBackend
+            local_cfg = (_cfg.get("backends") or {}).get("local") or {}
+            backend = LocalGGUFBackend(n_gpu_layers=local_cfg.get("n_gpu_layers", -1),
+                                       n_ctx=4096, mmproj_path=starter[1])
+            parts = []
+            async for tok in backend.generate(
+                    messages=[{"role": "user", "content": (
+                        "Describe this image for someone who can't see it: what's in it, "
+                        "any people, text, setting and mood. 2-4 sentences.")}],
+                    system_prompt="You describe images accurately and concisely.",
+                    temperature=0.2, max_tokens=220, model=starter[0], images=[image_b64]):
+                parts.append(tok)
+            text = _re.sub(r"<think>.*?</think>", "", "".join(parts), flags=_re.S).strip()
+            if text:
+                return text
+        except Exception:
+            pass
+    return await asyncio.to_thread(_blip_describe, image_b64)
 
 
 def _blip_describe(image_b64: str) -> str:
@@ -1203,6 +1269,79 @@ async def download_hf(request: Request):
 
     asyncio.create_task(_do_download())
     return JSONResponse({"status": "started", "filename": filename, "dest": dest_dir})
+
+
+@app.get("/api/models/starter")
+async def starter_models():
+    """The one-click starter models, and whether each is already here."""
+    models_dir = _cfg.profile_dir.parent.parent / "models"
+    out = []
+    for sid, m in model_manager.STARTER_MODELS.items():
+        mp, pp = models_dir / m["model_file"], models_dir / m["mmproj_file"]
+        prog = _download_progress.get(f"starter::{sid}")
+        out.append({"id": sid, **m, "installed": mp.is_file() and pp.is_file(),
+                    "model_path": str(mp), "mmproj_path": str(pp),
+                    "active": _cfg.get("active_model", "") == str(mp),
+                    "progress": prog})
+    return JSONResponse(out)
+
+
+def _use_starter(sid: str) -> dict:
+    """Point the hub at an installed starter model (local backend + its
+    vision/audio file)."""
+    m = model_manager.STARTER_MODELS[sid]
+    models_dir = _cfg.profile_dir.parent.parent / "models"
+    mp, pp = str(models_dir / m["model_file"]), str(models_dir / m["mmproj_file"])
+    cache = [c for c in _cfg.get("mmproj_cache", []) if c.get("path") != pp]
+    cache.append({"filename": m["mmproj_file"], "path": pp, "size": Path(pp).stat().st_size})
+    _cfg.update({"active_backend": "local", "active_model": mp,
+                 "backends": {"local": {"mmproj_path": pp}},
+                 "mmproj_cache": cache})
+    return {"model_path": mp, "mmproj_path": pp}
+
+
+@app.post("/api/models/starter/{sid}/install")
+async def install_starter(sid: str):
+    """Download a starter model (model + vision/audio file) and switch to it."""
+    if sid not in model_manager.STARTER_MODELS:
+        return JSONResponse({"error": "Unknown starter model"}, status_code=404)
+    m = model_manager.STARTER_MODELS[sid]
+    key = f"starter::{sid}"
+    if (_download_progress.get(key) or {}).get("status") in ("starting", "downloading"):
+        return JSONResponse({"status": "already-downloading"})
+    models_dir = _cfg.profile_dir.parent.parent / "models"
+    files = [m["mmproj_file"], m["model_file"]]   # small one first: quick sign of life
+    if all((models_dir / f).is_file() for f in files):
+        return JSONResponse({"status": "installed", **_use_starter(sid)})
+    _download_progress[key] = {"status": "starting", "percent": 0, "file": 0, "files": len(files)}
+
+    async def _run():
+        try:
+            for i, fname in enumerate(files):
+                if (models_dir / fname).is_file():
+                    continue
+                async for prog in model_manager.download_model(m["repo"], fname, str(models_dir)):
+                    if prog.get("status") == "downloading":
+                        _download_progress[key] = {
+                            "status": "downloading", "file": i + 1, "files": len(files),
+                            "filename": fname, "downloaded": prog["downloaded"],
+                            "total": prog["total"], "percent": prog["percent"]}
+            _download_progress[key] = {"status": "complete", "percent": 100, **_use_starter(sid)}
+        except Exception as e:
+            _download_progress[key] = {"status": "error", "error": str(e)}
+
+    asyncio.create_task(_run())
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/models/starter/{sid}/use")
+async def use_starter(sid: str):
+    if sid not in model_manager.STARTER_MODELS:
+        return JSONResponse({"error": "Unknown starter model"}, status_code=404)
+    try:
+        return JSONResponse({"ok": True, **_use_starter(sid)})
+    except FileNotFoundError:
+        return JSONResponse({"error": "Not downloaded yet"}, status_code=400)
 
 
 @app.get("/api/models/hf/download/status")
@@ -2052,6 +2191,10 @@ def _ensure_alternation(messages: list[dict]) -> list[dict]:
             # Only role/content -- saved entries can carry UI-only
             # extras (e.g. "images") that some APIs reject.
             out.append({"role": role, "content": m.get("content", "")})
+    # Chats can open with the character's greeting, but several chat formats
+    # (Gemma, Anthropic) require the first turn to be the user's.
+    if out and out[0]["role"] == "assistant":
+        out.insert(0, {"role": "user", "content": "[The conversation begins.]"})
     return out
 
 
@@ -2279,6 +2422,156 @@ async def update_character(char_id: str, request: Request):
     return JSONResponse(char)
 
 
+@app.get("/api/characters/{char_id}/avatar")
+async def get_character_avatar(char_id: str):
+    from fastapi.responses import Response, FileResponse
+    if not _re.match(r'^[\w]+$', char_id):
+        return Response(status_code=400)
+    p = _characters.avatar_path(char_id)
+    if not p:
+        return Response(status_code=404)
+    return FileResponse(p, media_type="image/webp",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/api/characters/{char_id}/avatar")
+async def set_character_avatar(char_id: str, request: Request):
+    """Body: {image_b64} -- any common image format."""
+    import base64
+    if not _re.match(r'^[\w]+$', char_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
+    body = await request.json()
+    b64 = (body.get("image_b64") or "").split(",")[-1]
+    try:
+        char = await asyncio.to_thread(_characters.save_avatar, char_id, base64.b64decode(b64))
+    except Exception as e:
+        return JSONResponse({"error": f"That image couldn't be read: {e}"}, status_code=400)
+    if not char:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return JSONResponse(char)
+
+
+@app.delete("/api/characters/{char_id}/avatar")
+async def delete_character_avatar(char_id: str):
+    if not _re.match(r'^[\w]+$', char_id):
+        return JSONResponse({"error": "Invalid ID"}, status_code=400)
+    char = _characters.remove_avatar(char_id)
+    return JSONResponse(char or {"error": "Not found"}, status_code=200 if char else 404)
+
+
+@app.post("/api/characters/preview-prompt")
+async def preview_character_prompt(request: Request):
+    """What the model is told about a (possibly unsaved) character sheet."""
+    from playground.character_sheet import build_character_prompt, resolve_user_persona
+    body = await request.json()
+    char = body.get("character") or {}
+    persona = resolve_user_persona(_cfg.get("user_persona"), char)
+    return JSONResponse({"prompt": build_character_prompt(char, persona)})
+
+
+@app.post("/api/import/characterai")
+async def import_characterai(request: Request):
+    """Bring a character and/or chats over from Character.ai (CAI Tools exports).
+    Body: {character_file?: {filename, data_b64}, chat_files: [{filename, data_b64}],
+           character_id?: existing character to add the chats to}"""
+    import base64, time as _t
+    from playground import cai_import
+    body = await request.json()
+
+    def _b(f):
+        return base64.b64decode((f.get("data_b64") or "").split(",")[-1])
+
+    char = None
+    try:
+        if body.get("character_file"):
+            cf = body["character_file"]
+            char = await asyncio.to_thread(_characters.import_card_bytes, cf.get("filename", ""), _b(cf))
+        elif body.get("character_id"):
+            char = _characters.get_character(body["character_id"])
+            if not char:
+                return JSONResponse({"error": "That character no longer exists"}, status_code=404)
+        parsed = []
+        for f in body.get("chat_files") or []:
+            try:
+                parsed.append(await asyncio.to_thread(cai_import.parse_chat_file, f.get("filename", ""), _b(f)))
+            except Exception as e:
+                return JSONResponse({"error": f"{f.get('filename', 'chat file')}: {e}"}, status_code=400)
+        if not char and not parsed:
+            return JSONResponse({"error": "Add a character file, a chat file, or both"}, status_code=400)
+        if not char:
+            first = parsed[0]
+            char = _characters.create_character(first["char_name"] or "Imported Character", "",
+                                                _source="character.ai")
+        cid = char["id"]
+        if not char.get("avatar"):
+            pic = next((p["char_pic"] for p in parsed if p.get("char_pic")), None)
+            if pic:
+                try:
+                    char = await asyncio.to_thread(_characters.save_avatar, cid, pic) or char
+                except Exception:
+                    pass
+
+        # Saved chats you can carry on
+        n_chats = n_msgs = 0
+        stamp = int(_t.time())
+        for pi, p in enumerate(parsed):
+            for ci, chat in enumerate(p["chats"]):
+                msgs = [{"role": "user" if m["is_user"] else "assistant", "content": m["text"]}
+                        for m in chat["messages"] if m["text"]]
+                if not msgs:
+                    continue
+                conv_id = f"cai-{cid}-{stamp}-{pi}-{ci}"
+                when = (chat.get("date") or "")[:10]
+                data = {"id": conv_id,
+                        "title": f"{char['name']} — from Character.ai" + (f" ({when})" if when else ""),
+                        "created": (chat.get("date") or _t.strftime("%Y-%m-%dT%H:%M:%S"))[:19],
+                        "last_modified": _t.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "preset": char.get("preset_type", "companion"), "model": "",
+                        "agent": cid, "type": "chat", "source": "character.ai", "messages": msgs}
+                (_conversations_dir / f"{conv_id}.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+                n_chats += 1
+                n_msgs += len(msgs)
+
+        # The meaningful moments become memories
+        persona = (_cfg.get("user_persona") or {}).get("name") or "User"
+        all_chats = [c for p in parsed for c in p["chats"]]
+        mems = await asyncio.to_thread(cai_import.memories_from_chats, all_chats, persona)
+        cmem = _ensure_memory(char_id=cid)
+        formed = 0
+        for m in mems:
+            r = await asyncio.to_thread(cmem.import_memory, m["content"], m["emotion"], m["importance"],
+                                        "import", m["why_saved"], m["timestamp"])
+            if r:
+                formed += 1
+        await asyncio.to_thread(cmem.save)
+        user_name = next((p["user_name"] for p in parsed if p.get("user_name")), "")
+        return JSONResponse({"success": True, "character": _characters.get_character(cid) or char,
+                             "chats": n_chats, "messages": n_msgs, "memories": formed,
+                             "user_name_in_export": user_name})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Import failed: {e}"}, status_code=500)
+
+
+@app.post("/api/characters/import-card")
+async def import_character_card(request: Request):
+    """Upload a character card: SillyTavern/Tavern/Chub PNG or JSON.
+    Body: {filename, data_b64}"""
+    import base64
+    body = await request.json()
+    try:
+        data = base64.b64decode((body.get("data_b64") or "").split(",")[-1])
+        char = await asyncio.to_thread(_characters.import_card_bytes,
+                                       body.get("filename", ""), data)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Import failed: {e}"}, status_code=500)
+    return JSONResponse({"success": True, "character": char,
+                         "message": f"Imported '{char['name']}'"})
+
+
 @app.delete("/api/characters/activate")
 async def deactivate_character():
     """Clear the active character — revert to global persona.
@@ -2388,6 +2681,17 @@ async def stt_status():
     """Check STT readiness and dependency status."""
     stt = _ensure_stt()
     return JSONResponse(stt.status)
+
+
+@app.get("/api/models/capabilities")
+async def model_capabilities(mmproj: str = ""):
+    """What the selected local vision file can do, so the page knows
+    whether the mic sends a voice note (model hears) or dictates (STT)."""
+    from playground.media_utils import projector_caps
+    caps = await asyncio.to_thread(projector_caps, mmproj) if mmproj and mmproj != "__blip__" \
+        else {"vision": False, "audio": False}
+    stt_on = bool(_cfg.get("stt", {}).get("enabled"))
+    return JSONResponse({**caps, "stt": stt_on})
 
 
 @app.post("/api/stt")
@@ -2528,6 +2832,62 @@ async def add_message_to_conversation(conv_id: str, request: Request):
 
 # ── Chat WebSocket ────────────────────────────────────────────────────
 
+def _forget_formed(mem, formed: list[dict]) -> int:
+    """Undo the memories one reply formed (used when that reply is swiped
+    away). Only memories created by that reply are recorded in `formed`,
+    so pre-existing memories it merged into are never touched."""
+    n = 0
+    for f in formed or []:
+        for m in list(mem._mimir._reflections):
+            if m.content == f.get("content") and m.timestamp == f.get("timestamp"):
+                try:
+                    mem._mimir.forget(m)
+                    n += 1
+                except Exception:
+                    pass
+                break
+    if n:
+        try:
+            mem.save()
+        except Exception:
+            pass
+    return n
+
+
+def _form_from_tags(mem, tags: list[dict], snapshot: list[dict]) -> list[dict]:
+    """Re-form a swipe's <remember> memories when the user picks it again."""
+    import time as _t
+    start = _t.time() - 1
+    formed = []
+    for entry in tags or []:
+        if not isinstance(entry, dict) or entry.get("source") == "visual":
+            continue
+        try:
+            r = mem.remember(content=entry["content"], emotion=entry.get("emotion", "neutral"),
+                             importance=entry.get("importance", 5),
+                             source=entry.get("source", "conversation"),
+                             why_saved=entry.get("why", ""), conversation_snapshot=snapshot,
+                             category="self" if entry.get("is_self") else "",
+                             entity=entry.get("entity", ""),
+                             cherish=bool(entry.get("cherish")), anchor=bool(entry.get("anchor")),
+                             updates=entry.get("updates", ""))
+        except Exception:
+            continue
+        if r and _is_new_memory(r, start):
+            formed.append({"content": r.get("content"), "timestamp": r.get("timestamp")})
+    return formed
+
+
+def _is_new_memory(result: dict, since_epoch: float) -> bool:
+    """True if remember() created a memory rather than merging into an
+    older one (a merge keeps the older memory's timestamp)."""
+    from datetime import datetime as _dt
+    try:
+        return _dt.fromisoformat(result.get("timestamp", "")).timestamp() >= since_epoch
+    except Exception:
+        return False
+
+
 @app.websocket("/ws/chat")
 async def chat_ws(ws: WebSocket):
     # _current_conv_id / _negative_mood_streak must be declared global here:
@@ -2619,10 +2979,105 @@ async def chat_ws(ws: WebSocket):
                 await ws.send_json({"type": "cleared"})
                 continue
 
+            if msg.get("type") == "start_chat":
+                # A brand-new chat opens with the character's own first
+                # message (one of its greetings, picked at random).
+                if not _conversation:
+                    import random as _rnd
+                    from playground.character_sheet import _fill, resolve_user_persona
+                    _sc = _characters.get_character(_cfg.get("active_character_id", ""))                         if _cfg.get("active_character_id") else None
+                    if _sc:
+                        _opts = [g for g in [_sc.get("greeting", "")] + list(_sc.get("alternate_greetings") or [])
+                                 if isinstance(g, str) and g.strip()]
+                        if _opts:
+                            _up = resolve_user_persona(_cfg.get("user_persona"), _sc)
+                            _g = _fill(_rnd.choice(_opts), _sc.get("name", ""), _up.get("name", ""))
+                            _conversation.append({"role": "assistant", "content": _g,
+                                                  "greeting": True})
+                            await ws.send_json({"type": "greeting", "content": _g})
+                continue
+
+            if msg.get("type") == "edit_message":
+                # Change a message's text in the history (both roles).
+                role = msg.get("role")
+                old = (msg.get("old_content") or "").strip()
+                new = (msg.get("new_content") or "").strip()
+                ok = False
+                if role in ("user", "assistant") and new:
+                    for entry in reversed(_conversation):
+                        if entry.get("role") == role and entry.get("content", "").strip() == old:
+                            entry["content"] = new
+                            sw = entry.get("swipes")
+                            if sw and 0 <= entry.get("swipe_index", -1) < len(sw):
+                                sw[entry["swipe_index"]]["content"] = new
+                            ok = True
+                            break
+                if ok:
+                    await asyncio.to_thread(_auto_save_conversation)
+                await ws.send_json({"type": "message_edited", "ok": ok, "role": role})
+                continue
+
+            if msg.get("type") == "select_swipe":
+                # Flip between alternative replies to the latest message.
+                last = _conversation[-1] if _conversation else None
+                idx = msg.get("index")
+                if (last and last.get("role") == "assistant" and last.get("swipes")
+                        and isinstance(idx, int) and 0 <= idx < len(last["swipes"])
+                        and idx != last.get("swipe_index")):
+                    smem = _ensure_memory(char_id=_cfg.get("active_character_id", ""))
+                    cur = last["swipes"][last.get("swipe_index", 0)]
+                    await asyncio.to_thread(_forget_formed, smem, cur.get("formed"))
+                    cur["formed"] = []
+                    chosen = last["swipes"][idx]
+                    chosen["formed"] = await asyncio.to_thread(
+                        _form_from_tags, smem, chosen.get("remember", []), list(_conversation))
+                    await asyncio.to_thread(smem.save)
+                    last["swipe_index"] = idx
+                    last["content"] = chosen["content"]
+                    last.pop("images", None)
+                    if chosen.get("images"):
+                        last["images"] = list(chosen["images"])
+                    await asyncio.to_thread(_auto_save_conversation)
+                    await ws.send_json({"type": "swipe_selected", "index": idx,
+                                        "content": chosen["content"],
+                                        "images": chosen.get("images", []),
+                                        "total": len(last["swipes"])})
+                continue
+
             if msg.get("type") != "chat":
                 continue
 
             user_text = msg.get("message", "").strip()
+            # Regenerate: the latest reply is swiped away and generated again.
+            # Its memories are undone; it stays available as an earlier swipe.
+            _prior_swipes: list[dict] = []
+            _turn_started = __import__("time").time()
+            if msg.get("regenerate") and len(_conversation) >= 2 \
+                    and _conversation[-1].get("role") == "assistant" \
+                    and _conversation[-2].get("role") == "user":
+                _old = _conversation.pop()
+                _old_user = _conversation.pop()
+                user_text = user_text or _old_user.get("content", "")
+                _prior_swipes = _old.get("swipes") or [{
+                    "content": _old.get("content", ""), "images": _old.get("images", []),
+                    "remember": _old.get("remember", []), "formed": _old.get("formed", [])}]
+                _cur = _prior_swipes[_old.get("swipe_index", len(_prior_swipes) - 1)]
+                _rmem = _ensure_memory(char_id=_cfg.get("active_character_id", ""))
+                await asyncio.to_thread(_forget_formed, _rmem, _cur.get("formed"))
+                _cur["formed"] = []
+            # Voice message: recorded or attached audio -> 16 kHz WAV.
+            audio_wav_b64, _voice_wav, _voice_secs = "", b"", 0.0
+            if msg.get("audio"):
+                try:
+                    from playground.media_utils import audio_b64_to_wav_b64
+                    audio_wav_b64, _voice_wav, _voice_secs = await asyncio.to_thread(
+                        audio_b64_to_wav_b64, msg["audio"])
+                except Exception as e:
+                    await ws.send_json({"type": "error", "message": f"Couldn't use that recording: {e}"})
+                    continue
+            _typed_text = user_text
+            if not user_text and audio_wav_b64:
+                user_text = "[Voice message]"
             if not user_text:
                 continue
 
@@ -2636,10 +3091,40 @@ async def chat_ws(ws: WebSocket):
 
             # Vision model from dropdown (mmproj path)
             vision_mmproj = msg.get("vision_model", "") or _cfg.get("backends", {}).get("local", {}).get("mmproj_path", "")
+            # A character with its own model brings its own vision file: a
+            # projector only works with the model it was made for (pairing
+            # e.g. Gemma 4 12B with the E2B starter's file fails to load).
+            _vc_id = _cfg.get("active_character_id", "")
+            _vc = _characters.get_character(_vc_id) if _vc_id else None
+            _char_vision = bool(_vc and _vc.get("model"))
+            if _char_vision:
+                vision_mmproj = _vc.get("vision_model", "") or ""
             if vision_mmproj == "__blip__":
                 vision_mmproj = ""  # BLIP is a fallback, not a real mmproj
-            if vision_mmproj and backend_name == "local":
+            if vision_mmproj and backend_name == "local" and not _char_vision:
                 _cfg.update({"backends": {"local": {"mmproj_path": vision_mmproj}}})
+
+            if audio_wav_b64:
+                from playground.media_utils import projector_caps
+                _can_hear = bool(backend_name == "local" and vision_mmproj
+                                 and projector_caps(vision_mmproj)["audio"])
+                if not _can_hear:
+                    # The model can't hear -- fall back to speech-to-text.
+                    _stt = _ensure_stt()
+                    if not _stt.enabled:
+                        await ws.send_json({"type": "error", "message": (
+                            "This model can't hear audio. Pick a model whose vision file also "
+                            "does audio (like the Gemma 4 starter model), or turn on "
+                            "Speech-to-text in Settings so voice messages get transcribed.")})
+                        continue
+                    try:
+                        _heard = (await asyncio.to_thread(_stt.transcribe, _voice_wav) or "").strip()
+                    except Exception as e:
+                        await ws.send_json({"type": "error", "message": f"Transcription failed: {e}"})
+                        continue
+                    user_text = "\n\n".join(x for x in (
+                        _typed_text, f"[Voice message, transcribed: {_heard or '(nothing heard)'}]") if x)
+                    audio_wav_b64 = ""
 
             # BLIP fallback: if user attached an image but the model can't handle
             # images natively, use BLIP to caption it and prepend to user text.
@@ -2650,12 +3135,17 @@ async def chat_ws(ws: WebSocket):
             if image_b64 and model_id and backend_name not in _API_BACKENDS:
                 from playground.llm_backends import is_vl_model
                 model_can_see = is_vl_model(model_id)
-                if backend_name == "local" and not vision_mmproj:
-                    model_can_see = False
+                if backend_name == "local":
+                    # For local GGUF models the vision file decides, not the
+                    # model's filename (Gemma 3/4 names contain no "vl"/
+                    # "vision" keyword, so images were wrongly swapped for a
+                    # BLIP caption whenever BLIP happened to be installed).
+                    from playground.media_utils import projector_caps
+                    model_can_see = bool(vision_mmproj) and projector_caps(vision_mmproj)["vision"]
                 if not model_can_see:
                     try:
-                        blip_caption = await asyncio.to_thread(_blip_describe, image_b64)
-                        user_text = f"[User attached an image. BLIP caption: {blip_caption}]\n\n{user_text}"
+                        blip_caption = await _describe_image(image_b64)
+                        user_text = f"[User attached an image. Description: {blip_caption}]\n\n{user_text}"
                         await ws.send_json({"type": "vision_fallback", "method": "blip",
                                           "caption": blip_caption})
                         image_b64 = ""  # Don't pass image to non-VL model
@@ -2679,19 +3169,12 @@ async def chat_ws(ws: WebSocket):
             preset = get_preset(preset_name)
             parts: list[str] = []
 
+            from playground.character_sheet import (
+                build_character_prompt, build_user_prompt, resolve_user_persona)
+            user_persona = resolve_user_persona(_cfg.get("user_persona"), active_char)
             if active_char:
                 # Character takes priority over global persona settings
-                char_name = active_char.get("name", "")
-                char_desc = active_char.get("description", "")
-                char_personality = active_char.get("personality", "")
-                char_sp = active_char.get("system_prompt", "")
-                if char_name:
-                    parts.append(f"Your name is {char_name}.")
-                combined_desc = "\n".join(filter(None, [char_desc, char_personality]))
-                if combined_desc.strip():
-                    parts.append(combined_desc.strip())
-                if char_sp:
-                    parts.append(char_sp)
+                parts.append(build_character_prompt(active_char, user_persona))
             else:
                 persona_name = _cfg.get("persona_name", "")
                 persona_desc = _cfg.get("persona_description", "")
@@ -2703,6 +3186,8 @@ async def chat_ws(ws: WebSocket):
                 custom_sp = _cfg.get("system_prompt", "")
                 if custom_sp:
                     parts.append(custom_sp)
+                if build_user_prompt(user_persona):
+                    parts.append(build_user_prompt(user_persona))
 
             if preset.get("system_prompt_suffix"):
                 parts.append(preset["system_prompt_suffix"])
@@ -2793,6 +3278,8 @@ async def chat_ws(ws: WebSocket):
 
             # Stream response
             backend = create_backend(backend_name, _cfg.to_dict())
+            if backend_name == "local" and hasattr(backend, "mmproj_path"):
+                backend.mmproj_path = vision_mmproj
             full_response = []
 
             try:
@@ -2803,6 +3290,7 @@ async def chat_ws(ws: WebSocket):
                     max_tokens=max_tokens,
                     model=model_id,
                     images=[image_b64] if image_b64 else None,
+                    **({"audio": [audio_wav_b64]} if audio_wav_b64 else {}),
                 ):
                     full_response.append(token)
                     await ws.send_json({"type": "token", "content": token})
@@ -2868,6 +3356,13 @@ async def chat_ws(ws: WebSocket):
                 _asst_entry = {"role": "assistant", "content": clean_response}
                 if showimage_hashes:
                     _asst_entry["images"] = list(showimage_hashes)
+                _this_swipe = {"content": clean_response,
+                               "images": list(showimage_hashes),
+                               "remember": [t for t in remember_tags if isinstance(t, dict)
+                                            and t.get("source") != "visual"],
+                               "formed": []}
+                _asst_entry["swipes"] = _prior_swipes + [_this_swipe]
+                _asst_entry["swipe_index"] = len(_asst_entry["swipes"]) - 1
                 _conversation.append(_asst_entry)
 
                 # Auto-save conversation (non-blocking)
@@ -2896,6 +3391,9 @@ async def chat_ws(ws: WebSocket):
                 # ── Send done immediately so UI unblocks ──────────────────
                 await ws.send_json({
                     "type": "done",
+                    "swipe_index": _asst_entry["swipe_index"],
+                    "content": clean_response,
+                    "swipe_total": len(_asst_entry["swipes"]),
                     "memory_saved": len([t for t in remember_tags if isinstance(t, dict)]),
                     "mood": "",
                     "emotion": "",
@@ -2926,6 +3424,8 @@ async def chat_ws(ws: WebSocket):
                 _bg_clean = clean_response
                 _bg_preset = dict(preset)
                 _bg_pending_img = pending_image_bytes
+                _bg_swipe = _this_swipe
+                _bg_turn_started = _turn_started
                 _bg_user_entry = next((m for m in reversed(_conversation)
                                        if m.get("role") == "user"), None)
                 _bg_char = dict(active_char) if active_char else None
@@ -2952,6 +3452,9 @@ async def chat_ws(ws: WebSocket):
                                 )
                                 if vresult:
                                     _formed.append(vresult)
+                                    if _is_new_memory(vresult, _bg_turn_started):
+                                        _bg_swipe["formed"].append({"content": vresult.get("content"),
+                                                                    "timestamp": vresult.get("timestamp")})
                                     _vh = vresult.get("visual_hash")
                                     if _vh and _bg_user_entry is not None:
                                         _bg_user_entry["image"] = _vh
@@ -2979,6 +3482,9 @@ async def chat_ws(ws: WebSocket):
                                 )
                                 if result:
                                     _formed.append(result)
+                                    if _is_new_memory(result, _bg_turn_started):
+                                        _bg_swipe["formed"].append({"content": result.get("content"),
+                                                                    "timestamp": result.get("timestamp")})
 
                         # Process retroactive cherish/anchor on existing memories
                         for ct in _bg_cherish_tags:
@@ -3543,7 +4049,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                 async def _mc_get_blip_caption() -> str:
                     if "value" not in _blip_cache:
                         try:
-                            _blip_cache["value"] = await asyncio.to_thread(_blip_describe, image_b64)
+                            _blip_cache["value"] = await _describe_image(image_b64)
                         except Exception:
                             _blip_cache["value"] = ""
                     return _blip_cache["value"]
@@ -3592,14 +4098,14 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     agent_name = agent.get("name", "Agent")
 
                     # Build system prompt
-                    parts = [f"You are {agent_name}."]
+                    from playground.character_sheet import (
+                        build_character_prompt, resolve_user_persona)
                     if char:
-                        if char.get("description"):
-                            parts.append(char["description"])
-                        if char.get("personality"):
-                            parts.append(f"Personality: {char['personality']}")
-                        if char.get("system_prompt"):
-                            parts.append(char["system_prompt"])
+                        parts = [build_character_prompt(
+                            char, resolve_user_persona(_cfg.get("user_persona"), char),
+                            display_name=agent_name)]
+                    else:
+                        parts = [f"You are {agent_name}."]
 
                     # Tell agent about other participants (matched by
                     # character_id so a same-named agent isn't wrongly
@@ -3683,7 +4189,8 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     # to them at all would raise TypeError, so it's only ever
                     # added to the call below for backends that declare it.
                     agent_can_see = image_b64 and (
-                        backend_name in ("ollama", "openai", "transformers")
+                        backend_name in ("ollama", "openai", "transformers", "anthropic", "google",
+                                         "openrouter", "vllm", "custom", "openai_compat")
                         or (backend_name == "local" and bool(vision_model)))
                     if agent_can_see and memory_enabled and char_id:
                         system_prompt += (
@@ -3697,7 +4204,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                         if blip_caption and agent_messages and agent_messages[-1]["role"] == "user":
                             agent_messages[-1] = dict(agent_messages[-1])
                             agent_messages[-1]["content"] += (
-                                f"\n\n[User attached an image. BLIP caption: {blip_caption}]")
+                                f"\n\n[User attached an image. Description: {blip_caption}]")
 
                     backend = create_backend(backend_name, agent_cfg)
                     llm_params = _cfg.get("llm_params", {})

@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/runs-100%25%20local-10b981" alt="Runs 100% local">
 </p>
 
-Mimir's Memory Hub is a free AI companion and character platform that runs on your own PC. Connect any local model (Ollama, GGUF via llama.cpp, LM Studio) or a cloud API and talk to a character that builds a **persistent, human-like memory** of you. Memories fade, strengthen, carry emotion and get consolidated in "sleep", the way a human mind's do.
+Mimir's Memory Hub is a free AI companion and character platform that runs on your own PC — **even a laptop with no graphics card**. Pick the one-click starter model (Google's Gemma 4) or connect any local model (Ollama, GGUF via llama.cpp, LM Studio) or cloud API, and talk to a character that builds a **persistent, human-like memory** of you. Memories fade, strengthen, carry emotion and get consolidated in "sleep", the way a human mind's do. Your characters can **see the pictures you share and hear your voice messages**.
 
 <p align="center">
   <img src="docs/media/demo.gif" alt="Demo: Luna remembers that the user's dog Rex was having an operation and asks how he's doing in a brand-new chat" width="900"/>
@@ -36,7 +36,9 @@ No subscriptions. No data leaving your machine (unless you choose a cloud API). 
 >
 > 1. Unzip it anywhere
 > 2. Double-click **`run.bat`**
-> 3. Your browser opens automatically — done
+> 3. Your browser opens automatically. No model yet? Go to **Models → ⭐ Starter models** and click **Download & use** — done
+>
+> Already using an older version? **Settings → Updates** updates in place and keeps everything, and **Settings → Bring data from another copy** moves your memories and characters over from an old folder.
 
 macOS / Linux users: see the [Installation](#installation) section below.
 
@@ -59,6 +61,17 @@ Most chat apps "remember" by stuffing recent messages into the context window, o
 | Runs fully offline on your PC | varies | varies | ✅ |
 
 **Benchmarks:** 93.9% Recall@5 on LongMemEval, and 4.4× the no-memory baseline on Mem2ActBench tool accuracy (0.44 vs 0.10). Full methodology and the categories where it's weaker are in [BENCHMARKS.md](benchmarks/BENCHMARKS.md).
+
+---
+
+## Coming from SillyTavern or Character.ai?
+
+**Bring your characters with you, and this time they'll remember you.**
+
+- **SillyTavern / Chub / TavernAI:** drop in your character cards (PNG or JSON, V1/V2/V3). Their picture, greetings, scenario and example dialogue all come across, and `{{char}}` / `{{user}}` work as you're used to.
+- **Character.ai:** export with the free [CAI Tools](https://github.com/irsat000/CAI-Tools) extension, then use **Characters → From Character.ai**. Your character card *and* your chat history come over: chats land in Saved Chats so you can pick up where you left off, and the moments that mattered become the character's memories, dated to when they happened.
+- **What you get here that you didn't there:** memory that lasts across every chat and fades and strengthens naturally, swipes that also undo what a discarded reply "remembered", no filter or queue you didn't choose, and everything stays on your own PC.
+- **Make them yours:** a character sheet with their picture, traits, how they talk, likes and dislikes, what they call you, a voice, and a "what the AI sees" preview.
 
 ---
 
@@ -85,6 +98,8 @@ Most AI chat apps give the AI a simple sliding context window — it forgets eve
 - **Multiple characters** — create distinct AI personalities, each with their own completely separate memory
 - **Group chats** — get multiple characters talking together with you in one conversation
 - **10 LLM backends** — run fully local, connect to cloud APIs, or use your own endpoint
+- **Sees and hears** — share images and send voice messages; with the Gemma 4 starter models the character takes in your actual voice, not just a transcript
+- **Runs on modest hardware** — the starter models run on an ordinary laptop CPU, no graphics card needed
 
 Beyond the companion/character experience, Mimir also offers **optional** agent-style capabilities (21 built-in tools, MCP server connections, autonomous task mode) for anyone who wants an assistant rather than — or alongside — a companion. These are opt-in, off by default, and have no effect on how your characters remember or behave unless you deliberately switch a character into the Agent/Assistant preset.
 
@@ -96,18 +111,23 @@ Beyond the companion/character experience, Mimir also offers **optional** agent-
 |---|---|
 | 💬 **Streaming chat** | Token-by-token streaming with full Markdown rendering |
 | 🧠 **Persistent memory** | Every conversation is stored, emotionally tagged, and recalled in future sessions |
-| 👤 **Characters** | Create custom AI personas with names, personalities, backstories, and avatars |
-| 🃏 **SillyTavern import** | Import character cards directly — PNG, JSON, single files, or entire folders |
+| ⭐ **Starter models** | One click downloads and sets up Gemma 4 (E2B or E4B): text, images and voice, runs on most laptops |
+| 👤 **Character sheets** | Picture, nicknames, traits, how they talk, likes & dislikes, backstory, situation, greetings, example dialogue, what they call you, a voice — plus a "what the AI sees" preview |
+| 🫵 **Your persona** | Tell characters who you are once; give a character a different version of you if you like |
+| 🔁 **Swipes & edits** | Regenerate a reply and flip between versions (memories from discarded replies are undone), and edit any message |
+| 🃏 **Character import** | SillyTavern / Chub / TavernAI cards (PNG or JSON) with their pictures, plus characters *and chat history* from Character.ai |
 | 🤝 **Group chats** | Multiple characters in one conversation with 3 turn modes (address by name, sequential, all respond) |
 | 📊 **Memory browser** | Search, filter, edit, cherish, pin, or delete individual memories |
 | 📈 **8 Visualizations** | Neural graph, 3D constellation, mood timeline, neurochemistry, relationships, topic clusters, cherished wall, memory attic |
 | 🖥️ **10 LLM backends** | Ollama, Local GGUF, Transformers/SafeTensors (GPU), OpenAI, Anthropic, Google, OpenRouter, vLLM, OpenAI-Compatible, Custom |
-| 🎤 **Voice I/O** | Text-to-speech (Edge TTS, Piper, Kokoro) and speech-to-text (Whisper) |
-| 🖼️ **Vision** | Send images to VL models, with automatic BLIP captioning as a fallback |
+| 🎤 **Voice** | Voice messages the model actually hears (Gemma 4), text-to-speech (Edge TTS, Piper, Kokoro) and Whisper speech-to-text for models that can't hear |
+| 🖼️ **Vision** | Share images with any vision model — local, OpenAI, Claude or Gemini — and the character can remember them and show them back to you later |
 | 📥 **Memory import** | Import memories from any format — paste text, upload files, with optional AI enrichment |
 | 🔍 **Conversation search** | Search and sort saved conversations by date, title, or content |
 | 📊 **Token tracking** | Real-time token count and cost estimation in the chat header |
 | 🎨 **Light & dark themes** | Full light theme support alongside the default dark theme |
+| 📱 **Small-screen layout** | The interface adapts to narrow windows and touch screens |
+| 🔄 **In-app updates** | Check for and install new versions from Settings, keeping all your data |
 | 🧪 **Connection test** | One-click backend connection test from Settings |
 | — | — |
 | 🔧 **21 optional tools** *(Agent/Assistant presets only)* | File I/O, web search, code execution, page fetching, reminders, and more — opt-in, never used by companion/character presets |
@@ -481,7 +501,8 @@ The AI will remember your conversations automatically. Each time you return, it 
 Each character has completely separate memory — their experiences don't bleed into each other.
 
 ### Import characters or memories
-- **SillyTavern characters** — go to Characters → Bulk Import, enter the path to your ST `Characters` folder
+- **SillyTavern / Chub cards** — go to **Characters → Import card** and pick one or more PNG/JSON cards
+- **Character.ai** — go to **Characters → From Character.ai** and add the card and chats you exported with [CAI Tools](https://github.com/irsat000/CAI-Tools)
 - **Memory import** — go to the **Import** page, paste text or upload files in any format. Mimir will parse them automatically, with optional AI enrichment to add emotion, importance, and context
 
 ### Group chats

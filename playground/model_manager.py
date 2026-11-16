@@ -172,6 +172,30 @@ async def download_model(repo_id: str, filename: str,
     yield {"status": "complete", "filename": filename, "path": str(out_path)}
 
 
+# ── Starter models: small, official, see + hear, run on most laptops ──
+
+STARTER_MODELS = {
+    "gemma-4-e2b": {
+        "label": "Gemma 4 E2B",
+        "blurb": "Fast and light — runs on most laptops, even without a graphics card. "
+                 "Understands text, images and voice.",
+        "repo": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+        "model_file": "gemma-4-E2B_q4_0-it.gguf",
+        "mmproj_file": "gemma-4-E2B-it-mmproj.gguf",
+        "size_gb": 4.3, "ram_gb": 6, "recommended": True,
+    },
+    "gemma-4-e4b": {
+        "label": "Gemma 4 E4B",
+        "blurb": "Smarter and more natural, a bit slower. Best with 12 GB+ of RAM. "
+                 "Understands text, images and voice.",
+        "repo": "google/gemma-4-E4B-it-qat-q4_0-gguf",
+        "model_file": "gemma-4-E4B_q4_0-it.gguf",
+        "mmproj_file": "gemma-4-E4B-it-mmproj.gguf",
+        "size_gb": 6.1, "ram_gb": 12, "recommended": False,
+    },
+}
+
+
 # ── Local GGUF scanner ───────────────────────────────────────────────
 
 def _default_scan_dirs() -> list[str]:
@@ -301,6 +325,8 @@ def list_local_models(models_dir: str) -> list[dict]:
         return []
     results = []
     for f in sorted(d.glob("*.gguf")):
+        if "mmproj" in f.name.lower():
+            continue   # vision/audio projector, not a chat model
         results.append({
             "filename": f.name,
             "path": str(f),

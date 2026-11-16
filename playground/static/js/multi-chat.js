@@ -39,7 +39,7 @@ const MultiChatPage = (() => {
     // of showing up as literal tag text in the bubble, matching single-chat.
     function _updateBubbleContent(bubble, rawText, isStreaming) {
         const contentEl = bubble.querySelector('.message-content');
-        if (!window.Chat || !Chat.splitThinking) {
+        if (typeof Chat === 'undefined' || !Chat.splitThinking) {
             contentEl.textContent = rawText || '';
             return;
         }
@@ -196,7 +196,7 @@ const MultiChatPage = (() => {
        so it's still findable via the same [data-streaming] selector
        streamToken/finalizeAgent use — works across all three view modes. */
     function attachMemoryActivity(speaker, activity) {
-        if (!window.Chat || !Chat.renderMemoryActivity) return;
+        if (typeof Chat === 'undefined' || !Chat.renderMemoryActivity) return;
         const strip = Chat.renderMemoryActivity(activity);
         if (!strip) return;
 

@@ -143,7 +143,12 @@ const ConversationsPage = (() => {
                         Chat.showUserMemoryImage(el, m.image, m.image_char_id);
                     }
                     (m.images || []).forEach(h => Chat.showRecalledImage(h, data.agent || '', el));
+                    if (m.swipes && m.swipes.length) {
+                        el._swipeTotal = m.swipes.length;
+                        el._swipeIndex = m.swipe_index ?? (m.swipes.length - 1);
+                    }
                 });
+                Chat.refreshLatestControls();
                 App.navigate('chat');
                 App.toast('Conversation loaded', 'success');
             } catch {

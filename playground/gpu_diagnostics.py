@@ -141,8 +141,23 @@ COMPATIBLE_WHEELS: dict[str, dict] = {
 
 def find_candidate_wheel(compute_capability: str) -> dict | None:
     """Look up a known-good self-contained wheel for a compute capability.
-    Returns None if nothing is known for it — never guesses."""
-    return COMPATIBLE_WHEELS.get(compute_capability)
+    Returns None if nothing is known for it — never guesses.
+
+    Never offers a wheel OLDER than the installed llama-cpp-python: that
+    would silently drop support for newer model families (e.g. the Gemma 4
+    starter models need 0.3.36+)."""
+    cand = COMPATIBLE_WHEELS.get(compute_capability)
+    if not cand:
+        return None
+    try:
+        from importlib.metadata import version as _v
+        installed = tuple(int(x) for x in _v("llama_cpp_python").split(".")[:3])
+        offered = tuple(int(x) for x in cand["version"].split(".")[:3])
+        if offered < installed:
+            return None
+    except Exception:
+        pass
+    return cand
 
 
 # ── Backup / restore ─────────────────────────────────────────────────────

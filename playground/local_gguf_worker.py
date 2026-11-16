@@ -18,11 +18,45 @@ import pathlib
 import tempfile
 import multiprocessing as mp
 
-_llm = None
-_loaded_path = ""
-_loaded_mmproj = ""
-_loaded_n_gpu_layers: int | None = None
-_loaded_n_ctx: int | None = None
+from collections import OrderedDict
+
+# Loaded models, most recently used last. Group chats where characters use
+# different local models used to unload/reload a model on EVERY turn; now
+# up to MAX_LOADED_MODELS stay in memory when there's enough free RAM.
+_models: "OrderedDict[tuple, object]" = OrderedDict()
+MAX_LOADED_MODELS = 2
+_RAM_HEADROOM = 1.5e9   # leave this much free for the OS, browser and hub
+
+
+def _free_ram_bytes() -> float:
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            st = _MS()
+            st.dwLength = ctypes.sizeof(_MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+            return float(st.ullAvailPhys)
+        return float(os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
+    except Exception:
+        return 0.0   # unknown -> behave like before (one model at a time)
+
+
+def _model_bytes(model_path: str, mmproj_path: str) -> float:
+    total = 0.0
+    for f in (model_path, mmproj_path):
+        try:
+            if f:
+                total += os.path.getsize(f)
+        except OSError:
+            pass
+    return total * 1.2   # weights + context/KV cache overhead
 
 # Phrases llama.cpp's chat-template Jinja code raises when a model's template
 # doesn't support a separate system role (e.g. Gemma) or otherwise rejects the
@@ -60,6 +94,21 @@ def _capture_native_stderr(fn):
 
 
 def _make_vision_handler(mmproj_path: str):
+    """Multimodal chat handler for a projector (mmproj) file.
+
+    llama-cpp-python 0.3.36+ ships MTMDChatHandler: it renders prompts with
+    the model's OWN chat template and feeds images *and audio* through
+    llama.cpp's mtmd library (which also understands new families like
+    Gemma 4). Older versions fall back to the template-fixing handler below.
+    """
+    try:
+        from llama_cpp.llama_chat_format import MTMDChatHandler
+        return MTMDChatHandler(clip_model_path=mmproj_path, verbose=False)
+    except ImportError:
+        return _make_legacy_vision_handler(mmproj_path)
+
+
+def _make_legacy_vision_handler(mmproj_path: str):
     """Vision chat handler that formats prompts with the MODEL'S OWN chat
     template instead of LLaVA-1.5's.
 
@@ -139,27 +188,25 @@ def _make_vision_handler(mmproj_path: str):
 
 
 def _ensure_model(model_path: str, mmproj_path: str, n_gpu_layers: int, n_ctx: int):
-    global _llm, _loaded_path, _loaded_mmproj, _loaded_n_gpu_layers, _loaded_n_ctx
-    if (_llm is not None and _loaded_path == model_path
-            and _loaded_mmproj == mmproj_path
-            and _loaded_n_gpu_layers == n_gpu_layers
-            and _loaded_n_ctx == n_ctx):
-        return _llm
-
-    if _llm is not None:
-        try:
-            del _llm
-        except Exception:
-            pass
-        _llm = None
-        _loaded_path = ""
-        _loaded_mmproj = ""
-        _loaded_n_gpu_layers = None
-        _loaded_n_ctx = None
-
+    """The requested model, loading it if needed. Keeps recently used
+    models loaded while RAM allows; evicts the least recently used first."""
     import gc
-    gc.collect()
+    key = (model_path, mmproj_path, n_gpu_layers, n_ctx)
+    if key in _models:
+        _models.move_to_end(key)
+        return _models[key]
+    need = _model_bytes(model_path, mmproj_path)
+    while _models and (len(_models) >= MAX_LOADED_MODELS
+                       or _free_ram_bytes() < need + _RAM_HEADROOM):
+        _old_key, old = _models.popitem(last=False)
+        del old
+        gc.collect()
+    llm = _load_model(model_path, mmproj_path, n_gpu_layers, n_ctx)
+    _models[key] = llm
+    return llm
 
+
+def _load_model(model_path: str, mmproj_path: str, n_gpu_layers: int, n_ctx: int):
     from llama_cpp import Llama
 
     kwargs: dict = {
@@ -177,9 +224,9 @@ def _ensure_model(model_path: str, mmproj_path: str, n_gpu_layers: int, n_ctx: i
         kwargs["chat_handler"] = vision_handler
 
     try:
-        _llm = Llama(**kwargs)
-        if vision_handler is not None:
-            vision_handler.adopt_model_template(_llm)
+        llm = Llama(**kwargs)
+        if vision_handler is not None and hasattr(vision_handler, "adopt_model_template"):
+            vision_handler.adopt_model_template(llm)
     except Exception as e:
         # Reload with verbose logging captured at the OS fd level, purely to
         # recover the specific native error llama-cpp-python's own exception
@@ -200,12 +247,7 @@ def _ensure_model(model_path: str, mmproj_path: str, n_gpu_layers: int, n_ctx: i
                 f"try a different model."
             ) from e
         raise
-
-    _loaded_path = model_path
-    _loaded_mmproj = mmproj_path
-    _loaded_n_gpu_layers = n_gpu_layers
-    _loaded_n_ctx = n_ctx
-    return _llm
+    return llm
 
 
 def _build_messages(system_prompt: str, messages: list[dict],
@@ -224,7 +266,11 @@ def _build_messages(system_prompt: str, messages: list[dict],
     return [{"role": "user", "content": system_prompt}] + msgs
 
 
-def _attach_images(all_messages: list[dict], images: list[str]) -> None:
+def _attach_images(all_messages: list[dict], images: list[str],
+                   audio: list[str] | None = None) -> None:
+    """Attach images (JPEG b64) and audio clips (16 kHz WAV b64) to the
+    latest user turn. llama.cpp's media loader recognises audio from the
+    bytes themselves, so both travel as media parts."""
     for i in range(len(all_messages) - 1, -1, -1):
         if all_messages[i]["role"] == "user":
             text = all_messages[i]["content"]
@@ -232,7 +278,10 @@ def _attach_images(all_messages: list[dict], images: list[str]) -> None:
                 [{"type": "text", "text": text}]
                 + [{"type": "image_url",
                     "image_url": {"url": f"data:image/jpeg;base64,{img}"}}
-                   for img in images]
+                   for img in (images or [])]
+                + [{"type": "image_url",
+                    "image_url": {"url": f"data:audio/wav;base64,{clip}"}}
+                   for clip in (audio or [])]
             )
             break
 
@@ -270,9 +319,43 @@ def _stream(llm, all_messages: list[dict], temperature: float, max_tokens: int,
             produced = True
             continue
         if token:
+            # Gemma 4 marks its thinking as <|channel>thought ... <channel|>;
+            # turn it into the <think> blocks the hub already folds away.
+            if "channel" in token:
+                token = (token.replace("<|channel>thought", "<think>")
+                         .replace("<|channel>", "<think>").replace("<channel|>", "</think>"))
             out_q.put({"id": req_id, "token": token})
             produced = True
     return produced
+
+
+class _QuietNative:
+    """Silence llama.cpp's native stdout/stderr chatter (mtmd prints prompt
+    chunks even with verbose off) so it doesn't spill into the hub's console.
+    Python exceptions still propagate normally."""
+    def __enter__(self):
+        self._saved = []
+        try:
+            self._null = os.open(os.devnull, os.O_WRONLY)
+            for fd in (1, 2):
+                self._saved.append((fd, os.dup(fd)))
+                os.dup2(self._null, fd)
+        except OSError:
+            pass
+        return self
+
+    def __exit__(self, *exc):
+        for fd, saved in self._saved:
+            try:
+                os.dup2(saved, fd)
+                os.close(saved)
+            except OSError:
+                pass
+        try:
+            os.close(self._null)
+        except (OSError, AttributeError):
+            pass
+        return False
 
 
 def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
@@ -291,13 +374,13 @@ def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
 
             all_messages = _build_messages(
                 job["system_prompt"], job["messages"], merge_system=False)
-            if job.get("images") and job.get("mmproj_path"):
-                _attach_images(all_messages, job["images"])
-
-            has_images = bool(job.get("images") and job.get("mmproj_path"))
+            has_images = bool((job.get("images") or job.get("audio")) and job.get("mmproj_path"))
+            if has_images:
+                _attach_images(all_messages, job.get("images") or [], job.get("audio"))
             try:
-                _stream(llm, all_messages, job["temperature"], job["max_tokens"],
-                        out_q, req_id, has_images=has_images)
+                with _QuietNative():
+                    _stream(llm, all_messages, job["temperature"], job["max_tokens"],
+                            out_q, req_id, has_images=has_images)
             except Exception as e:
                 if _looks_like_template_error(e):
                     # The loaded model's chat template rejects a separate
@@ -305,14 +388,21 @@ def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
                     # system prompt folded into the first user turn instead.
                     retry_messages = _build_messages(
                         job["system_prompt"], job["messages"], merge_system=True)
-                    if job.get("images") and job.get("mmproj_path"):
-                        _attach_images(retry_messages, job["images"])
-                    _stream(llm, retry_messages, job["temperature"],
-                            job["max_tokens"], out_q, req_id,
-                            has_images=has_images)
+                    if has_images:
+                        _attach_images(retry_messages, job.get("images") or [], job.get("audio"))
+                    with _QuietNative():
+                        _stream(llm, retry_messages, job["temperature"],
+                                job["max_tokens"], out_q, req_id,
+                                has_images=has_images)
                 else:
                     raise
 
             out_q.put({"id": req_id, "done": True})
         except Exception as e:
-            out_q.put({"id": req_id, "error": str(e)})
+            msg = str(e)
+            if "Failed to load mtmd context" in msg:
+                msg = (f"The vision/audio file '{os.path.basename(job.get('mmproj_path', ''))}' doesn't "
+                       f"match the model '{os.path.basename(job.get('model_path', ''))}'. Each model needs "
+                       f"its own matching file — pick the one made for this model in the vision "
+                       f"dropdown (or the character's Advanced tab), or choose 'none'.")
+            out_q.put({"id": req_id, "error": msg})

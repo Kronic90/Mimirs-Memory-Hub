@@ -211,6 +211,7 @@ FAB_NEGATIVE_HALF_LIFE_DAYS = 120.0
 FAB_POSITIVE_HALF_LIFE_DAYS = 365.0
 FAB_FLASHBULB_SLOWDOWN = 2.0      # vivid emotional "where were you" moments
 FAB_RESIDUAL = 0.35               # never fades below this share of original
+FAB_FIRST_RUN_CATCHUP_DAYS = 30   # max softening applied the first time fading runs
 
 # ── Feeling of knowing / tip of the tongue (Hart 1965; Brown & McNeill
 # 1966; fuzzy-trace theory, Brainerd & Reyna 1990) ──────────────────────

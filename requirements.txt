@@ -16,7 +16,7 @@ vividmimir                          # core episodic memory system
 Pillow>=9.0                         # without it images can't be stored or shown again
 
 # ── TTS ───────────────────────────────────────────────────────────────
-edge-tts>=7.0.0                     # Edge TTS (default, no GPU needed)
+edge-tts>=7.3.1                     # Edge TTS (default, no GPU needed); older versions get rejected by Microsoft
 transformers>=4.40.0                # model loading (Maya1 HF mode)
 soundfile>=0.12.0                   # WAV encoding
 snac>=1.2.0                         # SNAC audio codec

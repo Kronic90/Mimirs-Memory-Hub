@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  build_portable.ps1
 #  Builds a self-contained Windows portable release of
 #  Mimir's Memory Hub — no Python install required.
@@ -74,7 +74,9 @@ if ($LASTEXITCODE -ne 0) {
 
 # Install llama-cpp-python from pre-built CPU wheel (avoids needing a C++ compiler)
 Write-Host "   Installing llama-cpp-python (pre-built CPU wheel)..." -ForegroundColor Yellow
-$LlamaCppWheelUrl = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.19/llama_cpp_python-0.3.19-cp311-cp311-win_amd64.whl"
+# 0.3.36+ is needed for Gemma 4 (the starter models) and audio input; CPU build
+# so it runs on any PC (same as before -- no GPU driver dependency).
+$LlamaCppWheelUrl = "https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36/llama_cpp_python-0.3.36-py3-none-win_amd64.whl"
 & "$PYTHON_DIR\python.exe" -m pip install "$LlamaCppWheelUrl" --quiet --disable-pip-version-check
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "llama-cpp-python install failed - Local GGUF backend will be unavailable."

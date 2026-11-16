@@ -4,6 +4,36 @@ All notable changes to Mimir's Memory Hub.
 
 ---
 
+## v1.0.5 — November 2026
+
+New additions:
+- **Starter models**: one click downloads and sets up Google's Gemma 4 (E2B or E4B, 4–6 GB) — text, images and voice, running on an ordinary laptop CPU
+- **Voice messages**: hold the mic (or attach an audio file); models that can hear (Gemma 4) take in your actual voice, others get a Whisper transcript
+- **Character sheets**: picture (click or drop), nicknames, tagline, appearance, traits with suggestions and 🎲 Surprise me, how they talk, likes/dislikes, quirks, backstory, situation, relationship, extra greetings, example dialogue, what they call you, a per-character persona, voice preview, a completeness meter and a "what the AI sees" preview
+- **Your persona**: tell every character who you are, once, in Settings
+- **Swipes, regenerate & edit**: flip between alternative replies — memories from a discarded reply are undone — and edit any message
+- **Greetings**: new chats open with the character's own first message (picked from its greetings)
+- **Character cards**: SillyTavern / Chub / TavernAI PNG and JSON cards now import properly, pictures included
+- **Character.ai import**: bring a character and its chat history over (CAI Tools exports); chats land in Saved Chats and the moments that mattered become dated memories
+- **In-app updates & data import**: update from Settings without losing anything, and bring memories/characters over from an older copy
+- **Image previews** on visual memories in the memory graph, and recalled images shown inside the reply
+- Small-screen / touch layout
+
+Bug fixes & improvements:
+- Images were swapped for a (often nonsense) BLIP caption with Gemma and other local models whose filenames don't say "vision"; a model's vision file now decides
+- Claude (Anthropic) and Gemini (Google) failed on every chat message; both now work, with images
+- A character's own model now uses its own vision file (a mismatched pair failed with "Failed to load mtmd context"), with a clear message if a pair doesn't match
+- Gemma 4's thinking markers no longer leak into replies
+- Your real name and "User" are now always the same person in memory (existing memories merge)
+- After updating, old feelings no longer all soften at once — the first catch-up is capped at a month
+- Group chats keep up to two local models loaded (when RAM allows) instead of reloading every turn
+- Different pictures described alike no longer merge into one memory; WebP and other formats no longer fail with "Failed to create bitmap"
+- Group chat markdown and memory strips were silently disabled
+- llama.cpp backend updated (0.3.36) for Gemma 4 and audio input; the GPU updater can no longer downgrade it
+- Visual memories are actually stored in the portable build (Pillow was missing)
+
+---
+
 ## v1.0.0 — August 2026
 
 Bug fixes & improvements:

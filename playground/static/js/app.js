@@ -15,6 +15,7 @@ const App = (() => {
 
     // ── Router ───────────────────────────────────────────────────
     function navigate(page) {
+        document.getElementById('app')?.classList.remove('nav-open');
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         const el = document.getElementById('page-' + page);
@@ -128,7 +129,7 @@ const App = (() => {
     function connectWS() {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
-        ws.onopen = () => { state.ws = ws; };
+        ws.onopen = () => { state.ws = ws; if (typeof Chat !== 'undefined' && Chat.startIfEmpty) Chat.startIfEmpty(); };
         ws.onclose = () => {
             state.ws = null;
             setTimeout(connectWS, 2000);
@@ -274,6 +275,7 @@ const App = (() => {
         try {
             const data = await api('/characters');
             const agents = data.characters || [];
+            state.characters = agents;
             select.innerHTML = '<option value="">Default</option>';
             agents.forEach(a => {
                 const opt = document.createElement('option');
@@ -285,11 +287,25 @@ const App = (() => {
         } catch {
             select.innerHTML = '<option value="">Default</option>';
         }
+        if (typeof Chat !== 'undefined' && Chat.refreshAvatars) Chat.refreshAvatars();
+    }
+
+    function activeCharacter() {
+        const id = (state.settings && state.settings.active_character_id) || '';
+        return (state.characters || []).find(c => c.id === id) || null;
     }
 
     // ── Init ─────────────────────────────────────────────────────
     async function init() {
         setupGlobalTooltips();
+
+        // Phones: the sidebar is a slide-out menu, the memory panel starts closed
+        const appEl = document.getElementById('app');
+        document.getElementById('btn-mobile-nav')?.addEventListener('click', () => appEl.classList.toggle('nav-open'));
+        document.getElementById('mobile-nav-backdrop')?.addEventListener('click', () => appEl.classList.remove('nav-open'));
+        if (window.matchMedia('(max-width: 800px)').matches) {
+            document.getElementById('memory-panel')?.classList.add('collapsed');
+        }
 
         // Nav clicks
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -369,6 +385,7 @@ const App = (() => {
             state.preset = state.settings.active_preset || 'companion';
             document.getElementById('backend-select').value = state.backend;
             await loadAgentDropdown();
+            if (typeof Chat !== 'undefined' && Chat.startIfEmpty) Chat.startIfEmpty();
             await loadModels();
         });
 
@@ -402,5 +419,5 @@ const App = (() => {
 
     document.addEventListener('DOMContentLoaded', init);
 
-    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown, loadVisionModels };
+    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown, loadVisionModels, activeCharacter };
 })();

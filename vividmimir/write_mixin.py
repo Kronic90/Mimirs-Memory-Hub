@@ -41,7 +41,7 @@ class WriteMixin:
         key = _entity_key(name)
         if not key:
             return ""
-        if key in _USER_ENTITY_ALIASES:
+        if key in _USER_ENTITY_ALIASES or key in getattr(self, "_user_aliases", ()):
             return USER_ENTITY
         for existing in self._social:
             if _entity_key(existing) == key:
@@ -454,6 +454,27 @@ class WriteMixin:
         self._audit.log("memory_updated", details={
             "old": old.content[:80], "new": new.content[:80]})
         return True
+
+    def set_user_aliases(self, names) -> int:
+        """Tell the engine what the person it talks to is actually called
+        (their name, nicknames the character uses for them). Anything filed
+        under one of those names is the same person as "User", so memories
+        and impressions saved as e.g. "Scott" merge into "User" -- both from
+        now on and for everything already stored. Returns how many existing
+        memories were re-filed."""
+        keys = {_entity_key(n) for n in (names or []) if n and _entity_key(n)}
+        keys -= set(_USER_ENTITY_ALIASES) | {_entity_key(USER_ENTITY)}
+        if keys == getattr(self, "_user_aliases", frozenset()):
+            return 0
+        self._user_aliases = frozenset(keys)
+        moved = 0
+        for m in self._reflections:
+            if m.entity and m.entity != USER_ENTITY and _entity_key(m.entity) in keys:
+                m.entity = USER_ENTITY
+                moved += 1
+        if moved:
+            self._sync_social_index()
+        return moved
 
     def _sync_social_index(self):
         """Rebuild the per-entity social index from _reflections, the single

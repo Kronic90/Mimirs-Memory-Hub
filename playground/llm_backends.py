@@ -254,13 +254,24 @@ class AnthropicBackend(LLMBackend):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         model: str = "",
+        images: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         model = model or self.default_model
+        msgs = [dict(m) for m in messages]
+        if images:
+            # Images ride on the latest user turn as base64 image blocks
+            for m in reversed(msgs):
+                if m.get("role") == "user":
+                    m["content"] = [{"type": "image",
+                                     "source": {"type": "base64", "media_type": "image/jpeg", "data": img}}
+                                    for img in images] + [{"type": "text", "text": m.get("content") or " "}]
+                    break
         payload = {
             "model": model,
             "max_tokens": max_tokens,
+            "temperature": max(0.0, min(1.0, temperature)),
             "stream": True,
-            "messages": messages,
+            "messages": msgs,
         }
         if system_prompt:
             payload["system"] = system_prompt
@@ -311,6 +322,7 @@ class GoogleBackend(LLMBackend):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         model: str = "",
+        images: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         model = model or self.default_model
         # Convert chat format to Gemini
@@ -318,6 +330,12 @@ class GoogleBackend(LLMBackend):
         for m in messages:
             role = "user" if m["role"] == "user" else "model"
             contents.append({"role": role, "parts": [{"text": m["content"]}]})
+        if images:
+            for c in reversed(contents):
+                if c["role"] == "user":
+                    c["parts"] = [{"inline_data": {"mime_type": "image/jpeg", "data": img}}
+                                  for img in images] + c["parts"]
+                    break
 
         payload: dict = {
             "contents": contents,
@@ -434,6 +452,7 @@ class LocalGGUFBackend(LLMBackend):
         max_tokens: int = 2048,
         model: str = "",
         images: list[str] | None = None,
+        audio: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         if not model:
             raise ValueError("No model path specified. Select a local GGUF model first.")
@@ -460,6 +479,7 @@ class LocalGGUFBackend(LLMBackend):
             "temperature": temperature,
             "max_tokens": max_tokens,
             "images": images,
+            "audio": audio,
         })
 
         in_reasoning = False

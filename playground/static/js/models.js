@@ -684,7 +684,72 @@ const ModelsPage = (() => {
     }
 
     // ── Init ─────────────────────────────────────────────────────
+    // ── Starter models (one-click Gemma 4) ─────────────────────────
+    let _starterPoll = null;
+    async function loadStarters() {
+        const box = document.getElementById('starter-models');
+        if (!box) return;
+        let list = [];
+        try { list = await App.api('/models/starter'); } catch { box.innerHTML = ''; return; }
+        const busy = list.some(m => m.progress && ['starting', 'downloading'].includes(m.progress.status));
+        box.innerHTML = list.map(m => {
+            const p = m.progress || {};
+            let action;
+            if (['starting', 'downloading'].includes(p.status)) {
+                const pct = p.percent || 0;
+                action = `<div class="starter-progress"><div style="width:${pct}%"></div></div>
+                  <div class="starter-progress-label">Downloading ${p.files > 1 ? `file ${p.file || 1} of ${p.files} · ` : ''}${pct}%${p.total ? ` of ${(p.total / 1e9).toFixed(1)} GB` : ''}…</div>`;
+            } else if (m.active) {
+                action = `<button class="btn btn-secondary btn-sm" disabled>✓ In use</button>`;
+            } else if (m.installed) {
+                action = `<button class="btn btn-primary btn-sm" data-starter-use="${m.id}">Use it</button>`;
+            } else {
+                action = `<button class="btn btn-primary btn-sm" data-starter-get="${m.id}" ${busy ? 'disabled' : ''}>⬇ Download & use (${m.size_gb} GB)</button>`;
+            }
+            const err = p.status === 'error' ? `<div class="starter-error">Download failed: ${App.escapeHtml ? App.escapeHtml(p.error) : String(p.error).replace(/</g, '&lt;')}. Click to try again.</div>` : '';
+            return `<div class="starter-card${m.recommended ? ' recommended' : ''}">
+                <div class="starter-title">${m.label} ${m.recommended ? '<span class="starter-badge">Recommended</span>' : ''}</div>
+                <div class="starter-blurb">${m.blurb}</div>
+                <div class="starter-meta">📝 Text · 🖼️ Images · 🎤 Voice · needs ~${m.ram_gb} GB RAM</div>
+                ${err}${action}</div>`;
+        }).join('');
+        box.querySelectorAll('[data-starter-get]').forEach(b => b.addEventListener('click', async () => {
+            b.disabled = true;
+            await App.apiPost(`/models/starter/${b.dataset.starterGet}/install`, {});
+            loadStarters();
+        }));
+        box.querySelectorAll('[data-starter-use]').forEach(b => b.addEventListener('click', async () => {
+            await App.apiPost(`/models/starter/${b.dataset.starterUse}/use`, {});
+            await afterStarterSwitch();
+        }));
+        clearTimeout(_starterPoll);
+        if (busy) {
+            _starterPoll = setTimeout(async () => {
+                const before = busy;
+                await loadStarters();
+                const now = (await App.api('/models/starter')).find(m => m.progress && m.progress.status === 'complete' && m.active);
+                if (before && now) afterStarterSwitch(true);
+            }, 1500);
+        }
+    }
+
+    async function afterStarterSwitch(fromDownload) {
+        App.state.settings = await App.api('/settings');
+        App.state.backend = 'local';
+        App.state.model = App.state.settings.active_model || '';
+        const bs = document.getElementById('backend-select');
+        if (bs) bs.value = 'local';
+        await App.loadModels();
+        if (App.loadVisionModels) await App.loadVisionModels();
+        const vs = document.getElementById('vision-model-select');
+        const mp = App.state.settings.backends?.local?.mmproj_path;
+        if (vs && mp) { vs.value = mp; App.state.visionModel = mp; }
+        App.toast(fromDownload ? 'Starter model ready — say hi in Chat!' : 'Switched to the starter model', 'success');
+        loadStarters();
+    }
+
     function init() {
+        loadStarters();
         if (!initialized) {
             setupTabs();
 

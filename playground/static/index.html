@@ -10,6 +10,8 @@
 </head>
 <body>
     <div id="app">
+        <button id="btn-mobile-nav" class="mobile-nav-btn" aria-label="Menu" title="Menu">☰</button>
+        <div id="mobile-nav-backdrop" class="mobile-nav-backdrop"></div>
         <!-- ── Sidebar ──────────────────────────────────────── -->
         <nav id="sidebar">
             <div class="sidebar-logo">
@@ -109,7 +111,7 @@
             </ul>
 
             <div class="sidebar-footer">
-                <div class="sidebar-version" id="sidebar-version" title="Click to check for updates" style="cursor:pointer;">v1.0.4</div>
+                <div class="sidebar-version" id="sidebar-version" title="Click to check for updates" style="cursor:pointer;">v1.0.5</div>
             </div>
         </nav>
 
@@ -217,14 +219,14 @@
                     <!-- Image attach preview strip -->
                     <div id="image-attach-preview" class="image-attach-preview"></div>
                     <div class="chat-input-wrap">
-                        <button id="btn-attach-image" class="btn-attach" title="Attach image">
+                        <button id="btn-attach-image" class="btn-attach" title="Attach an image or audio file">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="3" y="3" width="18" height="18" rx="2"/>
                                 <circle cx="8.5" cy="8.5" r="1.5"/>
                                 <polyline points="21 15 16 10 5 21"/>
                             </svg>
                         </button>
-                        <button id="btn-mic" class="btn-attach btn-mic" title="Voice input (hold to record)" style="display:none;">
+                        <button id="btn-mic" class="btn-attach btn-mic" title="Hold to record a voice message">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -232,7 +234,7 @@
                                 <line x1="8" y1="23" x2="16" y2="23"/>
                             </svg>
                         </button>
-                        <input type="file" id="image-file-input" accept="image/*" style="display:none;">
+                        <input type="file" id="image-file-input" accept="image/*,audio/*" style="display:none;">
                         <textarea id="chat-input" placeholder="Type a message…" rows="1"></textarea>
                         <button id="btn-send" class="btn-send" title="Send">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -253,6 +255,13 @@
                     <h1>Models</h1>
                     <p class="text-muted">Manage your LLM models</p>
                 </div>
+                <section class="starter-models-wrap">
+                    <div class="starter-models-head">
+                        <h3>⭐ Starter models</h3>
+                        <span class="text-muted">One click: download, set up and start chatting. Free, runs on your PC, sees images and hears your voice.</span>
+                    </div>
+                    <div id="starter-models" class="starter-models"></div>
+                </section>
                 <div class="models-tabs">
                     <button class="tab active" data-tab="ollama">Ollama</button>
                     <button class="tab" data-tab="huggingface">HuggingFace</button>
@@ -1035,8 +1044,19 @@
                             </select>
                         </div>
                     </div>
+                    <div class="settings-section" id="settings-persona">
+                        <h3>Your persona <span class="label-hint">— who YOU are; every character knows this unless their sheet says otherwise</span></h3>
+                        <div class="form-group">
+                            <label>Your name</label>
+                            <input type="text" id="set-user-name" class="input" placeholder="What should characters call you?">
+                        </div>
+                        <div class="form-group">
+                            <label>About you</label>
+                            <textarea id="set-user-about" class="input textarea" rows="3" placeholder="A few lines about you — your age, what you do, what you're into, how you like to be talked to…"></textarea>
+                        </div>
+                    </div>
                     <div class="settings-section">
-                        <h3>Default Persona <span class="label-hint">— used when no character is active</span></h3>
+                        <h3>AI persona <span class="label-hint">— who the AI is when no character is active</span></h3>
                         <div class="form-group">
                             <label>Name</label>
                             <input type="text" id="set-persona-name" class="input" placeholder="e.g. Aria, Max, Sage…">
@@ -1171,10 +1191,12 @@
                 <div class="page-header">
                     <div>
                         <h1>Characters</h1>
-                        <p class="text-muted">Create characters — each with their own name, personality, system prompt, model, voice, and isolated memory</p>
+                        <p class="text-muted">Build characters with their own look, personality, voice and memory — or bring them over from SillyTavern, Chub and Character.ai</p>
                     </div>
-                    <div style="display:flex;gap:8px;">
-                        <button id="btn-import-st" class="btn btn-secondary" title="Import SillyTavern JSON">Import ST</button>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="btn-import-st" class="btn btn-secondary" data-tip="SillyTavern / Chub / TavernAI character cards (PNG or JSON). You can pick several at once.">⬆ Import card</button>
+                        <input type="file" id="import-card-input" accept=".png,.json,.webp,image/png,application/json" multiple style="display:none;">
+                        <button id="btn-import-cai" class="btn btn-secondary" data-tip="Bring a character and your chat history over from Character.ai — they'll remember you.">🌙 From Character.ai</button>
                         <button id="btn-new-agent" class="btn btn-primary">+ New Character</button>
                     </div>
                 </div>

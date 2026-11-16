@@ -449,7 +449,8 @@ const Chat = (() => {
 
         const avatar = document.createElement('div');
         avatar.className = 'message-avatar';
-        avatar.textContent = role === 'user' ? 'U' : 'M';
+        setAvatar(avatar, role);
+        msg.dataset.role = role;
 
         const rightCol = document.createElement('div');
         rightCol.className = 'message-right';
@@ -487,6 +488,13 @@ const Chat = (() => {
         });
         actions.appendChild(copyBtn);
 
+        const editBtn = document.createElement('button');
+        editBtn.className = 'msg-action-btn';
+        editBtn.title = 'Edit';
+        editBtn.innerHTML = '✏️';
+        editBtn.addEventListener('click', () => startEdit(contentEl, role));
+        actions.appendChild(editBtn);
+
         msg.appendChild(avatar);
         rightCol.appendChild(contentEl);
         rightCol.appendChild(actions);
@@ -496,10 +504,58 @@ const Chat = (() => {
 
         // Attach thinkEl reference so the streaming handler can update it
         contentEl._thinkEl = thinkEl;
+        contentEl._raw = content || '';
         return contentEl;
     }
 
     // ── Image attachment ─────────────────────────────────────────
+    // ── Voice notes (recorded or attached audio) ─────────────────
+    let pendingAudioB64 = '';
+    let pendingAudioURL = '';
+
+    function attachAudioBlob(blob, label) {
+        const reader = new FileReader();
+        reader.onload = () => {
+            pendingAudioB64 = String(reader.result).split(',')[1] || '';
+            if (pendingAudioURL) URL.revokeObjectURL(pendingAudioURL);
+            pendingAudioURL = URL.createObjectURL(blob);
+            const preview = document.getElementById('image-attach-preview');
+            if (!preview) return;
+            preview.querySelectorAll('.voice-chip').forEach(n => n.remove());
+            const chip = document.createElement('div');
+            chip.className = 'voice-chip';
+            chip.innerHTML = `<span>🎤 ${label || 'Voice message'}</span>`;
+            const audio = document.createElement('audio');
+            audio.src = pendingAudioURL; audio.controls = true; audio.className = 'voice-chip-audio';
+            const rm = document.createElement('button');
+            rm.className = 'attach-remove'; rm.title = 'Remove voice message'; rm.textContent = '✕';
+            rm.addEventListener('click', clearAttachedAudio);
+            chip.append(audio, rm);
+            preview.appendChild(chip);
+            preview.style.display = 'flex';
+            document.getElementById('chat-input')?.focus();
+        };
+        reader.readAsDataURL(blob);
+    }
+
+    function clearAttachedAudio() {
+        pendingAudioB64 = '';
+        if (pendingAudioURL) { URL.revokeObjectURL(pendingAudioURL); pendingAudioURL = ''; }
+        const preview = document.getElementById('image-attach-preview');
+        if (preview) {
+            preview.querySelectorAll('.voice-chip').forEach(n => n.remove());
+            if (!preview.children.length) preview.style.display = 'none';
+        }
+    }
+
+    function attachFile(file) {
+        if (file && file.type.startsWith('audio/')) {
+            attachAudioBlob(file, file.name);
+            return;
+        }
+        attachImage(file);
+    }
+
     function attachImage(file) {
         if (!file || !file.type.startsWith('image/')) {
             App.toast('Please select an image file', 'error');
@@ -513,7 +569,7 @@ const Chat = (() => {
             // Show preview
             const preview = document.getElementById('image-attach-preview');
             if (preview) {
-                preview.innerHTML = '';
+                preview.querySelectorAll(':scope > :not(.voice-chip)').forEach(n => n.remove());
                 const img = document.createElement('img');
                 img.src = dataUrl;
                 img.className = 'attach-thumb';
@@ -534,8 +590,8 @@ const Chat = (() => {
         pendingImageB64 = '';
         const preview = document.getElementById('image-attach-preview');
         if (preview) {
-            preview.innerHTML = '';
-            preview.style.display = 'none';
+            preview.querySelectorAll(':scope > :not(.voice-chip)').forEach(n => n.remove());
+            if (!preview.children.length) preview.style.display = 'none';
         }
         const fileInput = document.getElementById('image-file-input');
         if (fileInput) fileInput.value = '';
@@ -545,7 +601,7 @@ const Chat = (() => {
     function send() {
         const input = document.getElementById('chat-input');
         const text = input.value.trim();
-        if (!text || App.state.streaming) return;
+        if ((!text && !pendingAudioB64) || App.state.streaming) return;
 
         if (!App.state.model) {
             App.toast('Select a model first', 'error');
@@ -556,7 +612,13 @@ const Chat = (() => {
         ensureAudioCtx();
 
         // Show user message (with image thumbnail if attached)
-        const userMsgEl = createMessageEl('user', text);
+        const userMsgEl = createMessageEl('user', text || (pendingAudioB64 ? '🎤 Voice message' : ''));
+        if (pendingAudioB64 && pendingAudioURL) {
+            const a = document.createElement('audio');
+            a.src = pendingAudioURL; a.controls = true; a.className = 'user-voice-note';
+            userMsgEl.appendChild(a);
+            pendingAudioURL = '';   // the bubble owns the URL now
+        }
         if (pendingImageB64) {
             const thumb = document.createElement('img');
             thumb.src = 'data:image/jpeg;base64,' + pendingImageB64;
@@ -584,8 +646,152 @@ const Chat = (() => {
             vision_model: App.state.visionModel || document.getElementById('vision-model-select')?.value || '',
         };
         if (pendingImageB64) wsPayload.image = pendingImageB64;
+        if (pendingAudioB64) wsPayload.audio = pendingAudioB64;
         App.sendWS(wsPayload);
         clearAttachedImage();
+        clearAttachedAudio();
+    }
+
+    // ── Avatars ──────────────────────────────────────────────────
+    function setAvatar(el, role) {
+        el.innerHTML = '';
+        if (role === 'user') {
+            const p = (App.state.settings && App.state.settings.user_persona) || {};
+            el.textContent = ((p.name || 'You').trim()[0] || 'U').toUpperCase();
+            return;
+        }
+        const c = App.activeCharacter ? App.activeCharacter() : null;
+        if (c && c.avatar) {
+            const img = document.createElement('img');
+            img.src = '/api/characters/' + encodeURIComponent(c.id) + '/avatar?v=' + c.avatar;
+            img.alt = c.name || '';
+            img.onerror = () => { el.textContent = (c.name || 'M')[0].toUpperCase(); };
+            el.appendChild(img);
+            el.classList.add('has-img');
+        } else {
+            el.textContent = ((c && c.name) || 'M')[0].toUpperCase();
+        }
+    }
+
+    // Refresh every bubble's avatar (after switching character / editing a sheet)
+    function refreshAvatars() {
+        document.querySelectorAll('#chat-messages .message').forEach(m => {
+            const av = m.querySelector('.message-avatar');
+            if (av) { av.classList.remove('has-img'); setAvatar(av, m.dataset.role || 'assistant'); }
+        });
+    }
+
+    // ── Edit a message in place ──────────────────────────────────
+    function startEdit(contentEl, role) {
+        if (App.state.streaming || contentEl._editing) return;
+        contentEl._editing = true;
+        const original = contentEl._raw || contentEl.innerText;
+        const box = document.createElement('div');
+        box.className = 'msg-edit-box';
+        const ta = document.createElement('textarea');
+        ta.className = 'input textarea msg-edit-input';
+        ta.value = original;
+        ta.rows = Math.min(14, Math.max(3, original.split('\n').length + 1));
+        const row = document.createElement('div');
+        row.className = 'msg-edit-actions';
+        const save = document.createElement('button');
+        save.className = 'btn btn-primary btn-sm';
+        save.textContent = 'Save';
+        const cancel = document.createElement('button');
+        cancel.className = 'btn btn-secondary btn-sm';
+        cancel.textContent = 'Cancel';
+        row.append(save, cancel);
+        box.append(ta, row);
+        const prevHTML = contentEl.innerHTML;
+        contentEl.innerHTML = '';
+        contentEl.appendChild(box);
+        ta.focus();
+        const close = (html) => { contentEl._editing = false; contentEl.innerHTML = html; };
+        cancel.addEventListener('click', () => close(prevHTML));
+        save.addEventListener('click', () => {
+            const next = ta.value.trim();
+            if (!next || next === original.trim()) { close(prevHTML); return; }
+            App.sendWS({ type: 'edit_message', role, old_content: original, new_content: next });
+            contentEl._raw = next;
+            close(renderMarkdown(next));
+        });
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') cancel.click();
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save.click();
+        });
+    }
+
+    // ── Swipes / regenerate (latest reply only) ──────────────────
+    function latestAssistant() {
+        const msgs = document.querySelectorAll('#chat-messages .message');
+        const last = msgs[msgs.length - 1];
+        if (!last || last.dataset.role !== 'assistant') return null;
+        const prev = msgs[msgs.length - 2];
+        return { msg: last, content: last.querySelector('.message-content'),
+                 canRegen: !!(prev && prev.dataset.role === 'user') };
+    }
+
+    function refreshLatestControls() {
+        document.querySelectorAll('#chat-messages .swipe-nav').forEach(n => n.remove());
+        const la = latestAssistant();
+        if (!la || !la.content) return;
+        const total = la.content._swipeTotal || 1;
+        const idx = la.content._swipeIndex ?? (total - 1);
+        const actions = la.msg.querySelector('.message-actions');
+        if (!actions) return;
+        const nav = document.createElement('div');
+        nav.className = 'swipe-nav';
+        const mk = (label, title, fn, disabled) => {
+            const b = document.createElement('button');
+            b.className = 'msg-action-btn swipe-btn';
+            b.textContent = label; b.title = title; b.disabled = !!disabled;
+            b.addEventListener('click', fn);
+            return b;
+        };
+        if (total > 1) {
+            nav.appendChild(mk('‹', 'Previous reply', () => selectSwipe(idx - 1), idx <= 0));
+            const count = document.createElement('span');
+            count.className = 'swipe-count';
+            count.textContent = `${idx + 1}/${total}`;
+            nav.appendChild(count);
+            nav.appendChild(mk('›', idx < total - 1 ? 'Next reply' : 'New reply',
+                () => (idx < total - 1 ? selectSwipe(idx + 1) : regenerate()), !la.canRegen && idx >= total - 1));
+        }
+        if (la.canRegen) nav.appendChild(mk('🔄', 'Regenerate this reply (memories it made are undone)', regenerate));
+        actions.appendChild(nav);
+    }
+
+    function clearReplyExtras(contentEl) {
+        const col = contentEl.parentNode;
+        if (!col) return;
+        col.querySelectorAll('.recalled-image-card, .memory-activity-strip, .token-badge, .think-block')
+            .forEach(n => n.remove());
+        contentEl._thinkEl = null;
+    }
+
+    function regenerate() {
+        if (App.state.streaming) return;
+        const la = latestAssistant();
+        if (!la || !la.canRegen) return;
+        clearReplyExtras(la.content);
+        la.content.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+        document.querySelectorAll('#chat-messages .swipe-nav').forEach(n => n.remove());
+        currentAssistantEl = la.content;
+        currentTokens = [];
+        currentRaw = '';
+        _renderPending = false;
+        App.state.streaming = true;
+        document.getElementById('btn-send').disabled = true;
+        App.sendWS({
+            type: 'chat', message: '', regenerate: true,
+            backend: App.state.backend, model: App.state.model, preset: App.state.preset,
+            vision_model: App.state.visionModel || document.getElementById('vision-model-select')?.value || '',
+        });
+    }
+
+    function selectSwipe(i) {
+        if (App.state.streaming) return;
+        App.sendWS({ type: 'select_swipe', index: i });
     }
 
     // ── Show an image from memory inside the message that recalled it ──
@@ -727,6 +933,12 @@ const Chat = (() => {
                 }
                 if (currentAssistantEl) lastAssistantEl = currentAssistantEl;
                 currentAssistantEl = null;
+                if (msg.swipe_total !== undefined && lastAssistantEl) {
+                    if (typeof msg.content === 'string') lastAssistantEl._raw = msg.content;
+                    lastAssistantEl._swipeIndex = msg.swipe_index;
+                    lastAssistantEl._swipeTotal = msg.swipe_total;
+                    refreshLatestControls();
+                }
                 if (msg.memory_saved && msg.memory_saved > 0) {
                     const count = msg.memory_saved;
                     showMemorySavedPip(count);
@@ -761,6 +973,33 @@ const Chat = (() => {
 
             case 'vision_fallback':
                 App.toast('Image captioned via BLIP: ' + (msg.caption || '').slice(0, 80), 'info');
+                break;
+
+            case 'greeting': {
+                const container = document.getElementById('chat-messages');
+                if (container.querySelector('.message')) break;   // chat already started
+                const el = createMessageEl('assistant', msg.content || '');
+                el._raw = msg.content || '';
+                break;
+            }
+
+            case 'swipe_selected': {
+                const la = latestAssistant();
+                if (la && la.content) {
+                    clearReplyExtras(la.content);
+                    la.content._raw = msg.content || '';
+                    la.content.innerHTML = renderMarkdown(msg.content || '');
+                    la.content._swipeIndex = msg.index;
+                    la.content._swipeTotal = msg.total;
+                    (msg.images || []).forEach(h => showRecalledImage(h, '', la.content));
+                    refreshLatestControls();
+                    updateMemoryPanel();
+                }
+                break;
+            }
+
+            case 'message_edited':
+                if (!msg.ok) App.toast("Couldn't find that message in the saved chat — the edit only changed what's on screen.", 'error');
                 break;
 
             case 'show_image':
@@ -1078,6 +1317,7 @@ const Chat = (() => {
     // ── Mic / STT recording ────────────────────────────────────────
     let _mediaRecorder = null;
     let _audioChunks = [];
+    let _recStarted = 0;
     function setupMic() {
         const micBtn = document.getElementById('btn-mic');
         if (!micBtn) return;
@@ -1096,8 +1336,9 @@ const Chat = (() => {
             _audioChunks = [];
             _mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             _mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) _audioChunks.push(e.data); };
-            _mediaRecorder.onstop = sendAudioForTranscription;
+            _mediaRecorder.onstop = handleRecording;
             _mediaRecorder.start();
+            _recStarted = Date.now();
             document.getElementById('btn-mic').classList.add('recording');
         } catch (e) {
             App.toast('Microphone access denied', 'error');
@@ -1112,9 +1353,34 @@ const Chat = (() => {
         }
     }
 
-    async function sendAudioForTranscription() {
+    const _capsCache = {};
+    async function modelCanHear() {
+        const backend = App.state.backend;
+        const mmproj = App.state.visionModel || document.getElementById('vision-model-select')?.value || '';
+        if (backend !== 'local' || !mmproj || mmproj === '__blip__') return { audio: false, stt: !!App.state.settings?.stt?.enabled };
+        if (!_capsCache[mmproj]) {
+            try { _capsCache[mmproj] = await App.api('/models/capabilities?mmproj=' + encodeURIComponent(mmproj)); }
+            catch { return { audio: false, stt: !!App.state.settings?.stt?.enabled }; }
+        }
+        return { ..._capsCache[mmproj], stt: !!App.state.settings?.stt?.enabled };
+    }
+
+    async function handleRecording() {
         if (_audioChunks.length === 0) return;
         const blob = new Blob(_audioChunks, { type: 'audio/webm' });
+        const secs = Math.max(1, Math.round((Date.now() - _recStarted) / 1000));
+        const caps = await modelCanHear();
+        if (caps.audio) {
+            attachAudioBlob(blob, `Voice message (${secs}s)`);   // the model hears your voice
+        } else if (caps.stt) {
+            sendAudioForTranscription(blob);                     // dictate into the text box
+        } else {
+            App.toast("This model can't hear audio. Use the Gemma 4 starter model (or another model whose vision file does audio), or turn on Speech-to-text in Settings.", 'error');
+        }
+    }
+
+    async function sendAudioForTranscription(blob) {
+        if (!blob) return;
         const form = new FormData();
         form.append('audio', blob, 'recording.webm');
         try {
@@ -1136,7 +1402,7 @@ const Chat = (() => {
         try {
             const s = await App.api('/settings');
             const micBtn = document.getElementById('btn-mic');
-            if (micBtn && s.stt) micBtn.style.display = s.stt.enabled ? '' : 'none';
+            if (micBtn) micBtn.style.display = '';
         } catch { /* ignore */ }
     }
 
@@ -1264,6 +1530,7 @@ const Chat = (() => {
                 <p>Your AI remembers. Pick a model and start chatting.</p>
             </div>`;
         App.sendWS({ type: 'clear' });
+        App.sendWS({ type: 'start_chat' });   // character's first message, if it has one
         MoodColors.reset();
 
         // Re-enable input in case of rage quit
@@ -1299,7 +1566,7 @@ const Chat = (() => {
         if (attachBtn && fileInput) {
             attachBtn.addEventListener('click', () => fileInput.click());
             fileInput.addEventListener('change', (e) => {
-                if (e.target.files && e.target.files[0]) attachImage(e.target.files[0]);
+                if (e.target.files && e.target.files[0]) attachFile(e.target.files[0]);
             });
         }
         // Image paste from clipboard
@@ -1341,5 +1608,10 @@ const Chat = (() => {
         updateMicVisibility();
     }
 
-    return { init, handleMessage, createMessageEl, showRecalledImage, showUserMemoryImage, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
+    function startIfEmpty() {
+        const c = document.getElementById('chat-messages');
+        if (c && !c.querySelector('.message')) App.sendWS({ type: 'start_chat' });
+    }
+
+    return { init, handleMessage, createMessageEl, startIfEmpty, showRecalledImage, showUserMemoryImage, refreshLatestControls, refreshAvatars, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
 })();

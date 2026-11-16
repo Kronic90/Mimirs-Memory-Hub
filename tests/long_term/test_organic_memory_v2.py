@@ -117,6 +117,10 @@ def test_negative_affect_fades_faster_than_positive(tmp_path):
         _age(mem, 200)
     content_before = (bad.content, bad.importance, bad.emotion,
                       good.content, good.importance, good.emotion)
+    # 200 days of real time since the last fading pass (a first-ever pass
+    # is deliberately capped -- see test_first_affect_fade_is_capped)
+    from datetime import datetime, timedelta
+    m._mimir._last_affect_fade = (datetime.now() - timedelta(days=200)).isoformat()
 
     assert m._mimir.fade_affect() >= 2
     assert bad._affect_intensity < good._affect_intensity < 1.0   # the sting fades faster

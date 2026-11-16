@@ -24,6 +24,9 @@ _DEFAULT: dict[str, Any] = {
     "system_prompt": "",
     "persona_name": "",
     "persona_description": "",
+    # Who the USER is (name + a few lines about them), shared with every
+    # character unless a character sheet overrides it.
+    "user_persona": {"name": "", "about": ""},
     "llm_params": {
         "temperature": 0.7,
         "top_p": 0.9,

@@ -12,6 +12,9 @@ const SettingsPage = (() => {
 
             document.getElementById('set-persona-name').value = s.persona_name || '';
             document.getElementById('set-persona-desc').value = s.persona_description || '';
+            const up = s.user_persona || {};
+            document.getElementById('set-user-name').value = up.name || '';
+            document.getElementById('set-user-about').value = up.about || '';
             document.getElementById('set-system-prompt').value = s.system_prompt || '';
             document.getElementById('set-default-preset').value = s.active_preset || 'companion';
 
@@ -43,7 +46,7 @@ const SettingsPage = (() => {
 
             // Show/hide mic button
             const micBtn = document.getElementById('btn-mic');
-            if (micBtn) micBtn.style.display = stt.enabled ? '' : 'none';
+            if (micBtn) micBtn.style.display = '';   // voice notes work without STT
 
             document.getElementById('set-profile').value = s.active_profile || 'default';
 
@@ -134,6 +137,10 @@ const SettingsPage = (() => {
             theme: document.getElementById('set-theme').value,
             persona_name: document.getElementById('set-persona-name').value,
             persona_description: document.getElementById('set-persona-desc').value,
+            user_persona: {
+                name: document.getElementById('set-user-name').value.trim(),
+                about: document.getElementById('set-user-about').value.trim(),
+            },
             system_prompt: document.getElementById('set-system-prompt').value,
             active_preset: document.getElementById('set-default-preset').value,
             active_profile: document.getElementById('set-profile').value,
@@ -162,10 +169,12 @@ const SettingsPage = (() => {
         };
 
         await App.apiPut('/settings', patch);
+        App.state.settings = { ...(App.state.settings || {}), ...patch };
+        if (typeof Chat !== 'undefined' && Chat.refreshAvatars) Chat.refreshAvatars();
 
         // Show/hide mic button based on STT setting
         const micBtn = document.getElementById('btn-mic');
-        if (micBtn) micBtn.style.display = patch.stt.enabled ? '' : 'none';
+        if (micBtn) micBtn.style.display = '';   // voice notes work without STT
         App.toast('Settings saved', 'success');
     }
 
