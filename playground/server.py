@@ -730,7 +730,7 @@ async def index():
 async def get_settings():
     data = _cfg.to_dict()
     # Mask API keys for frontend display
-    for name in ("openai", "anthropic", "google", "custom", "openrouter", "vllm", "openai_compat"):
+    for name in ("openai", "anthropic", "google", "custom", "openrouter", "demonroute", "vllm", "openai_compat"):
         key = data.get("backends", {}).get(name, {}).get("api_key", "")
         if key and len(key) > 8:
             data["backends"][name]["api_key"] = key[:4] + "•" * (len(key) - 8) + key[-4:]
@@ -756,7 +756,7 @@ async def update_settings(request: Request):
                 status_code=400)
 
     # Never overwrite real API keys with masked values from the frontend
-    for name in ("openai", "anthropic", "google", "custom", "openrouter", "vllm", "openai_compat"):
+    for name in ("openai", "anthropic", "google", "custom", "openrouter", "demonroute", "vllm", "openai_compat"):
         incoming_key = patch.get("backends", {}).get(name, {}).get("api_key")
         if incoming_key is not None and "\u2022" in incoming_key:
             # This is a masked display value — drop it so the real key is preserved
@@ -3128,10 +3128,10 @@ async def chat_ws(ws: WebSocket):
 
             # BLIP fallback: if user attached an image but the model can't handle
             # images natively, use BLIP to caption it and prepend to user text.
-            # API backends (openai, anthropic, google, openrouter, vllm, custom,
-            # openai_compat) pass images natively — skip BLIP for them.
+            # API backends (openai, anthropic, google, openrouter, demonroute,
+            # vllm, custom, openai_compat) pass images natively — skip BLIP for them.
             _API_BACKENDS = {"openai", "anthropic", "google", "openrouter",
-                             "vllm", "custom", "openai_compat"}
+                             "demonroute", "vllm", "custom", "openai_compat"}
             if image_b64 and model_id and backend_name not in _API_BACKENDS:
                 from playground.llm_backends import is_vl_model
                 model_can_see = is_vl_model(model_id)

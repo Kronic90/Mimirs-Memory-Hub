@@ -746,6 +746,12 @@ def create_backend(name: str, cfg: dict) -> LLMBackend:
                 "X-Title": rc.get("site_title", "Mimir's Memory Hub"),
             },
         )
+    elif name == "demonroute":
+        dc = backends_cfg.get("demonroute", {})
+        return OpenAIBackend(
+            api_key=dc.get("api_key", ""),
+            base_url="https://api.demonroute.com/v1",
+        )
     elif name == "vllm":
         vc = backends_cfg.get("vllm", {})
         return OpenAIBackend(
