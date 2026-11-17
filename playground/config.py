@@ -17,6 +17,7 @@ _DEFAULT: dict[str, Any] = {
         "anthropic": {"api_key": ""},
         "google": {"api_key": ""},
         "openrouter": {"api_key": "", "site_url": "", "site_title": ""},
+        "demonroute": {"api_key": ""},
         "vllm": {"base_url": "http://localhost:8000/v1", "api_key": ""},
         "openai_compat": {"base_url": "http://localhost:5000/v1", "api_key": "", "label": "OpenAI-Compatible"},
         "custom": {"base_url": "", "api_key": "", "label": "Custom (OpenAI-compatible)"},

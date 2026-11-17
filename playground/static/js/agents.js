@@ -241,7 +241,7 @@ const AgentsPage = (() => {
               </select></div>
             <div class="form-group" style="flex:1"><label>Backend <span class="label-hint">— empty = global</span></label>
               <select id="ae-backend" class="input input-sm">
-                ${[['', '🌐 Use global default'], ['ollama', '🦙 Ollama'], ['local', '💾 Local GGUF'], ['openai', '🤖 OpenAI'], ['anthropic', '🧠 Anthropic'], ['google', '🔮 Google'], ['openrouter', '🔀 OpenRouter'], ['vllm', '⚡ vLLM'], ['custom', '⚙️ Custom'], ['openai_compat', '🔌 OpenAI compatible']]
+                ${[['', '🌐 Use global default'], ['ollama', '🦙 Ollama'], ['local', '💾 Local GGUF'], ['openai', '🤖 OpenAI'], ['anthropic', '🧠 Anthropic'], ['google', '🔮 Google'], ['openrouter', '🔀 OpenRouter'], ['demonroute', '😈 Demon Route'], ['vllm', '⚡ vLLM'], ['custom', '⚙️ Custom'], ['openai_compat', '🔌 OpenAI compatible']]
                     .map(([v, l]) => `<option value="${v}" ${ab === v ? 'selected' : ''}>${l}</option>`).join('')}
               </select></div>
           </div>

@@ -730,7 +730,7 @@ async def index():
 async def get_settings():
     data = _cfg.to_dict()
     # Mask API keys for frontend display
-    for name in ("openai", "anthropic", "google", "custom", "openrouter", "vllm", "openai_compat"):
+    for name in ("openai", "anthropic", "google", "custom", "openrouter", "demonroute", "vllm", "openai_compat"):
         key = data.get("backends", {}).get(name, {}).get("api_key", "")
         if key and len(key) > 8:
             data["backends"][name]["api_key"] = key[:4] + "•" * (len(key) - 8) + key[-4:]
@@ -756,7 +756,7 @@ async def update_settings(request: Request):
                 status_code=400)
 
     # Never overwrite real API keys with masked values from the frontend
-    for name in ("openai", "anthropic", "google", "custom", "openrouter", "vllm", "openai_compat"):
+    for name in ("openai", "anthropic", "google", "custom", "openrouter", "demonroute", "vllm", "openai_compat"):
         incoming_key = patch.get("backends", {}).get(name, {}).get("api_key")
         if incoming_key is not None and "\u2022" in incoming_key:
             # This is a masked display value — drop it so the real key is preserved
@@ -1118,7 +1118,7 @@ async def vision_status():
     # Check if vision is ready
     if backend_name == "local":
         status["vision_ready"] = status["is_vl_model"] and status["has_mmproj"]
-    elif backend_name in ("ollama", "openai", "anthropic", "google", "openrouter"):
+    elif backend_name in ("ollama", "openai", "anthropic", "google", "openrouter", "demonroute"):
         # These backends handle vision natively for VL models
         status["vision_ready"] = status["is_vl_model"]
     # Check BLIP fallback availability
@@ -3128,10 +3128,10 @@ async def chat_ws(ws: WebSocket):
 
             # BLIP fallback: if user attached an image but the model can't handle
             # images natively, use BLIP to caption it and prepend to user text.
-            # API backends (openai, anthropic, google, openrouter, vllm, custom,
-            # openai_compat) pass images natively — skip BLIP for them.
+            # API backends (openai, anthropic, google, openrouter, demonroute,
+            # vllm, custom, openai_compat) pass images natively — skip BLIP for them.
             _API_BACKENDS = {"openai", "anthropic", "google", "openrouter",
-                             "vllm", "custom", "openai_compat"}
+                             "demonroute", "vllm", "custom", "openai_compat"}
             if image_b64 and model_id and backend_name not in _API_BACKENDS:
                 from playground.llm_backends import is_vl_model
                 model_can_see = is_vl_model(model_id)
@@ -4190,7 +4190,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     # added to the call below for backends that declare it.
                     agent_can_see = image_b64 and (
                         backend_name in ("ollama", "openai", "transformers", "anthropic", "google",
-                                         "openrouter", "vllm", "custom", "openai_compat")
+                                         "openrouter", "demonroute", "vllm", "custom", "openai_compat")
                         or (backend_name == "local" and bool(vision_model)))
                     if agent_can_see and memory_enabled and char_id:
                         system_prompt += (

@@ -552,6 +552,7 @@ const ModelsPage = (() => {
             'anthropic': getInputByLabel('Anthropic API Key')?.value?.trim() || '',
             'google': getInputByLabel('Google Gemini API Key')?.value?.trim() || '',
             'openrouter': getInputByLabel('OpenRouter API Key')?.value?.trim() || '',
+            'demonroute': getInputByLabel('Demon Route API Key')?.value?.trim() || '',
             'vllm-url': getInputByLabel('vLLM Server URL')?.value?.trim() || '',
             'vllm-key': getInputByLabel('vLLM API Key (optional)')?.value?.trim() || '',
             'compat-url': getInputByLabel('Server URL')?.value?.trim() || '',
@@ -565,6 +566,7 @@ const ModelsPage = (() => {
             anthropic: domValues['anthropic'] ? `[${domValues['anthropic'].length} chars]` : '(empty)',
             google: domValues['google'] ? `[${domValues['google'].length} chars]` : '(empty)',
             openrouter: domValues['openrouter'] ? `[${domValues['openrouter'].length} chars]` : '(empty)',
+            demonroute: domValues['demonroute'] ? `[${domValues['demonroute'].length} chars]` : '(empty)',
             vllm_url: domValues['vllm-url'] ? domValues['vllm-url'] : '(empty)',
             compat_url: domValues['compat-url'] ? domValues['compat-url'] : '(empty)',
             custom_url: domValues['custom-url'] ? domValues['custom-url'] : '(empty)',
@@ -577,6 +579,7 @@ const ModelsPage = (() => {
             ['anthropic', 'anthropic'],
             ['google',    'google'],
             ['openrouter', 'openrouter'],
+            ['demonroute', 'demonroute'],
             ['custom',    'custom-key'],
         ];
         
@@ -641,6 +644,7 @@ const ModelsPage = (() => {
                         anthropic: settings.backends?.anthropic?.api_key ? `[masked or stored]` : '(empty)',
                         google: settings.backends?.google?.api_key ? `[masked or stored]` : '(empty)',
                         openrouter: settings.backends?.openrouter?.api_key ? `[masked or stored]` : '(empty)',
+                        demonroute: settings.backends?.demonroute?.api_key ? `[masked or stored]` : '(empty)',
                         vllm: settings.backends?.vllm?.base_url || '(empty)',
                         openai_compat: settings.backends?.openai_compat?.base_url || '(empty)',
                     });
