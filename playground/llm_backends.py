@@ -6,6 +6,7 @@ Supported backends:
     - Anthropic     (Claude)
     - Google Gemini
     - OpenRouter    (multi-provider gateway — https://openrouter.ai)
+    - Demon Route   (OpenAI-compatible gateway — https://demonroute.com)
     - vLLM          (remote vLLM server — OpenAI-compatible)
     - OpenAI-compat (any OpenAI-compatible endpoint — LM Studio, text-gen-webui, etc.)
     - Custom        (legacy alias for OpenAI-compatible)

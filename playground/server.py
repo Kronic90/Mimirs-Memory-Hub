@@ -1118,7 +1118,7 @@ async def vision_status():
     # Check if vision is ready
     if backend_name == "local":
         status["vision_ready"] = status["is_vl_model"] and status["has_mmproj"]
-    elif backend_name in ("ollama", "openai", "anthropic", "google", "openrouter"):
+    elif backend_name in ("ollama", "openai", "anthropic", "google", "openrouter", "demonroute"):
         # These backends handle vision natively for VL models
         status["vision_ready"] = status["is_vl_model"]
     # Check BLIP fallback availability
@@ -4190,7 +4190,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     # added to the call below for backends that declare it.
                     agent_can_see = image_b64 and (
                         backend_name in ("ollama", "openai", "transformers", "anthropic", "google",
-                                         "openrouter", "vllm", "custom", "openai_compat")
+                                         "openrouter", "demonroute", "vllm", "custom", "openai_compat")
                         or (backend_name == "local" and bool(vision_model)))
                     if agent_can_see and memory_enabled and char_id:
                         system_prompt += (
