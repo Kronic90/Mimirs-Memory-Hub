@@ -137,6 +137,9 @@ class CharacterManager:
         """Import a character from an uploaded file: a SillyTavern/Tavern/
         Chub card PNG (picture becomes the avatar) or a card JSON."""
         from playground.character_sheet import read_card_png, card_to_character
+        from playground import cof_import
+        if cof_import.is_cof(data):
+            return self.import_cof(data)[0]
         is_png = data[:8] == b"\x89PNG\r\n\x1a\n"
         if is_png:
             card = read_card_png(data)
@@ -158,6 +161,29 @@ class CharacterManager:
             except Exception:
                 pass
         return char
+
+    def import_cof(self, data: bytes, include_secret: bool = False) -> tuple[dict, dict]:
+        """Import a character from a COF file (.cof): its card (or free-text
+        personality) becomes the sheet, its thumbnail the picture. Returns
+        (character, parsed); parsed["memories"] is for the caller to hand to
+        that character's memory, as the Character.ai import does."""
+        from playground import cof_import
+        from playground.character_sheet import card_to_character
+        parsed = cof_import.read_cof(data, include_secret=include_secret)
+        if parsed["card"]:
+            fields = card_to_character(parsed["card"])
+            char = self.create_character(fields.pop("name"), fields.pop("description", ""),
+                                         **fields)
+        else:
+            char = self.create_character(parsed["name"], parsed["description"],
+                                         greeting=parsed["greeting"])
+        char = self.update_character(char["id"], {"_source": "cof"}) or char
+        if parsed["avatar_png"]:
+            try:
+                char = self.save_avatar(char["id"], parsed["avatar_png"]) or char
+            except Exception:
+                pass
+        return char, parsed
 
     def import_sillytavern(self, file_path: str) -> dict:
         """Import a SillyTavern character (.json or .character format)."""

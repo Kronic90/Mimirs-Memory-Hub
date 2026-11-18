@@ -2633,12 +2633,36 @@ async def import_characterai(request: Request):
 
 @app.post("/api/characters/import-card")
 async def import_character_card(request: Request):
-    """Upload a character card: SillyTavern/Tavern/Chub PNG or JSON.
-    Body: {filename, data_b64}"""
+    """Upload a character card: SillyTavern/Tavern/Chub PNG or JSON, or a
+    COF file (.cof), whose memories arrive with the character.
+    Body: {filename, data_b64, include_secret?}"""
     import base64
+    from playground import cof_import
     body = await request.json()
     try:
         data = base64.b64decode((body.get("data_b64") or "").split(",")[-1])
+        if cof_import.is_cof(data):
+            char, parsed = await asyncio.to_thread(_characters.import_cof, data,
+                                                   bool(body.get("include_secret")))
+            formed = 0
+            if parsed["memories"]:
+                cmem = _ensure_memory(char_id=char["id"])
+                for m in parsed["memories"]:
+                    r = await asyncio.to_thread(cmem.import_memory, m["content"], m["emotion"],
+                                                m["importance"], "import", m["why_saved"], m["timestamp"])
+                    if r:
+                        formed += 1
+                await asyncio.to_thread(cmem.save)
+            kept = parsed["skipped_secret"]
+            message = f"Imported '{char['name']}'" + (f" with {formed} memor{'y' if formed == 1 else 'ies'}" if formed else "")
+            if kept:
+                message += f" ({kept} kept private in the file)"
+            warnings = []
+            if parsed["real_person"] and "conversational-persona" not in parsed["consent_scope"]:
+                warnings.append("This file describes a real person (or does not say the character is "
+                                "fictional) and holds no consent record for conversation.")
+            return JSONResponse({"success": True, "character": char, "memories": formed,
+                                 "skipped_secret": kept, "message": message, "warnings": warnings})
         char = await asyncio.to_thread(_characters.import_card_bytes,
                                        body.get("filename", ""), data)
     except ValueError as e:
