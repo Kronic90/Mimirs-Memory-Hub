@@ -3844,3 +3844,33 @@ details[open] .think-chevron { transform: rotate(90deg); }
 
 .cai-import .cai-steps { font-size: 13px; line-height: 1.55; padding-left: 20px; margin: 6px 0 12px; color: var(--text-secondary); }
 .cai-import { overflow-y: auto; }
+
+/* ── Panel toggles, free scrolling, stop button ─────────────────── */
+#app.sidebar-hidden #sidebar { display: none; }
+.panel-toggle-btn { opacity: .55; }
+.panel-toggle-btn.active { opacity: 1; }
+.chat-body { position: relative; }
+.btn-jump-latest {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%) translateY(8px);
+    z-index: 5; padding: 6px 14px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+    box-shadow: 0 4px 16px rgba(0,0,0,.35);
+    opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
+}
+.btn-jump-latest.visible { opacity: 1; pointer-events: auto; transform: translateX(-50%); }
+.chat-body:has(.memory-panel:not(.collapsed)) .btn-jump-latest { left: calc(50% - var(--panel-w) / 2); }
+.btn-stop { background: var(--error, #d9534f); }
+.btn-stop:hover { filter: brightness(1.1); background: var(--error, #d9534f); }
+@media (max-width: 800px) {
+    .desktop-only { display: none !important; }
+    .chat-body:has(.memory-panel:not(.collapsed)) .btn-jump-latest { left: 50%; }
+}
+
+.backup-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+.chat-header-right { display: flex; align-items: center; gap: 4px; }
+
+.my-presets { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.my-preset { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); }
+.my-preset select { min-width: 210px; }

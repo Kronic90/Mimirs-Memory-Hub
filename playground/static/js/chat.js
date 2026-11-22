@@ -208,6 +208,67 @@ const Chat = (() => {
     let pendingImageB64 = '';  // base64 of image attached to next message
 
     // ── Configure marked ─────────────────────────────────────────
+    // ── Scrolling: follow new text only while the reader is at the bottom ──
+    let _followBottom = true;
+    function scrollChat(force = false) {
+        const c = document.getElementById('chat-messages');
+        if (!c) return;
+        if (force) _followBottom = true;
+        if (_followBottom) c.scrollTop = c.scrollHeight;
+        updateJumpButton();
+    }
+    function updateJumpButton() {
+        const btn = document.getElementById('btn-jump-latest');
+        if (btn) btn.classList.toggle('visible', !_followBottom);
+    }
+    function setupScrollFollow() {
+        const c = document.getElementById('chat-messages');
+        if (!c) return;
+        c.addEventListener('scroll', () => {
+            _followBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+            updateJumpButton();
+        }, { passive: true });
+        // Scrolling up lets go straight away, even mid-reply
+        c.addEventListener('wheel', (e) => {
+            if (e.deltaY < 0) { _followBottom = false; updateJumpButton(); }
+        }, { passive: true });
+        c.addEventListener('touchmove', () => {
+            _followBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+            updateJumpButton();
+        }, { passive: true });
+        document.getElementById('btn-jump-latest')?.addEventListener('click', () => scrollChat(true));
+    }
+
+    // ── Streaming state: Send turns into Stop while a reply is coming ──
+    function setStreaming(on) {
+        App.state.streaming = on;
+        const sendBtn = document.getElementById('btn-send');
+        const stopBtn = document.getElementById('btn-stop');
+        if (sendBtn) {
+            sendBtn.disabled = on;
+            sendBtn.style.display = on && stopBtn ? 'none' : '';
+        }
+        if (stopBtn) {
+            stopBtn.style.display = on ? '' : 'none';
+            stopBtn.disabled = false;
+        }
+    }
+    function stopGenerating() {
+        if (!App.state.streaming) return;
+        const stopBtn = document.getElementById('btn-stop');
+        if (stopBtn) stopBtn.disabled = true;
+        App.apiPost('/chat/stop', {}).catch(() => {});
+    }
+
+    // ── Unsent text survives page switches and reloads ──
+    const DRAFT_KEY = 'mimir.chatDraft';
+    function saveDraft(text) {
+        try { text ? localStorage.setItem(DRAFT_KEY, text) : localStorage.removeItem(DRAFT_KEY); } catch { /* storage off */ }
+    }
+    function loadDraft() {
+        try { return localStorage.getItem(DRAFT_KEY) || ''; } catch { return ''; }
+    }
+
     function setupMarked() {
         if (typeof marked !== 'undefined') {
             marked.setOptions({
@@ -500,7 +561,7 @@ const Chat = (() => {
         rightCol.appendChild(actions);
         msg.appendChild(rightCol);
         container.appendChild(msg);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
 
         // Attach thinkEl reference so the streaming handler can update it
         contentEl._thinkEl = thinkEl;
@@ -628,14 +689,15 @@ const Chat = (() => {
 
         input.value = '';
         input.style.height = 'auto';
+        saveDraft('');
 
         currentAssistantEl = createMessageEl('assistant', '');
+        scrollChat(true);
         currentAssistantEl.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
         currentTokens = [];
         currentRaw = '';
         _renderPending = false;
-        App.state.streaming = true;
-        document.getElementById('btn-send').disabled = true;
+        setStreaming(true);
 
         const wsPayload = {
             type: 'chat',
@@ -780,8 +842,7 @@ const Chat = (() => {
         currentTokens = [];
         currentRaw = '';
         _renderPending = false;
-        App.state.streaming = true;
-        document.getElementById('btn-send').disabled = true;
+        setStreaming(true);
         App.sendWS({
             type: 'chat', message: '', regenerate: true,
             backend: App.state.backend, model: App.state.model, preset: App.state.preset,
@@ -825,8 +886,8 @@ const Chat = (() => {
             document.getElementById('chat-messages').appendChild(card);
         }
         const container = document.getElementById('chat-messages');
-        img.addEventListener('load', () => { container.scrollTop = container.scrollHeight; });
-        container.scrollTop = container.scrollHeight;
+        img.addEventListener('load', () => { scrollChat(); });
+        scrollChat();
     }
 
     // Image a user shared that became a visual memory (reloaded chats).
@@ -855,8 +916,7 @@ const Chat = (() => {
                     currentTokens = [];
                     currentRaw = '';
                     _renderPending = false;
-                    App.state.streaming = true;
-                    document.getElementById('btn-send').disabled = true;
+                    setStreaming(true);
                 }
                 if (currentAssistantEl) {
                     currentTokens.push(msg.content);
@@ -895,15 +955,14 @@ const Chat = (() => {
                             }
 
                             const container = document.getElementById('chat-messages');
-                            container.scrollTop = container.scrollHeight;
+                            scrollChat();
                         });
                     }
                 }
                 break;
 
             case 'done':
-                App.state.streaming = false;
-                document.getElementById('btn-send').disabled = false;
+                setStreaming(false);
                 // Final synchronous render so no tokens are lost
                 if (currentAssistantEl && currentRaw) {
                     const raw = stripSpecialTags(currentRaw, true);
@@ -928,7 +987,7 @@ const Chat = (() => {
                 if (currentAssistantEl && msg.tokens) {
                     const badge = document.createElement('div');
                     badge.className = 'token-badge';
-                    badge.textContent = msg.tokens + ' tokens';
+                    badge.textContent = msg.tokens + ' tokens' + (msg.stopped ? ' · stopped' : '');
                     currentAssistantEl.parentNode.appendChild(badge);
                 }
                 if (currentAssistantEl) lastAssistantEl = currentAssistantEl;
@@ -951,8 +1010,7 @@ const Chat = (() => {
                 break;
 
             case 'error':
-                App.state.streaming = false;
-                document.getElementById('btn-send').disabled = false;
+                setStreaming(false);
                 if (currentAssistantEl) {
                     currentAssistantEl.innerHTML = `<span style="color: var(--error);">Error: ${msg.message}</span>`;
                 }
@@ -1116,7 +1174,7 @@ const Chat = (() => {
             `<span style="font-weight:600;color:var(--text);">${title}</span>` +
             `</div>` + details;
         container.appendChild(banner);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
         // Fade out after 10 seconds
         setTimeout(() => {
             banner.style.transition = 'opacity 1s ease';
@@ -1135,7 +1193,7 @@ const Chat = (() => {
             : `in ~${Math.round(hours / 24)}d`;
         pip.textContent = `⏰ Reminder set (${when}): ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`;
         container.appendChild(pip);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
         setTimeout(() => {
             pip.style.opacity = '0';
             setTimeout(() => pip.remove(), 500);
@@ -1149,7 +1207,7 @@ const Chat = (() => {
         pip.className = 'memory-pip task-pip';
         pip.textContent = text;
         container.appendChild(pip);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
         setTimeout(() => {
             pip.style.opacity = '0';
             setTimeout(() => pip.remove(), 500);
@@ -1171,7 +1229,7 @@ const Chat = (() => {
         }
         div.innerHTML = html;
         container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
     }
 
     function esc(s) {
@@ -1197,7 +1255,7 @@ const Chat = (() => {
             `<span>${icon} <strong>${esc(msg.tool)}</strong></span>` +
             `</div>`;
         container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
     }
 
     function showToolResult(msg) {
@@ -1221,7 +1279,7 @@ const Chat = (() => {
             `<span>${icon} <strong>${esc(msg.tool)}</strong> — ${hasError ? '❌' : '✅'}</span>` +
             `</div>` +
             `<div class="tool-activity-body">${esc(String(summary))}</div>`;
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
     }
 
     // ── TTS audio playback ────────────────────────────────────────
@@ -1449,7 +1507,7 @@ const Chat = (() => {
         pip.className = 'memory-pip';
         pip.textContent = count === 1 ? '💾 memory saved' : `💾 ${count} memories saved`;
         container.appendChild(pip);
-        container.scrollTop = container.scrollHeight;
+        scrollChat();
         setTimeout(() => {
             pip.style.opacity = '0';
             setTimeout(() => pip.remove(), 500);
@@ -1479,7 +1537,7 @@ const Chat = (() => {
 
     // ── AI rage quit ─────────────────────────────────────────────
     function handleRageQuit() {
-        App.state.streaming = false;
+        setStreaming(false);
         document.getElementById('btn-send').disabled = true;
 
         // Show the AI's final defiant message
@@ -1559,6 +1617,10 @@ const Chat = (() => {
 
         sendBtn.addEventListener('click', send);
         newBtn.addEventListener('click', newChat);
+        document.getElementById('btn-stop')?.addEventListener('click', stopGenerating);
+        setupScrollFollow();
+        const draft = loadDraft();
+        if (draft && !input.value) { input.value = draft; autoResize(input); }
 
         // Image attachment button
         const attachBtn = document.getElementById('btn-attach-image');
@@ -1587,12 +1649,10 @@ const Chat = (() => {
                 send();
             }
         });
-        input.addEventListener('input', () => autoResize(input));
+        input.addEventListener('input', () => { autoResize(input); saveDraft(input.value); });
 
         if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                document.getElementById('memory-panel').classList.toggle('collapsed');
-            });
+            toggleBtn.addEventListener('click', () => App.togglePanel('memory'));
         }
 
         // Keyboard shortcuts
@@ -1601,6 +1661,11 @@ const Chat = (() => {
             if (e.ctrlKey && e.shiftKey && e.key === 'N') { e.preventDefault(); newChat(); }
             // Ctrl+Shift+H — go to saved chats
             if (e.ctrlKey && e.shiftKey && e.key === 'H') { e.preventDefault(); App.navigate('conversations'); }
+            // Esc — stop the reply that's being written
+            if (e.key === 'Escape' && App.state.streaming
+                && document.getElementById('page-chat')?.classList.contains('active')) {
+                e.preventDefault(); stopGenerating();
+            }
         });
 
         updateMemoryPanel();
@@ -1613,5 +1678,5 @@ const Chat = (() => {
         if (c && !c.querySelector('.message')) App.sendWS({ type: 'start_chat' });
     }
 
-    return { init, handleMessage, createMessageEl, startIfEmpty, showRecalledImage, showUserMemoryImage, refreshLatestControls, refreshAvatars, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
+    return { init, handleMessage, createMessageEl, startIfEmpty, scrollChat, stopGenerating, showRecalledImage, showUserMemoryImage, refreshLatestControls, refreshAvatars, newChat, splitThinking, buildThinkBlock, renderMemoryActivity };
 })();

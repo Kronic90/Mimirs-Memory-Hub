@@ -32,8 +32,18 @@ def main():
         print("  " + note)
 
     def _open_browser():
-        import time
-        time.sleep(1.8)
+        # Open the page only once the hub is answering -- opening it on a
+        # timer showed a half-loaded page (no characters, no memories) on
+        # slower starts.
+        import socket, time
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            try:
+                with socket.create_connection((host, port), timeout=1):
+                    break
+            except OSError:
+                time.sleep(0.5)
+        time.sleep(0.5)
         webbrowser.open(f"http://{host}:{port}")
 
     # After an in-app restart the page that's already open reconnects itself

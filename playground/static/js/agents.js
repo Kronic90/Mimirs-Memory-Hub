@@ -236,7 +236,7 @@ const AgentsPage = (() => {
           <div class="form-row">
             <div class="form-group" style="flex:1"><label>Preset <span class="label-hint">— behaviour profile</span></label>
               <select id="ae-preset-type" class="input input-sm">
-                ${[['companion', '🤝 Companion'], ['character', '🎭 Character'], ['writer', '🪶 Writer'], ['assistant', '💼 Assistant'], ['agent', '⚡ Agent'], ['custom', '⚙️ Custom']]
+                ${App.presetOptions()
                     .map(([v, l]) => `<option value="${v}" ${pt === v ? 'selected' : ''}>${l}</option>`).join('')}
               </select></div>
             <div class="form-group" style="flex:1"><label>Backend <span class="label-hint">— empty = global</span></label>

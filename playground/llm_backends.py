@@ -411,6 +411,7 @@ class LocalGGUFBackend(LLMBackend):
     _worker: "mp.Process | None" = None
     _in_q: "mp.Queue | None" = None
     _out_q: "mp.Queue | None" = None
+    _cancel = None  # shared int: the request id the Stop button cancelled
     _req_counter: int = 0
     _last_model_path: str = ""
 
@@ -438,12 +439,19 @@ class LocalGGUFBackend(LLMBackend):
         ctx = mp.get_context("spawn")
         cls._in_q = ctx.Queue()
         cls._out_q = ctx.Queue()
+        cls._cancel = ctx.Value("l", 0)
         cls._worker = ctx.Process(
             target=local_gguf_worker.run_worker,
-            args=(cls._in_q, cls._out_q),
+            args=(cls._in_q, cls._out_q, cls._cancel),
             daemon=True,
         )
         cls._worker.start()
+
+    @classmethod
+    def cancel_current(cls) -> None:
+        """Tell the worker to stop the reply it's writing now."""
+        if cls._cancel is not None:
+            cls._cancel.value = cls._req_counter
 
     async def generate(
         self,

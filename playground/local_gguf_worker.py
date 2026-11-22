@@ -292,7 +292,7 @@ def _looks_like_template_error(exc: Exception) -> bool:
 
 
 def _stream(llm, all_messages: list[dict], temperature: float, max_tokens: int,
-            out_q, req_id, has_images: bool = False) -> bool:
+            out_q, req_id, has_images: bool = False, cancel=None) -> bool:
     """Stream one attempt. Returns True if at least one token was produced."""
     produced = False
     # A loaded vision model attaches a vision chat handler to the Llama
@@ -311,6 +311,8 @@ def _stream(llm, all_messages: list[dict], temperature: float, max_tokens: int,
             messages=all_messages, temperature=temperature,
             max_tokens=max_tokens, stream=True)
     for chunk in chunks:
+        if cancel is not None and cancel.value == req_id:
+            break  # Stop pressed in the hub
         delta = chunk.get("choices", [{}])[0].get("delta", {})
         token = delta.get("content", "")
         reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
@@ -358,7 +360,7 @@ class _QuietNative:
         return False
 
 
-def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
+def run_worker(in_q: "mp.Queue", out_q: "mp.Queue", cancel=None) -> None:
     """Subprocess entrypoint: pulls generate jobs, streams tokens back."""
     while True:
         job = in_q.get()
@@ -380,7 +382,7 @@ def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
             try:
                 with _QuietNative():
                     _stream(llm, all_messages, job["temperature"], job["max_tokens"],
-                            out_q, req_id, has_images=has_images)
+                            out_q, req_id, has_images=has_images, cancel=cancel)
             except Exception as e:
                 if _looks_like_template_error(e):
                     # The loaded model's chat template rejects a separate
@@ -393,7 +395,7 @@ def run_worker(in_q: "mp.Queue", out_q: "mp.Queue") -> None:
                     with _QuietNative():
                         _stream(llm, retry_messages, job["temperature"],
                                 job["max_tokens"], out_q, req_id,
-                                has_images=has_images)
+                                has_images=has_images, cancel=cancel)
                 else:
                     raise
 

@@ -677,7 +677,7 @@ def _ensure_memory_raw(char_id: str = "") -> MemoryManager:
     global _memory, _char_memories
     if char_id:
         if char_id not in _char_memories:
-            preset = get_preset(_cfg.get("active_preset", "companion"))
+            preset = _get_preset(_cfg.get("active_preset", "companion"))
             char_mem_dir = str(_characters.get_memory_dir(char_id, _cfg.profile_dir))
             _char_memories[char_id] = MemoryManager(
                 profile_dir=char_mem_dir,
@@ -686,7 +686,7 @@ def _ensure_memory_raw(char_id: str = "") -> MemoryManager:
             )
         return _char_memories[char_id]
     if _memory is None:
-        preset = get_preset(_cfg.get("active_preset", "companion"))
+        preset = _get_preset(_cfg.get("active_preset", "companion"))
         _memory = MemoryManager(
             profile_dir=str(_cfg.profile_dir),
             chemistry=preset.get("chemistry", True),
@@ -771,10 +771,37 @@ async def update_settings(request: Request):
 
 
 # ── Presets API ───────────────────────────────────────────────────────
+# Your own presets live in settings.json ("user_presets"), so updates and
+# new copies (via Bring data / setup files) keep them. Each one builds on
+# a built-in preset and adds your own instructions.
+
+def _user_presets() -> list[dict]:
+    v = _cfg.get("user_presets", []) or []
+    return [p for p in v if isinstance(p, dict) and str(p.get("id", "")).startswith("my-")]
+
+
+def _get_preset(name: str) -> dict:
+    if name and name.startswith("my-"):
+        for up in _user_presets():
+            if up["id"] == name:
+                merged = dict(get_preset(up.get("based_on") or "companion"))
+                extra = (up.get("instructions") or "").strip()
+                if extra:
+                    merged["system_prompt_suffix"] = (
+                        extra + "\n\n" + merged.get("system_prompt_suffix", ""))
+                merged["label"] = up.get("label") or "My preset"
+                merged["user"] = True
+                return merged
+    return get_preset(name)
+
 
 @app.get("/api/presets")
 async def list_presets():
-    return JSONResponse(PRESETS)
+    out = dict(PRESETS)
+    for up in _user_presets():
+        out[up["id"]] = {**_get_preset(up["id"]), "based_on": up.get("based_on", "companion"),
+                         "instructions": up.get("instructions", "")}
+    return JSONResponse(out)
 
 
 # ── Models API ────────────────────────────────────────────────────────
@@ -1893,6 +1920,22 @@ def _flush_all_memory() -> None:
             pass
 
 
+# Set by the Stop button; the chat loop checks it between tokens.
+_stop_request = {"flag": False}
+
+
+@app.post("/api/chat/stop")
+async def chat_stop():
+    """Stop the reply that's being written (the text so far is kept)."""
+    _stop_request["flag"] = True
+    try:
+        from playground.llm_backends import LocalGGUFBackend
+        LocalGGUFBackend.cancel_current()
+    except Exception:
+        pass
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/update/restart")
 async def update_restart():
     """Save everything, stop the local model worker, start a fresh hub."""
@@ -1918,6 +1961,40 @@ async def data_import_preview(request: Request):
     from playground import updater
     body = await request.json()
     return JSONResponse(await asyncio.to_thread(updater.preview_import, body.get("path", "")))
+
+
+@app.get("/api/data/export")
+async def data_export(keys: int = 0):
+    """Download this copy's data (no models) as one zip file."""
+    from fastapi.responses import FileResponse
+    from playground import updater
+    path = await asyncio.to_thread(_flush_and_export, bool(keys))
+    return FileResponse(str(path), media_type="application/zip", filename=path.name)
+
+
+def _flush_and_export(include_keys: bool):
+    from playground import updater
+    try:
+        _flush_all_memory()
+        _auto_save_conversation()
+    except Exception:
+        pass
+    return updater.export_data(include_keys)
+
+
+@app.post("/api/data/import-file")
+async def data_import_file(request: Request):
+    """Receive a setup file (zip from Export) and show what's in it."""
+    from playground import updater
+    data = await request.body()
+    return JSONResponse(await asyncio.to_thread(updater.receive_backup, data))
+
+
+@app.get("/api/data/backups")
+async def data_backups():
+    """Earlier copies of this hub's data (kept by imports/updates)."""
+    from playground import updater
+    return JSONResponse({"backups": await asyncio.to_thread(updater.list_backups)})
 
 
 @app.post("/api/data/import-stage")
@@ -2935,6 +3012,7 @@ async def chat_ws(ws: WebSocket):
                 backend = create_backend(backend_name, _cfg.to_dict())
                 llm_params = _cfg.get("llm_params", {})
                 greeting_tokens: list[str] = []
+                _stop_request["flag"] = False
 
                 async for token in backend.generate(
                     messages=greet_msgs,
@@ -2943,6 +3021,8 @@ async def chat_ws(ws: WebSocket):
                     max_tokens=150,
                     model=model_id,
                 ):
+                    if _stop_request["flag"]:
+                        break
                     greeting_tokens.append(token)
                     await ws.send_json({"type": "token", "content": token})
 
@@ -3166,7 +3246,7 @@ async def chat_ws(ws: WebSocket):
                     model_id = agent_model
 
             # Build system prompt — preset-aware
-            preset = get_preset(preset_name)
+            preset = _get_preset(preset_name)
             parts: list[str] = []
 
             from playground.character_sheet import (
@@ -3281,6 +3361,8 @@ async def chat_ws(ws: WebSocket):
             if backend_name == "local" and hasattr(backend, "mmproj_path"):
                 backend.mmproj_path = vision_mmproj
             full_response = []
+            _stop_request["flag"] = False
+            stopped = False
 
             try:
                 async for token in backend.generate(
@@ -3292,6 +3374,10 @@ async def chat_ws(ws: WebSocket):
                     images=[image_b64] if image_b64 else None,
                     **({"audio": [audio_wav_b64]} if audio_wav_b64 else {}),
                 ):
+                    if _stop_request["flag"]:
+                        # Stop pressed: keep what was written so far
+                        stopped = True
+                        break
                     full_response.append(token)
                     await ws.send_json({"type": "token", "content": token})
 
@@ -3307,6 +3393,7 @@ async def chat_ws(ws: WebSocket):
                     "emotion": "",
                     "character": active_char.get("name", "") if active_char else "",
                     "tokens": len(full_response),
+                    "stopped": stopped,
                 })
 
                 # ── Model-authored memory (organic) ───────────────────────
@@ -4129,7 +4216,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     # list, and the full <remember>/<treasure>/<social>/
                     # <recall>/<dream/>/<self_reflect/> instruction set.
                     memory_enabled = _cfg.get("memory", {}).get("enabled", True)
-                    agent_preset = get_preset(
+                    agent_preset = _get_preset(
                         (char.get("preset_type") if char else "")
                         or agent.get("preset_type", "companion"))
                     if memory_enabled and char_id:
@@ -4211,6 +4298,7 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                     full_response = []
 
                     try:
+                        _stop_request["flag"] = False
                         async for token in backend.generate(
                             messages=agent_messages,
                             system_prompt=system_prompt,
@@ -4219,6 +4307,8 @@ async def multi_chat_ws(ws: WebSocket, conv_id: str):
                             model=model_id,
                             **({"images": [image_b64]} if agent_can_see else {}),
                         ):
+                            if _stop_request["flag"]:
+                                break
                             full_response.append(token)
                             await ws.send_json({
                                 "type": "token",

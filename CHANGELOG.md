@@ -4,6 +4,27 @@ All notable changes to Mimir's Memory Hub.
 
 ---
 
+## v1.0.6 — November 2026
+
+New additions:
+- **Stop button**: Send turns into Stop while a reply is being written (or press Esc). What was written so far is kept, and local models really stop instead of finishing in the background
+- **Free scrolling while it writes**: scroll up and the chat stays put; a "↓ Latest" button takes you back down
+- **Hide / show the sidebar and the memory panel** from the chat header; the hub remembers your choice
+- **My presets**: your own instructions on top of any built-in preset, saved in your settings so updates keep them. Pick one as the default or per character
+- **Setup files**: save your whole setup (memories, characters, chats, settings, presets; not model files) into one file, with or without API keys, and load it into any copy
+- **Restore a backup**: every import or update keeps the data it replaced; restore any of them from Settings in one click
+- **Safer "Bring data"**: shows both copies' memory counts and newest dates, warns before replacing newer data with older data, and flags models that live in the old folder
+- **Demon Route** backend (contributed by the Demon Route team): an OpenAI-compatible gateway, also usable per character and in group chats
+- Unsent text in the chat box survives page switches and reloads
+
+Bug fixes & improvements:
+- The browser now opens once the hub is ready (it opened on a timer before the hub had started, which could show a page with no characters), and pages retry while the hub is still starting
+- Hiding the memory panel removed its own button, so it couldn't be opened again (and on phones it could never be opened)
+- Pasting an image into the chat didn't work
+- The chat header's buttons now sit in one row
+
+---
+
 ## v1.0.5 — November 2026
 
 New additions:

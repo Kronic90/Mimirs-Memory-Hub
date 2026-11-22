@@ -97,7 +97,7 @@ Most AI chat apps give the AI a simple sliding context window — it forgets eve
 - **Consolidation and dreams** — a sleep cycle merges, prunes, and synthesizes memories, producing dream-like cross-theme insights
 - **Multiple characters** — create distinct AI personalities, each with their own completely separate memory
 - **Group chats** — get multiple characters talking together with you in one conversation
-- **10 LLM backends** — run fully local, connect to cloud APIs, or use your own endpoint
+- **11 LLM backends** — run fully local, connect to cloud APIs, or use your own endpoint
 - **Sees and hears** — share images and send voice messages; with the Gemma 4 starter models the character takes in your actual voice, not just a transcript
 - **Runs on modest hardware** — the starter models run on an ordinary laptop CPU, no graphics card needed
 
@@ -119,7 +119,7 @@ Beyond the companion/character experience, Mimir also offers **optional** agent-
 | 🤝 **Group chats** | Multiple characters in one conversation with 3 turn modes (address by name, sequential, all respond) |
 | 📊 **Memory browser** | Search, filter, edit, cherish, pin, or delete individual memories |
 | 📈 **8 Visualizations** | Neural graph, 3D constellation, mood timeline, neurochemistry, relationships, topic clusters, cherished wall, memory attic |
-| 🖥️ **10 LLM backends** | Ollama, Local GGUF, Transformers/SafeTensors (GPU), OpenAI, Anthropic, Google, OpenRouter, vLLM, OpenAI-Compatible, Custom |
+| 🖥️ **11 LLM backends** | Ollama, Local GGUF, Transformers/SafeTensors (GPU), OpenAI, Anthropic, Google, OpenRouter, Demon Route, vLLM, OpenAI-Compatible, Custom |
 | 🎤 **Voice** | Voice messages the model actually hears (Gemma 4), text-to-speech (Edge TTS, Piper, Kokoro) and Whisper speech-to-text for models that can't hear |
 | 🖼️ **Vision** | Share images with any vision model — local, OpenAI, Claude or Gemini — and the character can remember them and show them back to you later |
 | 📥 **Memory import** | Import memories from any format — paste text, upload files, with optional AI enrichment |
@@ -128,6 +128,9 @@ Beyond the companion/character experience, Mimir also offers **optional** agent-
 | 🎨 **Light & dark themes** | Full light theme support alongside the default dark theme |
 | 📱 **Small-screen layout** | The interface adapts to narrow windows and touch screens |
 | 🔄 **In-app updates** | Check for and install new versions from Settings, keeping all your data |
+| 💾 **Setup files & backups** | Save your whole setup (memories, characters, chats, settings, presets) to one file and load it into any copy; restore any earlier backup in one click |
+| ⭐ **Your own presets** | Add your own instructions on top of a built-in preset — kept through updates |
+| ⏹️ **Stop & free scroll** | Stop a reply mid-way (Esc), scroll back while it's writing, hide either side panel |
 | 🧪 **Connection test** | One-click backend connection test from Settings |
 | — | — |
 | 🔧 **21 optional tools** *(Agent/Assistant presets only)* | File I/O, web search, code execution, page fetching, reminders, and more — opt-in, never used by companion/character presets |
@@ -329,6 +332,7 @@ Mimir supports 10 backends. You can switch between them at any time from Setting
 | **Anthropic** | An Anthropic API key (Claude Sonnet, Haiku, Opus) |
 | **Google** | A Google API key (Gemini 2.0 Flash, Pro, etc.) |
 | **OpenRouter** | An OpenRouter API key — access hundreds of models through one endpoint |
+| **Demon Route** | A Demon Route API key — an OpenAI-compatible gateway with many open-weight and roleplay models |
 | **vLLM** | A running vLLM server — high-throughput GPU inference |
 | **OpenAI-Compatible** | Any server with an OpenAI-compatible API (LM Studio, text-generation-webui, etc.) |
 | **Custom** | Any URL + headers — bring your own endpoint |

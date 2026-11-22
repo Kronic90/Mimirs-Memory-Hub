@@ -24,8 +24,7 @@ echo.
 cd /d "%ROOT_DIR%"
 set "PYTHONPATH=%ROOT_DIR%"
 
-:: Open browser in the background after a short delay (gives server time to start)
-powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep 4; Start-Process 'http://127.0.0.1:19009'" &
+:: The hub opens your browser itself once it's ready
 
 "%PYTHON_DIR%\python.exe" -m playground
 

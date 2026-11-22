@@ -46,3 +46,5 @@ _pending_data_import/
 mimir_update_*/
 playground_data/hub_restart.log
 _promo/
+_incoming_setup_file/
+_exports/

@@ -11,6 +11,7 @@ const App = (() => {
         settings: {},
         ws: null,
         streaming: false,
+        currentPage: 'chat',
     };
 
     // ── Router ───────────────────────────────────────────────────
@@ -20,6 +21,7 @@ const App = (() => {
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         const el = document.getElementById('page-' + page);
         if (el) el.classList.add('active');
+        state.currentPage = page;
         const nav = document.querySelector(`.nav-item[data-page="${page}"]`);
         if (nav) nav.classList.add('active');
         window.location.hash = page;
@@ -100,9 +102,27 @@ const App = (() => {
     }
 
     // ── API helpers ──────────────────────────────────────────────
+    // While the hub is still starting (or restarting) the server isn't
+    // answering yet. Reads are retried for a little while instead of
+    // failing, so pages don't come up looking empty.
+    async function _fetchRetry(url, options) {
+        const method = (options.method || 'GET').toUpperCase();
+        const tries = method === 'GET' ? 20 : 1;
+        for (let i = 0; ; i++) {
+            try {
+                const resp = await fetch(url, options);
+                if (method === 'GET' && resp.status >= 502 && resp.status <= 504 && i < tries - 1) throw new TypeError('starting');
+                return resp;
+            } catch (e) {
+                if (!(e instanceof TypeError) || i >= tries - 1) throw e;
+                await new Promise(r => setTimeout(r, 750));
+            }
+        }
+    }
+
     async function api(path, options = {}) {
         try {
-            const resp = await fetch('/api' + path, {
+            const resp = await _fetchRetry('/api' + path, {
                 headers: { 'Content-Type': 'application/json' },
                 ...options,
             });
@@ -290,6 +310,40 @@ const App = (() => {
         if (typeof Chat !== 'undefined' && Chat.refreshAvatars) Chat.refreshAvatars();
     }
 
+    // ── Hide / show the sidebar and the memory panel ──────────────
+    function _prefGet(k) { try { return localStorage.getItem('mimir.' + k); } catch { return null; } }
+    function _prefSet(k, v) { try { localStorage.setItem('mimir.' + k, v); } catch { /* storage off */ } }
+    function _syncPanelButtons() {
+        const appEl = document.getElementById('app');
+        const panel = document.getElementById('memory-panel');
+        const sb = document.getElementById('btn-toggle-sidebar');
+        const mb = document.getElementById('btn-toggle-memory');
+        if (sb) sb.classList.toggle('active', !appEl.classList.contains('sidebar-hidden'));
+        if (mb) mb.classList.toggle('active', !!panel && !panel.classList.contains('collapsed'));
+    }
+    function togglePanel(which) {
+        const appEl = document.getElementById('app');
+        if (which === 'sidebar') {
+            const hidden = appEl.classList.toggle('sidebar-hidden');
+            _prefSet('hideSidebar', hidden ? '1' : '0');
+        } else {
+            const panel = document.getElementById('memory-panel');
+            if (!panel) return;
+            const hidden = panel.classList.toggle('collapsed');
+            if (!window.matchMedia('(max-width: 800px)').matches) _prefSet('hideMemoryPanel', hidden ? '1' : '0');
+        }
+        _syncPanelButtons();
+    }
+
+    // Built-in presets plus your own (Settings -> My presets)
+    const BUILTIN_PRESETS = [['companion', '🤝 Companion'], ['character', '🎭 Character'], ['writer', '🪶 Writer'],
+        ['assistant', '💼 Assistant'], ['agent', '⚡ Agent'], ['custom', '⚙️ Custom']];
+    function presetOptions() {
+        const mine = ((state.settings || {}).user_presets || []).filter(p => p && p.id)
+            .map(p => [p.id, '⭐ ' + (p.label || 'My preset')]);
+        return BUILTIN_PRESETS.concat(mine);
+    }
+
     function activeCharacter() {
         const id = (state.settings && state.settings.active_character_id) || '';
         return (state.characters || []).find(c => c.id === id) || null;
@@ -305,7 +359,14 @@ const App = (() => {
         document.getElementById('mobile-nav-backdrop')?.addEventListener('click', () => appEl.classList.remove('nav-open'));
         if (window.matchMedia('(max-width: 800px)').matches) {
             document.getElementById('memory-panel')?.classList.add('collapsed');
+        } else {
+            // Desktop: remember whether the sidebar / memory panel were hidden
+            if (_prefGet('hideSidebar') === '1') appEl.classList.add('sidebar-hidden');
+            if (_prefGet('hideMemoryPanel') === '1') document.getElementById('memory-panel')?.classList.add('collapsed');
         }
+        document.getElementById('btn-toggle-sidebar')?.addEventListener('click', () => togglePanel('sidebar'));
+        document.getElementById('btn-toggle-memory')?.addEventListener('click', () => togglePanel('memory'));
+        _syncPanelButtons();
 
         // Nav clicks
         document.querySelectorAll('.nav-item').forEach(item => {
@@ -419,5 +480,5 @@ const App = (() => {
 
     document.addEventListener('DOMContentLoaded', init);
 
-    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown, loadVisionModels, activeCharacter };
+    return { state, navigate, toast, api, apiPost, apiPut, sendWS, formatBytes, loadModels, loadAgentDropdown, loadVisionModels, activeCharacter, togglePanel, presetOptions, BUILTIN_PRESETS };
 })();
