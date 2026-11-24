@@ -506,6 +506,7 @@ Each character has completely separate memory — their experiences don't bleed 
 
 ### Import characters or memories
 - **SillyTavern / Chub cards** — go to **Characters → Import card** and pick one or more PNG/JSON cards
+- **COF files (.cof)** — the same **Import card** button reads a [COF file](https://github.com/yannsouetre/cof): the character's card becomes its sheet, and the memories in the file arrive as its memories, in life order, dated only when the file gives a date (memories marked secret stay in the file)
 - **Character.ai** — go to **Characters → From Character.ai** and add the card and chats you exported with [CAI Tools](https://github.com/irsat000/CAI-Tools)
 - **Memory import** — go to the **Import** page, paste text or upload files in any format. Mimir will parse them automatically, with optional AI enrichment to add emotion, importance, and context
 

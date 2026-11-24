@@ -612,19 +612,21 @@ const AgentsPage = (() => {
     }
 
     async function importCards(files) {
-        let last = null, ok = 0;
+        let last = null, ok = 0, memories = 0;
         for (const file of files) {
             try {
                 const data_b64 = await fileToB64(file);
                 const r = await App.apiPost('/characters/import-card', { filename: file.name, data_b64 });
                 if (r.error) throw new Error(r.error);
                 agents.push(r.character); last = r.character; ok++;
+                memories += r.memories || 0;   // a .cof brings its memories along
+                for (const w of r.warnings || []) App.toast(`${file.name}: ${w}`, 'warning');
             } catch (e) {
                 App.toast(`${file.name}: ${e.message || e}`, 'error');
             }
         }
         if (ok) {
-            App.toast(`Imported ${ok} character${ok > 1 ? 's' : ''}`, 'success');
+            App.toast(`Imported ${ok} character${ok > 1 ? 's' : ''}` + (memories ? ` with ${memories} memor${memories > 1 ? 'ies' : 'y'}` : ''), 'success');
             openEditor(last.id);
             App.loadAgentDropdown();
         }
